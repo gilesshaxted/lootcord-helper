@@ -1,12 +1,8 @@
 // Import necessary classes from the discord.js library
 const { Client, GatewayIntentBits, Collection } = require('discord.js');
-// Re-introduce REST and Routes for slash commands
+// REST and Routes are needed for slash commands
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
-// express, path, and fs are not needed for this basic bot.
-// const express = require('express');
-// const path = require('path');
-// const fs = require('fs');
 
 // Load environment variables from a .env file if it exists
 // This is good practice for local development. For deployment,
@@ -18,15 +14,15 @@ require('dotenv').config();
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID; // Your bot's application ID (REQUIRED for slash commands)
 
-// PREFIX is removed as we are using slash commands
-// const PREFIX = '!';
+// Define the prefix for your bot commands (re-introduced for !ping)
+const PREFIX = '!';
 
 // Basic validation for environment variables
 if (!TOKEN) {
     console.error('Error: DISCORD_BOT_TOKEN environment variable not set.');
     process.exit(1);
 }
-// CLIENT_ID is now required for slash commands
+// CLIENT_ID is required for slash commands
 if (!CLIENT_ID) {
     console.error('Error: DISCORD_CLIENT_ID environment variable not set.');
     console.error('You can find your Client ID (Application ID) in the Discord Developer Portal under "General Information" for your application.');
@@ -34,23 +30,23 @@ if (!CLIENT_ID) {
 }
 
 // Create a new Discord client instance
-// GatewayIntentBits.MessageContent is NOT required for slash commands.
-// GatewayIntentBits.Guilds and GatewayIntentBits.GuildMessages are sufficient.
+// GatewayIntentBits.MessageContent is now REQUIRED again for prefix commands.
+// You must also enable "Message Content Intent" in your bot's settings on the Discord Developer Portal.
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,           // Required for guild-related events (and slash commands)
         GatewayIntentBits.GuildMessages,    // Required for messages in guilds (and interactions)
-        // GatewayIntentBits.MessageContent,   // NOT REQUIRED for slash commands, only for prefix commands
+        GatewayIntentBits.MessageContent,   // REQUIRED for reading message content (for prefix commands)
     ]
 });
 
 // Create a Collection to store your commands (good practice for slash commands)
 client.commands = new Collection();
-const commands = []; // Array to hold command data for Discord API registration
+const slashCommands = []; // Array to hold slash command data for Discord API registration
 
 // --- Command Loading ---
-// Define the /ping command structure
-const pingCommand = {
+// Define the /ping slash command structure
+const pingSlashCommand = {
     data: {
         name: 'ping',
         description: 'Responds with the bot\'s latency.',
@@ -65,9 +61,9 @@ const pingCommand = {
     },
 };
 
-// Add the ping command to the commands collection and array
-client.commands.set(pingCommand.data.name, pingCommand);
-commands.push(pingCommand.data);
+// Add the slash command to the commands collection and array
+client.commands.set(pingSlashCommand.data.name, pingSlashCommand);
+slashCommands.push(pingSlashCommand.data);
 
 
 // --- Event Handlers ---
@@ -83,19 +79,40 @@ client.once('ready', async () => {
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
     try {
-        console.log(`Started refreshing ${commands.length} application (/) commands.`);
+        console.log(`Started refreshing ${slashCommands.length} application (/) commands.`);
 
         // Register commands globally
         const data = await rest.put(
             Routes.applicationCommands(CLIENT_ID), // For global commands
             // Routes.applicationGuildCommands(CLIENT_ID, 'YOUR_GUILD_ID'), // For guild-specific commands (faster for testing)
-            { body: commands },
+            { body: slashCommands },
         );
 
         console.log(`Successfully reloaded ${data.length} application (/) commands.`);
     } catch (error) {
         // Catch any errors and log them
         console.error('Failed to register slash commands:', error);
+    }
+});
+
+// Event: Message created (for prefix commands)
+client.on('messageCreate', async message => {
+    // Ignore messages from bots to prevent infinite loops
+    if (message.author.bot) return;
+
+    // Ignore messages that don't start with the defined prefix
+    if (!message.content.startsWith(PREFIX)) return;
+
+    // Extract the command and arguments
+    const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+    const commandName = args.shift().toLowerCase();
+
+    // Handle the !ping command
+    if (commandName === 'ping') {
+        // Calculate the bot's current latency in milliseconds
+        // client.ws.ping provides the WebSocket heartbeat latency.
+        const latency_ms = Math.round(client.ws.ping);
+        await message.reply({ content: `Pong! 🏓 My ping is \`${latency_ms}ms\`.` });
     }
 });
 
@@ -129,9 +146,3 @@ client.on('interactionCreate', async interaction => {
 
 // Log in to Discord with your client's token
 client.login(TOKEN);
-
-// --- No Web Server for Hosting Platforms ---
-// The Express web server code has been completely removed as requested.
-// If deploying to a platform that requires a web server to bind to a port,
-// you may need to add this functionality back or configure your deployment
-// as a background worker instead of a web service.
