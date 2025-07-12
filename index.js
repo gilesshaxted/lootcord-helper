@@ -3,8 +3,6 @@ const { Client, GatewayIntentBits, Collection } = require('discord.js');
 // Note: REST and Routes are primarily for slash commands, not needed for prefix commands
 // const { REST } = require('@discordjs/rest');
 // const { Routes } = require('discord-api-types/v10');
-// Import express to create a simple web server
-const express = require('express');
 const path = require('path');
 const fs = require('fs');
 
