@@ -1,10 +1,11 @@
 // Import necessary classes from the discord.js library
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
-// Note: REST and Routes are primarily for slash commands, not needed for prefix commands
+const { Client, GatewayIntentBits } = require('discord.js');
+// Note: REST, Routes, express, path, and fs are not needed for this basic prefix command bot.
 // const { REST } = require('@discordjs/rest');
 // const { Routes } = require('discord-api-types/v10');
-const path = require('path');
-const fs = require('fs');
+// const express = require('express');
+// const path = require('path');
+// const fs = require('fs');
 
 // Load environment variables from a .env file if it exists
 // This is good practice for local development. For deployment,
@@ -14,29 +15,18 @@ require('dotenv').config();
 // Retrieve the bot token from environment variables
 // It's crucial to keep this secret and never hardcode it.
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
-// CLIENT_ID is not strictly needed for prefix commands unless you're also registering slash commands
-// const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 
 // Define the prefix for your bot commands
 const PREFIX = '!';
-
-// Define the port for the web server, defaulting to 3000 if not set by the environment
-const PORT = process.env.PORT || 3000;
 
 // Basic validation for environment variables
 if (!TOKEN) {
     console.error('Error: DISCORD_BOT_TOKEN environment variable not set.');
     process.exit(1);
 }
-// If you were to use CLIENT_ID for slash commands, you'd keep this check:
-// if (!CLIENT_ID) {
-//     console.error('Error: DISCORD_CLIENT_ID environment variable not set.');
-//     console.error('You can find your Client ID (Application ID) in the Discord Developer Portal under "General Information" for your application.');
-//     process.exit(1);
-// }
 
 // Create a new Discord client instance
-// For prefix commands, GatewayIntentBits.MessageContent is absolutely required
+// For prefix commands, GatewayIntentBits.MessageContent is absolutely required.
 // You must also enable "Message Content Intent" in your bot's settings on the Discord Developer Portal.
 const client = new Client({
     intents: [
@@ -80,16 +70,8 @@ client.on('messageCreate', async message => {
 // Log in to Discord with your client's token
 client.login(TOKEN);
 
-// --- Web Server for Hosting Platforms ---
-// Create an Express application
-const app = express();
-
-// Define a simple root route
-app.get('/', (req, res) => {
-    res.send('Discord bot is running and listening for commands!');
-});
-
-// Start the web server
-app.listen(PORT, () => {
-    console.log(`Web server listening on port ${PORT}`);
-});
+// --- No Web Server for Hosting Platforms ---
+// The Express web server code has been completely removed as requested.
+// If deploying to a platform that requires a web server to bind to a port,
+// you may need to add this functionality back or configure your deployment
+// as a background worker instead of a web service.
