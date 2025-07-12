@@ -81,12 +81,20 @@ client.once('ready', async () => {
     try {
         console.log(`Started refreshing ${slashCommands.length} application (/) commands.`);
 
-        // Register commands globally
+        // FOR DEVELOPMENT/TESTING: Use Routes.applicationGuildCommands for instant refresh.
+        // Replaced 'YOUR_GUILD_ID_HERE' with the provided guild ID.
+        const GUILD_ID = '1192414247196573747'; // Your specific guild ID for testing
         const data = await rest.put(
-            Routes.applicationCommands(CLIENT_ID), // For global commands
-            // Routes.applicationGuildCommands(CLIENT_ID, 'YOUR_GUILD_ID'), // For guild-specific commands (faster for testing)
+            Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), // For guild-specific commands (faster for testing)
             { body: slashCommands },
         );
+
+        // FOR PRODUCTION: Use Routes.applicationCommands for global deployment (takes time to propagate).
+        // Commented out for now to prioritize guild-specific testing.
+        // const data = await rest.put(
+        //     Routes.applicationCommands(CLIENT_ID), // For global commands
+        //     { body: slashCommands },
+        // );
 
         console.log(`Successfully reloaded ${data.length} application (/) commands.`);
     } catch (error) {
