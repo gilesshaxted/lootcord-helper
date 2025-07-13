@@ -96,20 +96,22 @@ module.exports = {
                 const embedDescription = embed.description;
                 const embedFields = embed.fields;
 
-                // Check for "Word:" in description
-                const wordMatch = embedDescription ? embedDescription.match(/Word:\s*(.*?)(?:\n|$)/s) : null; // Capture till newline or end of string
+                // Check for "Word:" in description and then capture letters AFTER "fix"
+                // This regex now looks for "Word:", optional whitespace, "fix", optional whitespace,
+                // then captures the letters, and then looks for "Reward".
+                const wordMatch = embedDescription ? embedDescription.match(/Word:\s*fix\s*(.*?)(?:\n|$)/s) : null;
                 
                 // Check for "Reward" field
                 const hasRewardField = embedFields.some(field => field.name && field.name.includes('Reward'));
 
                 if (wordMatch && wordMatch[1] && hasRewardField) {
-                    // Extract only alphabetic characters from the captured segment
+                    // Extract only alphabetic characters from the captured segment (which should now be just the scrambled letters)
                     scrambledLetters = wordMatch[1].replace(/[^a-zA-Z]/g, '').toLowerCase();
                 }
             }
 
             if (!scrambledLetters) {
-                return await interaction.editReply({ content: 'Could not find the scrambled word in the linked message\'s embed description (expected format: "Word: [letters]" and a "Reward" field).', ephemeral: false });
+                return await interaction.editReply({ content: 'Could not find the scrambled word in the linked message\'s embed description (expected format: "Word: fix [letters]" and a "Reward" field).', ephemeral: false });
             }
 
         } catch (error) {
