@@ -30,12 +30,12 @@ module.exports = {
         }
 
         // Define the app ID for Firestore paths (consistent with index.js)
-        const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
+        // const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app'; // No longer directly used for Guilds collection
 
         // Firestore paths using modular API:
-        // Collection: /Guilds/{APP_ID}/public/data/guilds
+        // Collection: /Guilds (Updated to reflect it's a top-level collection)
         // Document: {guildId}
-        const guildCollectionRef = collection(db, `Guilds/${APP_ID_FOR_FIRESTORE}/public/data/guilds`);
+        const guildCollectionRef = collection(db, `Guilds`); // Updated collection name to be top-level
         const guildDocRef = doc(guildCollectionRef, guild.id);
 
         // Subcollection: channels
@@ -45,7 +45,7 @@ module.exports = {
 
 
         try {
-            // Store or update guild details (name and owner) in the 'guilds' collection.
+            // Store or update guild details (name and owner) in the the 'Guilds' collection.
             // Using { merge: true } ensures existing fields are not overwritten.
             await setDoc(guildDocRef, {
                 guildId: guild.id,
