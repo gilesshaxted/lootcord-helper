@@ -63,6 +63,9 @@ let isFirestoreReady = false; // Flag to indicate Firebase Firestore instance is
 // Function to initialize Firebase and authenticate
 async function initializeFirebase() {
     try {
+        // --- DIAGNOSTIC LOG: Print the firebaseConfig object being used ---
+        console.log('Firebase config being used:', firebaseConfig);
+
         firebaseApp = initializeApp(firebaseConfig);
         db = getFirestore(firebaseApp); // db is assigned here
         auth = getAuth(firebaseApp);
