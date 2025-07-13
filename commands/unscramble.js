@@ -1,53 +1,5 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
-
-// --- Word Dictionary Loading ---
-// Define the path to your dictionary file.
-// This command will read 'words.txt' from the 'utils/' directory.
-const DICTIONARY_FILE_PATH = path.join(__dirname, '../utils/words.txt'); // Path to words.txt in utils folder
-let WORD_DICTIONARY_SORTED_BY_LETTERS = {}; // Dictionary to store words grouped by their sorted letters
-
-// Helper function to sort a string alphabetically
-function sortLetters(str) {
-    return str.toLowerCase().split('').sort().join('');
-}
-
-// Function to load and preprocess the dictionary from the file
-function loadAndPreprocessDictionary() {
-    try {
-        const data = fs.readFileSync(DICTIONARY_FILE_PATH, 'utf8');
-        const rawWords = data.split('\n')
-                             .map(word => word.trim().toLowerCase())
-                             .filter(word => word.length > 0);
-
-        // Preprocess the dictionary: group words by their sorted letters
-        rawWords.forEach(word => {
-            const sorted = sortLetters(word);
-            if (!WORD_DICTIONARY_SORTED_BY_LETTERS[sorted]) {
-                WORD_DICTIONARY_SORTED_BY_LETTERS[sorted] = [];
-            }
-            WORD_DICTIONARY_SORTED_BY_LETTERS[sorted].push(word);
-        });
-
-        console.log(`Unscramble Command: Loaded and preprocessed ${rawWords.length} words from ${DICTIONARY_FILE_PATH}`);
-    } catch (error) {
-        console.error(`Unscramble Command: Failed to load dictionary from ${DICTIONARY_FILE_PATH}:`, error);
-        console.error('Please ensure words.txt exists in the utils/ directory and is readable.');
-        WORD_DICTIONARY_SORTED_BY_LETTERS = {}; // Ensure dictionary is empty if loading fails
-    }
-}
-
-// Load the dictionary when the script is first required (i.e., when bot starts)
-loadAndPreprocessDictionary();
-
-// Function to find all anagrams of a given scrambled word using the preprocessed dictionary
-function findAnagramsFromDictionary(scrambledWord) {
-    const sortedScrambled = sortLetters(scrambledWord);
-    // Return a copy of the array, or an empty array if no matches
-    return WORD_DICTIONARY_SORTED_BY_LETTERS[sortedScrambled] ? [...WORD_DICTIONARY_SORTED_BY_LETTERS[sortedScrambled]] : [];
-}
-
+const { findAnagramsFromDictionary } = require('../utils/dictionary'); // Import from new utility file
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -118,7 +70,7 @@ module.exports = {
         let replyContent = `**Unscrambled word for \`${scrambledLetters}\`:**\n`;
 
         if (possibleWords.length > 0) {
-            possibleWords.sort(); // Sort alphabetically before displaying
+            // Sorting is now handled inside findAnagramsFromDictionary
             replyContent += `Possible words (from local dictionary, using all letters): \n${possibleWords.map(word => `\`${word}\``).join(', ')}`;
         } else {
             replyContent += `No words found in the local dictionary using all letters.`;
