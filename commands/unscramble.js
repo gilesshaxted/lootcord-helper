@@ -74,7 +74,7 @@ module.exports = {
         const [, guildId, channelId, messageId] = match;
 
         let scrambledLetters = null;
-        let debugOutput = ''; // Initialize debug output
+        // debugOutput removed
 
         try {
             const guild = client.guilds.cache.get(guildId);
@@ -89,10 +89,6 @@ module.exports = {
 
             const targetMessage = await channel.messages.fetch(messageId);
 
-            // --- Debugging: Log raw message object ---
-            debugOutput += `**Raw Message Object (Truncated to 1500 chars):**\n\`\`\`json\n${JSON.stringify(targetMessage, null, 2).substring(0, 1500)}...\n\`\`\`\n\n`;
-
-
             // Look for the scrambled letters in the first embed's description
             // And confirm the presence of a "Reward" field
             if (targetMessage.embeds.length > 0) {
@@ -100,19 +96,12 @@ module.exports = {
                 const embedDescription = embed.description;
                 const embedFields = embed.fields;
 
-                // --- Debugging: Log raw embed description ---
-                debugOutput += `**Raw Embed Description:**\n\`\`\`\n${embedDescription || 'N/A'}\n\`\`\`\n`;
-
                 // Updated regex: Matches "Word:", then optional whitespace, then "```fix\n",
                 // then captures the letters, and then looks for "```"
                 const wordMatch = embedDescription ? embedDescription.match(/Word:\s*```fix\n([a-zA-Z]+)```/s) : null;
                 
-                // --- Debugging: Log regex match result ---
-                debugOutput += `**Regex Match Result:** \`${JSON.stringify(wordMatch)}\`\n`;
-
                 // Check for "Reward" field
                 const hasRewardField = embedFields.some(field => field.name && field.name.includes('Reward'));
-                debugOutput += `**Has Reward Field:** \`${hasRewardField}\`\n\n`; // Debugging: Log Reward field check
 
                 if (wordMatch && wordMatch[1] && hasRewardField) {
                     // Extract only alphabetic characters from the captured segment
@@ -121,8 +110,7 @@ module.exports = {
             }
 
             if (!scrambledLetters) {
-                debugOutput += 'Could not find the scrambled word based on current regex and conditions.\n';
-                return await interaction.editReply({ content: debugOutput + 'Expected format: "Word: ```fix\\n[letters]```" and a "Reward" field.', ephemeral: false });
+                return await interaction.editReply({ content: 'Could not find the scrambled word in the linked message\'s embed description (expected format: "Word: ```fix\\n[letters]```" and a "Reward" field).', ephemeral: false });
             }
 
         } catch (error) {
@@ -134,13 +122,10 @@ module.exports = {
             }
         }
 
-        // --- Debug Output ---
-        debugOutput += `**Extracted Letters (Cleaned):** \`${scrambledLetters || 'N/A'}\`\n\n`;
-
         // --- Find possible words using the local dictionary ---
         const possibleWords = findAnagramsFromDictionary(scrambledLetters);
 
-        let replyContent = `${debugOutput}**Unscrambled word for \`${scrambledLetters}\`:**\n`;
+        let replyContent = `**Unscrambled word for \`${scrambledLetters}\`:**\n`; // Simplified reply
 
         if (possibleWords.length > 0) {
             // Sorting is now handled inside findAnagramsFromDictionary
