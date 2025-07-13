@@ -1,56 +1,75 @@
 // This event listener will listen for messageCreate events
-// It will extract scrambled words from a specific bot's messages and find anagrams.
+// It will extract scrambled words from a specific bot's messages and find anagrams using an API.
 
-const fs = require('fs');   // Node.js File System module
-const path = require('path'); // Node.js Path module
+const https = require('https'); // Node.js HTTPS module for API calls
 
 // Configuration specific to this listener
 const TARGET_BOT_ID = '493316754689359874'; // User ID of the other bot to listen to
 
-// --- Word Dictionary Loading ---
-// Define the path to your dictionary file.
-// You will need to create a 'words.txt' file in the same directory as this listener.
-const DICTIONARY_FILE_PATH = path.join(__dirname, 'words.txt');
-let WORD_DICTIONARY = []; // Will be populated on bot startup
+// --- API Configuration ---
+// IMPORTANT: Move your RapidAPI key to an environment variable for security!
+const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY; // Get API key from environment variable
+const RAPIDAPI_HOST = 'unscramble1.p.rapidapi.com';
 
-// Function to load the dictionary from the file
-function loadDictionary() {
-    try {
-        const data = fs.readFileSync(DICTIONARY_FILE_PATH, 'utf8');
-        // Split by newline, trim whitespace, convert to lowercase, and filter out empty lines
-        WORD_DICTIONARY = data.split('\n')
-                              .map(word => word.trim().toLowerCase())
-                              .filter(word => word.length > 0);
-        console.log(`Unscrambler: Loaded ${WORD_DICTIONARY.length} words from ${DICTIONARY_FILE_PATH}`);
-    } catch (error) {
-        console.error(`Unscrambler: Failed to load dictionary from ${DICTIONARY_FILE_PATH}:`, error);
-        console.error('Please ensure words.txt exists in the events/ directory and is readable.');
-        WORD_DICTIONARY = []; // Ensure dictionary is empty if loading fails
+// Basic validation for API key
+if (!RAPIDAPI_KEY) {
+    console.error('Unscrambler: RAPIDAPI_KEY environment variable not set. Unscrambling will not work.');
+}
+
+// Function to call the Unscramble API
+async function callUnscrambleApi(scrambledWord) {
+    if (!RAPIDAPI_KEY) {
+        console.error('Unscrambler: API key is missing. Cannot call Unscramble API.');
+        return [];
     }
-}
 
-// Load the dictionary when the script is first required (i.e., when bot starts)
-loadDictionary();
-
-
-// Helper function to sort a string alphabetically
-function sortString(str) {
-    return str.toLowerCase().split('').sort().join('');
-}
-
-// Function to find all anagrams of a given scrambled word
-function findAnagrams(scrambledWord, dictionary) {
-    const sortedScrambled = sortString(scrambledWord);
-    const possibleWords = new Set(); // Use a Set to store unique words
-
-    for (const word of dictionary) {
-        // Only consider words from the dictionary that have the same length as the scrambled word
-        // and are anagrams of it.
-        if (word.length === scrambledWord.length && sortString(word) === sortedScrambled) {
-            possibleWords.add(word);
+    const options = {
+        method: 'GET',
+        hostname: RAPIDAPI_HOST,
+        port: null,
+        // Path adjusted to use the scrambledWord dynamically
+        path: `/unscramble?word=${encodeURIComponent(scrambledWord)}`,
+        headers: {
+            'x-rapidapi-key': RAPIDAPI_KEY,
+            'x-rapidapi-host': RAPIDAPI_HOST
         }
-    }
-    return Array.from(possibleWords); // Convert Set to Array
+    };
+
+    return new Promise((resolve, reject) => {
+        const req = https.request(options, (res) => {
+            const chunks = [];
+
+            res.on('data', (chunk) => {
+                chunks.push(chunk);
+            });
+
+            res.on('end', () => {
+                const body = Buffer.concat(chunks);
+                try {
+                    const responseData = JSON.parse(body.toString());
+                    // Assuming the API returns an array of words directly, or an object with a 'words' key
+                    if (Array.isArray(responseData)) {
+                        resolve(responseData.map(word => word.toLowerCase()));
+                    } else if (responseData && Array.isArray(responseData.words)) {
+                        resolve(responseData.words.map(word => word.toLowerCase()));
+                    } else {
+                        console.warn('Unscrambler: Unexpected API response format:', responseData);
+                        resolve([]);
+                    }
+                } catch (parseError) {
+                    console.error('Unscrambler: Error parsing API response:', parseError);
+                    resolve([]); // Resolve with empty array on parse error
+                }
+            });
+        });
+
+        req.on('error', (e) => {
+            console.error('Unscrambler: API request error:', e);
+            reject(e); // Reject the promise on request error
+        });
+
+        req.end();
+    });
 }
 
 module.exports = {
@@ -71,15 +90,22 @@ module.exports = {
         if (contentMatch && contentMatch[1]) {
             const scrambledLetters = contentMatch[1].toLowerCase(); // Extract and convert to lowercase
 
-            // Find possible words
-            const possibleWords = findAnagrams(scrambledLetters, WORD_DICTIONARY);
+            // Call the API to find possible words
+            let possibleWords = [];
+            try {
+                possibleWords = await callUnscrambleApi(scrambledLetters);
+            } catch (apiError) {
+                console.error(`Unscrambler: Error calling API for '${scrambledLetters}':`, apiError);
+                await message.channel.send({ content: `**Unscrambler:** Failed to get words for \`${scrambledLetters}\` due to an API error. Please try again later.` });
+                return; // Stop processing if API call fails
+            }
 
             let replyContent = `**Unscrambled word for \`${scrambledLetters}\`:**\n`;
 
             if (possibleWords.length > 0) {
-                replyContent += `Possible words (using all letters): \n${possibleWords.map(word => `\`${word}\``).join(', ')}`;
+                replyContent += `Possible words (from API, using all letters if API supports): \n${possibleWords.map(word => `\`${word}\``).join(', ')}`;
             } else {
-                replyContent += `No words found in the dictionary using all letters.`;
+                replyContent += `No words found by the API using all letters.`;
             }
 
             // Discord has a message character limit of 2000.
