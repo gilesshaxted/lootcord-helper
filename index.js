@@ -44,6 +44,7 @@ if (!CLIENT_ID) {
 // Basic validation for Firebase environment variables
 if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
     console.error('Error: Firebase environment variables (e.g., FIREBASE_API_KEY, FIREBASE_PROJECT_ID) not fully set.');
+    console.error('Please ensure all required Firebase config variables are set on Render.');
     process.exit(1);
 }
 
@@ -53,13 +54,13 @@ let firebaseApp;
 let db;
 let auth;
 let userId = 'unknown'; // Default until authenticated
-let isAuthReady = false; // Flag to indicate Firebase auth is ready
+let isFirestoreReady = false; // Flag to indicate Firebase Firestore instance is ready
 
 // Function to initialize Firebase and authenticate
 async function initializeFirebase() {
     try {
         firebaseApp = initializeApp(firebaseConfig);
-        db = getFirestore(firebaseApp);
+        db = getFirestore(firebaseApp); // db is assigned here
         auth = getAuth(firebaseApp);
 
         // Listen for auth state changes
@@ -71,8 +72,10 @@ async function initializeFirebase() {
                 userId = crypto.randomUUID(); // Fallback for anonymous/unauthenticated
                 console.log(`Firebase not authenticated. Using anonymous/random User ID: ${userId}`);
             }
-            isAuthReady = true; // Auth state has been checked
-            await setupFirestoreListeners(); // Now that we have a userId and auth is ready, set up listeners
+            // Once auth state is determined and db is assigned, mark Firestore as ready
+            isFirestoreReady = true;
+            console.log("Firestore client initialized and ready.");
+            await setupFirestoreListeners(); // Now that db is ready, set up listeners
         });
 
         // Attempt to sign in anonymously (since __initial_auth_token is not available on Render)
@@ -86,19 +89,16 @@ async function initializeFirebase() {
 
 // Function to set up Firestore listeners
 async function setupFirestoreListeners() {
-    // Ensure Firebase is initialized and auth state is ready before proceeding
-    if (!db || !userId || !isAuthReady) {
-        console.warn('Firestore, User ID, or Auth not ready for listeners. Retrying...');
-        // You might want a more robust retry mechanism or wait for isAuthReady to be true
+    // Ensure Firestore is initialized and auth state is ready before proceeding
+    if (!db || !userId || !isFirestoreReady) { // Use isFirestoreReady flag
+        console.warn('Firestore, User ID, or Auth not ready for listeners. Skipping setup.');
         return;
     }
 
     // Define the app ID for Firestore paths (can be a fixed string or derived from your Render service ID)
-    // For Render, you might use a fixed string like 'my-discord-bot-app'
-    const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app'; // Use Render's service ID if available
+    const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
 
     // Example: Listen to a public bot status document
-    // Data will be stored in /artifacts/{APP_ID_FOR_FIRESTORE}/public/data/botStatus/mainStatus
     const botStatusDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/botStatus`), 'mainStatus');
 
     onSnapshot(botStatusDocRef, (docSnap) => {
@@ -117,7 +117,7 @@ async function setupFirestoreListeners() {
             status: 'Online',
             lastUpdated: new Date().toISOString(),
             botName: client.user ? client.user.tag : 'Discord Bot',
-            connectedUserId: userId // Displaying the userId as required for multi-user apps
+            connectedUserId: userId
         }, { merge: true });
         console.log("Bot status updated in Firestore.");
     } catch (e) {
@@ -139,9 +139,6 @@ const client = new Client({
 client.commands = new Collection();
 const slashCommandsToRegister = [];
 
-// path and fs are needed for dynamic command loading
-// These imports are already at the top for clarity.
-
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 
@@ -162,16 +159,8 @@ client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
     console.log('------');
 
-    // Log guild information for debugging and context
-    if (client.guilds.cache.size > 0) {
-        const firstGuild = client.guilds.cache.first();
-        console.log(`Bot is in guild: ${firstGuild.name} (ID: ${firstGuild.id})`);
-    } else {
-        console.log('Bot is not in any guilds yet.');
-    }
-
     // Initialize Firebase and authenticate when the bot is ready
-    await initializeFirebase();
+    await initializeFirebase(); // Ensure this completes before proceeding with commands
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
@@ -206,6 +195,12 @@ client.on('messageCreate', async message => {
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
+    // Check if Firestore is ready before attempting to execute a command that uses it
+    if (!isFirestoreReady) {
+        console.error('Firestore is not yet ready to process commands.');
+        return await interaction.reply({ content: 'The bot is still starting up. Please try the command again in a moment.', ephemeral: true });
+    }
+
     const command = client.commands.get(interaction.commandName);
 
     if (!command) {
@@ -215,7 +210,6 @@ client.on('interactionCreate', async interaction => {
 
     try {
         // Pass the Firestore database instance to the command's execute function
-        // This allows commands to interact with Firestore directly.
         await command.execute(interaction, db);
     } catch (error) {
         console.error(`Error executing command ${interaction.commandName}:`, error);
