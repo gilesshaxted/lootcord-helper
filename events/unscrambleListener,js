@@ -1,0 +1,98 @@
+// This event listener will listen for messageCreate events
+// It will extract scrambled words from a specific bot's messages and find anagrams.
+
+const fs = require('fs');   // Node.js File System module
+const path = require('path'); // Node.js Path module
+
+// Configuration specific to this listener
+const TARGET_BOT_ID = '493316754689359874'; // User ID of the other bot to listen to
+
+// --- Word Dictionary Loading ---
+// Define the path to your dictionary file.
+// You will need to create a 'words.txt' file in the same directory as this listener.
+const DICTIONARY_FILE_PATH = path.join(__dirname, 'words.txt');
+let WORD_DICTIONARY = []; // Will be populated on bot startup
+
+// Function to load the dictionary from the file
+function loadDictionary() {
+    try {
+        const data = fs.readFileSync(DICTIONARY_FILE_PATH, 'utf8');
+        // Split by newline, trim whitespace, convert to lowercase, and filter out empty lines
+        WORD_DICTIONARY = data.split('\n')
+                              .map(word => word.trim().toLowerCase())
+                              .filter(word => word.length > 0);
+        console.log(`Unscrambler: Loaded ${WORD_DICTIONARY.length} words from ${DICTIONARY_FILE_PATH}`);
+    } catch (error) {
+        console.error(`Unscrambler: Failed to load dictionary from ${DICTIONARY_FILE_PATH}:`, error);
+        console.error('Please ensure words.txt exists in the events/ directory and is readable.');
+        WORD_DICTIONARY = []; // Ensure dictionary is empty if loading fails
+    }
+}
+
+// Load the dictionary when the script is first required (i.e., when bot starts)
+loadDictionary();
+
+
+// Helper function to sort a string alphabetically
+function sortString(str) {
+    return str.toLowerCase().split('').sort().join('');
+}
+
+// Function to find all anagrams of a given scrambled word
+function findAnagrams(scrambledWord, dictionary) {
+    const sortedScrambled = sortString(scrambledWord);
+    const possibleWords = new Set(); // Use a Set to store unique words
+
+    for (const word of dictionary) {
+        // Only consider words from the dictionary that have the same length as the scrambled word
+        // and are anagrams of it.
+        if (word.length === scrambledWord.length && sortString(word) === sortedScrambled) {
+            possibleWords.add(word);
+        }
+    }
+    return Array.from(possibleWords); // Convert Set to Array
+}
+
+module.exports = {
+    name: 'messageCreate', // This event listener will also listen for messageCreate events
+    once: false, // This event should run every time a relevant message is created
+    // The execute function receives the message object, plus db, client, and isFirestoreReady from index.js
+    async execute(message, db, client, isFirestoreReady) { // db and isFirestoreReady are passed but not used by this specific listener
+        // Ignore messages from bots other than the target bot, or from this bot itself
+        if (message.author.bot && message.author.id !== TARGET_BOT_ID) return;
+        if (message.author.id === client.user.id) return; // Ignore messages from this bot itself
+
+        // Only process messages in guilds
+        if (!message.guild) return;
+
+        // Check if the message content matches the "fix" pattern
+        const contentMatch = message.content.match(/```fix\n([a-zA-Z]+)\n```/);
+
+        if (contentMatch && contentMatch[1]) {
+            const scrambledLetters = contentMatch[1].toLowerCase(); // Extract and convert to lowercase
+
+            // Find possible words
+            const possibleWords = findAnagrams(scrambledLetters, WORD_DICTIONARY);
+
+            let replyContent = `**Unscrambled word for \`${scrambledLetters}\`:**\n`;
+
+            if (possibleWords.length > 0) {
+                replyContent += `Possible words (using all letters): \n${possibleWords.map(word => `\`${word}\``).join(', ')}`;
+            } else {
+                replyContent += `No words found in the dictionary using all letters.`;
+            }
+
+            // Discord has a message character limit of 2000.
+            if (replyContent.length > 2000) {
+                replyContent = replyContent.substring(0, 1990) + '...\n(Output truncated due to character limit)';
+            }
+
+            try {
+                await message.channel.send({ content: replyContent });
+                console.log(`Unscrambler: Posted possible words for '${scrambledLetters}' in #${message.channel.name}`);
+            } catch (error) {
+                console.error(`Unscrambler: Failed to post words in #${message.channel.name}:`, error);
+            }
+        }
+    },
+};
