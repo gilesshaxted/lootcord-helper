@@ -278,7 +278,8 @@ client.on('interactionCreate', async interaction => {
     if (!isFirestoreReady) {
         console.error('Firestore is not yet ready to process interactions. Skipping interaction.');
         if (interaction.isChatInputCommand() && !interaction.deferred && !interaction.replied) {
-            await interaction.reply({ content: 'The bot is still starting up. Please try the command again in a moment.', ephemeral: true });
+            // Changed to non-ephemeral for testing
+            await interaction.reply({ content: 'The bot is still starting up. Please try the command again in a moment.', ephemeral: false });
         }
         return;
     }
@@ -295,19 +296,23 @@ client.on('interactionCreate', async interaction => {
         try {
             // For /channel-set, we handle the initial reply here
             if (command.data.name === 'channel-set') {
-                await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+                // Changed to non-ephemeral for testing
+                await interaction.deferReply({ ephemeral: false });
                 const { content, components } = await createChannelPaginationMessage(interaction.guild, 0);
-                await interaction.editReply({ content, components, flags: MessageFlags.Ephemeral });
+                // Changed to non-ephemeral for testing
+                await interaction.editReply({ content, components, ephemeral: false });
             } else {
                 // For other commands, execute as normal, passing db and client
-                await command.execute(interaction, db, client); // Pass client here
+                await command.execute(interaction, db, client);
             }
         } catch (error) {
             console.error(`Error executing command ${command.data.name}:`, error);
             if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
+                // Changed to non-ephemeral for testing
+                await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: false });
             } else if (interaction.deferred) {
-                await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
+                // Changed to non-ephemeral for testing
+                await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: false });
             }
         }
     }
@@ -329,7 +334,8 @@ client.on('interactionCreate', async interaction => {
             }
 
             const { content, components } = await createChannelPaginationMessage(interaction.guild, newPage);
-            await interaction.editReply({ content, components, flags: MessageFlags.Ephemeral });
+            // Changed to non-ephemeral for testing
+            await interaction.editReply({ content, components, ephemeral: false });
         }
     }
 
@@ -343,7 +349,8 @@ client.on('interactionCreate', async interaction => {
             const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
 
             if (!guild) {
-                return await interaction.followUp({ content: 'This action can only be performed in a guild.', ephemeral: true });
+                // Changed to non-ephemeral for testing
+                return await interaction.followUp({ content: 'This action can only be performed in a guild.', ephemeral: false });
             }
 
             const guildCollectionRef = collection(db, `Guilds`); // Top-level Guilds collection
@@ -399,7 +406,8 @@ client.on('interactionCreate', async interaction => {
                 replyContent += `\nFailed to set ${failureCount} channel(s). Check logs for details.`;
             }
 
-            await interaction.editReply({ content: replyContent, components: [], flags: MessageFlags.Ephemeral });
+            // Changed to non-ephemeral for testing
+            await interaction.editReply({ content: replyContent, components: [], ephemeral: false });
         }
     }
 });
