@@ -21,17 +21,10 @@ module.exports = {
         // Only process messages in guilds
         if (!message.guild) return;
 
-        // --- NEW: Ignore Logic for "You got it correct!" messages with specific embed color ---
-        if (message.content.includes('You got it correct!') && message.embeds.length > 0) {
-            const embed = message.embeds[0];
-            // Discord embed colors are stored as integers. #89ff58 is 8912472 in decimal.
-            if (embed.color === 8912472) {
-                console.log('Unscrambler: Ignoring "You got it correct!" message with correct embed color.');
-                return; // Ignore this message for unscrambling
-            } else {
-                // --- DIAGNOSTIC LOG: Log if content matches but color doesn't ---
-                console.log(`Unscrambler: "You got it correct!" message detected, but embed color (${embed.color}) does not match expected (8912472).`);
-            }
+        // --- NEW: Ignore Logic for "You got it correct!" messages regardless of embed color ---
+        if (message.content.includes('You got it correct!')) {
+            console.log('Unscrambler: Ignoring message with "You got it correct!" content.');
+            return; // Ignore this message for unscrambling
         }
 
         // Crucial: Check if Firestore is ready before attempting any DB operations
