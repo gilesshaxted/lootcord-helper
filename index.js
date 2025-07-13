@@ -150,6 +150,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildPresences, // NEW: Required for setting bot status/presence
     ]
 });
 
@@ -423,7 +424,7 @@ client.on('interactionCreate', async interaction => {
         const command = client.commands.get(interaction.commandName);
 
         if (!command) {
-            console.error(`No command matching ${interaction.commandName} was found.`);
+            console.error(`No command matching ${command.data.name} was found.`);
             return;
         }
 
@@ -537,10 +538,8 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// Log in to Discord with your bot's token.
 client.login(TOKEN);
 
-// --- Web Server for Hosting Platforms (e.g., Render) ---
 const app = express();
 
 app.get('/', (req, res) => {
