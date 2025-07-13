@@ -33,9 +33,9 @@ module.exports = {
         const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
 
         // Firestore paths using modular API:
-        // Collection: /artifacts/{APP_ID}/public/data/guilds
+        // Collection: /Guilds/{APP_ID}/public/data/guilds
         // Document: {guildId}
-        const guildCollectionRef = collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/guilds`);
+        const guildCollectionRef = collection(db, `Guilds/${APP_ID_FOR_FIRESTORE}/public/data/guilds`);
         const guildDocRef = doc(guildCollectionRef, guild.id);
 
         // Subcollection: channels
