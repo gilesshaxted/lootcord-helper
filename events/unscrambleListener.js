@@ -1,10 +1,8 @@
 // This event listener will listen for messageCreate events
-// It will extract scrambled words from a specific bot's messages and use an LLM to find the most likely word.
+// It will extract scrambled words from a specific bot's messages and find anagrams using a local dictionary file.
 
-// Removed local dictionary imports and functions
-// const { findAnagramsFromDictionary } = require('../utils/dictionary');
+const { findAnagramsFromDictionary } = require('../utils/dictionary'); // Import from new utility file
 const { collection, getDocs } = require('firebase/firestore'); // Import Firestore functions needed
-const statsTracker = require('../utils/statsTracker'); // Import Stats Tracker
 
 // Configuration specific to this listener
 const TARGET_BOT_ID = '493316754689359874'; // User ID of the other bot to listen to
@@ -12,8 +10,8 @@ const TARGET_BOT_ID = '493316754689359874'; // User ID of the other bot to liste
 module.exports = {
     name: 'messageCreate', // This event listener will also listen for messageCreate events
     once: false, // This event should run every time a relevant message is created
-    // The execute function receives the message object, plus db, client, isFirestoreReady, and APP_ID_FOR_FIRESTORE from index.js
-    async execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
+    // The execute function receives the message object, plus db, client, and isFirestoreReady from index.js
+    async execute(message, db, client, isFirestoreReady) { // db and isFirestoreReady are passed but not used by this specific listener
         // Ignore messages from bots other than the target bot, or from this bot itself
         if (message.author.bot && message.author.id !== TARGET_BOT_ID) return;
         if (message.author.id === client.user.id) return; // Ignore messages from this bot itself
@@ -21,14 +19,16 @@ module.exports = {
         // Only process messages in guilds
         if (!message.guild) return;
 
-        // --- Ignore Logic for "You got it correct!" messages ---
-        // This should be the first check for unscrambling to prevent processing correct answers.
+        // --- NEW: Ignore Logic for "You got it correct!" messages with specific embed color ---
         if (message.content.includes('You got it correct!') && message.embeds.length > 0) {
             const embed = message.embeds[0];
             // Discord embed colors are stored as integers. #89ff58 is 8912472 in decimal.
             if (embed.color === 8912472) {
                 console.log('Unscrambler: Ignoring "You got it correct!" message with correct embed color.');
                 return; // Ignore this message for unscrambling
+            } else {
+                // --- DIAGNOSTIC LOG: Log if content matches but color doesn't ---
+                console.log(`Unscrambler: "You got it correct!" message detected, but embed color (${embed.color}) does not match expected (8912472).`);
             }
         }
 
@@ -118,14 +118,14 @@ module.exports = {
             }
         }
 
-        // --- Unscrambler Logic (now using LLM) ---
+        // --- Unscrambler Logic ---
         let scrambledLetters = null;
         if (message.embeds.length > 0) {
             const embed = message.embeds[0];
             const embedDescription = embed.description;
             const embedFields = embed.fields; // Also need to check fields for "Reward"
 
-            // Regex: Matches "Word:", then optional whitespace, then "```fix\n",
+            // Updated regex: Matches "Word:", then optional whitespace, then "```fix\n",
             // then captures the letters, and then looks for "```"
             const wordMatch = embedDescription ? embedDescription.match(/Word:\s*```fix\n([a-zA-Z]+)```/s) : null;
             
@@ -138,50 +138,14 @@ module.exports = {
         }
 
         if (scrambledLetters) {
-            const prompt = `Unscramble the following letters to form a single, most likely English word. Only provide the unscrambled word, no other text or punctuation: ${scrambledLetters}`;
-            let llmAnswer = null;
-
-            try {
-                // Call the LLM (Gemini API)
-                const chatHistory = [];
-                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
-                const payload = { contents: chatHistory };
-                const apiKey = process.env.GOOGLE_API_KEY; // Get API key from environment variable
-
-                if (!apiKey) {
-                    console.error('Unscrambler: GOOGLE_API_KEY environment variable not set. Cannot unscramble.');
-                    return;
-                }
-
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                const result = await response.json();
-                
-                if (result.candidates && result.candidates.length > 0 &&
-                    result.candidates[0].content && result.candidates[0].content.parts &&
-                    result.candidates[0].content.parts.length > 0) {
-                    llmAnswer = result.candidates[0].content.parts[0].text.trim().toLowerCase();
-                } else {
-                    console.warn('Unscrambler: LLM response structure unexpected or empty for scrambled letters:', scrambledLetters);
-                }
-
-            } catch (error) {
-                console.error('Unscrambler: Error calling LLM API for scrambled letters:', scrambledLetters, error);
-            }
+            const possibleWords = findAnagramsFromDictionary(scrambledLetters);
 
             let replyContent = `**Unscrambled word for \`${scrambledLetters}\`:**\n`;
 
-            if (llmAnswer) {
-                replyContent += `Most likely word (from LLM): \`${llmAnswer}\``;
-                statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps for unscramble
+            if (possibleWords.length > 0) {
+                replyContent += `Possible words (from local dictionary, using all letters): \n${possibleWords.map(word => `\`${word}\``).join(', ')}`;
             } else {
-                replyContent += `Could not determine the most likely word using LLM.`;
+                replyContent += `No words found in the local dictionary using all letters.`;
             }
 
             if (replyContent.length > 2000) {
@@ -190,9 +154,9 @@ module.exports = {
 
             try {
                 await message.channel.send({ content: replyContent });
-                console.log(`Unscrambler: Posted LLM-based word for '${scrambledLetters}' in #${message.channel.name}`);
+                console.log(`Unscrambler: Posted possible words for '${scrambledLetters}' in #${message.channel.name}`);
             } catch (error) {
-                console.error(`Unscrambler: Failed to post LLM-based word in #${message.channel.name}:`, error);
+                console.error(`Unscrambler: Failed to post words in #${message.channel.name}:`, error);
             }
         }
     },
