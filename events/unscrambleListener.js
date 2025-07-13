@@ -45,8 +45,14 @@ async function callUnscrambleApi(scrambledWord) {
 
             res.on('end', () => {
                 const body = Buffer.concat(chunks);
+                const rawResponse = body.toString(); // Get the raw string response
+
+                // --- DIAGNOSTIC LOG: Print the raw API response ---
+                console.log(`Unscrambler API raw response for '${scrambledWord}':`, rawResponse);
+
                 try {
-                    const responseData = JSON.parse(body.toString());
+                    const responseData = JSON.parse(rawResponse); // Parse the response
+
                     // Assuming the API returns an array of words directly, or an object with a 'words' key
                     if (Array.isArray(responseData)) {
                         resolve(responseData.map(word => word.toLowerCase()));
