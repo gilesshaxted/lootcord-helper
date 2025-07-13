@@ -90,19 +90,26 @@ module.exports = {
             const targetMessage = await channel.messages.fetch(messageId);
 
             // Look for the scrambled letters in the first embed's description
-            // New regex: grab all letters between "Word:" and "Reward"
+            // And confirm the presence of a "Reward" field
             if (targetMessage.embeds.length > 0) {
-                const embedDescription = targetMessage.embeds[0].description;
-                if (embedDescription) {
-                    const contentMatch = embedDescription.match(/Word:\s*([a-zA-Z]+)\s*Reward/s); // 's' flag for dotall
-                    if (contentMatch && contentMatch[1]) {
-                        scrambledLetters = contentMatch[1].toLowerCase();
-                    }
+                const embed = targetMessage.embeds[0];
+                const embedDescription = embed.description;
+                const embedFields = embed.fields;
+
+                // Check for "Word:" in description
+                const wordMatch = embedDescription ? embedDescription.match(/Word:\s*(.*?)(?:\n|$)/s) : null; // Capture till newline or end of string
+                
+                // Check for "Reward" field
+                const hasRewardField = embedFields.some(field => field.name && field.name.includes('Reward'));
+
+                if (wordMatch && wordMatch[1] && hasRewardField) {
+                    // Extract only alphabetic characters from the captured segment
+                    scrambledLetters = wordMatch[1].replace(/[^a-zA-Z]/g, '').toLowerCase();
                 }
             }
 
             if (!scrambledLetters) {
-                return await interaction.editReply({ content: 'Could not find the scrambled word in the linked message\'s embed description (expected format: "Word: letters Reward").', ephemeral: false });
+                return await interaction.editReply({ content: 'Could not find the scrambled word in the linked message\'s embed description (expected format: "Word: [letters]" and a "Reward" field).', ephemeral: false });
             }
 
         } catch (error) {
@@ -123,7 +130,7 @@ module.exports = {
         let replyContent = `${debugOutput}**Unscrambled word for \`${scrambledLetters}\`:**\n`;
 
         if (possibleWords.length > 0) {
-            possibleWords.sort(); // Sort alphabetically before displaying
+            // Sorting is now handled inside findAnagramsFromDictionary
             replyContent += `Possible words (from local dictionary, using all letters): \n${possibleWords.map(word => `\`${word}\``).join(', ')}`;
         } else {
             replyContent += `No words found in the local dictionary using all letters.`;
