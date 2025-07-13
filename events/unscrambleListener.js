@@ -1,59 +1,10 @@
 // This event listener will listen for messageCreate events
 // It will extract scrambled words from a specific bot's messages and find anagrams using a local dictionary file.
 
-const fs = require('fs');   // Node.js File System module
-const path = require('path'); // Node.js Path module
+const { findAnagramsFromDictionary } = require('../utils/dictionary'); // Import from new utility file
 
 // Configuration specific to this listener
 const TARGET_BOT_ID = '493316754689359874'; // User ID of the other bot to listen to
-
-// --- Word Dictionary Loading ---
-// Define the path to your dictionary file.
-// You MUST create a 'words.txt' file in the 'utils/' directory.
-const DICTIONARY_FILE_PATH = path.join(__dirname, '../utils/words.txt'); // Updated path
-let WORD_DICTIONARY_SORTED_BY_LETTERS = {}; // Dictionary to store words sorted by their letters
-
-// Helper function to sort a string alphabetically
-function sortLetters(str) {
-    return str.toLowerCase().split('').sort().join('');
-}
-
-// Function to load and preprocess the dictionary from the file
-function loadAndPreprocessDictionary() {
-    try {
-        const data = fs.readFileSync(DICTIONARY_FILE_PATH, 'utf8');
-        const rawWords = data.split('\n')
-                             .map(word => word.trim().toLowerCase())
-                             .filter(word => word.length > 0);
-
-        // Preprocess the dictionary: group words by their sorted letters
-        rawWords.forEach(word => {
-            const sorted = sortLetters(word);
-            if (!WORD_DICTIONARY_SORTED_BY_LETTERS[sorted]) {
-                WORD_DICTIONARY_SORTED_BY_LETTERS[sorted] = [];
-            }
-            WORD_DICTIONARY_SORTED_BY_LETTERS[sorted].push(word);
-        });
-
-        console.log(`Unscrambler: Loaded and preprocessed ${rawWords.length} words from ${DICTIONARY_FILE_PATH}`);
-    } catch (error) {
-        console.error(`Unscrambler: Failed to load dictionary from ${DICTIONARY_FILE_PATH}:`, error);
-        console.error('Please ensure words.txt exists in the utils/ directory and is readable.');
-        WORD_DICTIONARY_SORTED_BY_LETTERS = {}; // Ensure dictionary is empty if loading fails
-    }
-}
-
-// Load the dictionary when the script is first required (i.e., when bot starts)
-loadAndPreprocessDictionary();
-
-
-// Function to find all anagrams of a given scrambled word using the preprocessed dictionary
-function findAnagramsFromDictionary(scrambledWord) {
-    const sortedScrambled = sortLetters(scrambledWord);
-    // Return a copy of the array, or an empty array if no matches
-    return WORD_DICTIONARY_SORTED_BY_LETTERS[sortedScrambled] ? [...WORD_DICTIONARY_SORTED_BY_LETTERS[sortedScrambled]] : [];
-}
-
 
 module.exports = {
     name: 'messageCreate', // This event listener will also listen for messageCreate events
@@ -79,8 +30,7 @@ module.exports = {
             let replyContent = `**Unscrambled word for \`${scrambledLetters}\`:**\n`;
 
             if (possibleWords.length > 0) {
-                // Sort the possible words alphabetically before displaying
-                possibleWords.sort();
+                // Sorting is now handled inside findAnagramsFromDictionary
                 replyContent += `Possible words (from local dictionary, using all letters): \n${possibleWords.map(word => `\`${word}\``).join(', ')}`;
             } else {
                 replyContent += `No words found in the local dictionary using all letters.`;
