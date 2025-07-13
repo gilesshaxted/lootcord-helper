@@ -18,8 +18,8 @@ module.exports = {
         const messageLink = interaction.options.getString('link');
 
         // Regex to parse Discord message links:
-        // https://discord.com/channels/GUILD_ID/CHANNEL_ID/MESSAGE_ID
-        const linkRegex = /discord\.com\/channels\/(\d+)\/(\d+)\/(\d+)/;
+        // Now handles both discord.com and discordapp.com domains
+        const linkRegex = /discord(?:app)?\.com\/channels\/(\d+)\/(\d+)\/(\d+)/;
         const match = messageLink.match(linkRegex);
 
         if (!match) {
@@ -29,6 +29,7 @@ module.exports = {
         const [, guildId, channelId, messageId] = match;
 
         try {
+            // client is a global variable available in this context via index.js
             const guild = client.guilds.cache.get(guildId);
             if (!guild) {
                 return await interaction.editReply({ content: 'Could not find the guild specified in the link. Is the bot in that guild?', flags: MessageFlags.Ephemeral });
