@@ -2,19 +2,26 @@
 const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
-const express = require('express'); // For the web server
-const path = require('path'); // For resolving file paths
-const fs = require('fs');     // For reading command files
+const express = require('express');
+
+// Import Firebase modules
+const { initializeApp } = require('firebase/app');
+const { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } = require('firebase/auth');
+const { getFirestore, doc, setDoc, onSnapshot, collection } = require('firebase/firestore');
 
 // Load environment variables from a .env file
-// This is crucial for local development and deployment.
 require('dotenv').config();
 
 // --- Configuration Variables ---
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
-const PREFIX = '!'; // Prefix for traditional message commands
-const PORT = process.env.PORT || 3000; // Port for the web server
+const PREFIX = '!';
+const PORT = process.env.PORT || 3000;
+
+// Firebase global variables provided by the Canvas environment
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
 // --- Basic Validation for Environment Variables ---
 if (!TOKEN) {
@@ -27,12 +34,85 @@ if (!CLIENT_ID) {
     process.exit(1);
 }
 
+// --- Firebase Initialization ---
+let firebaseApp;
+let db;
+let auth;
+let userId = 'unknown'; // Default until authenticated
+
+// Function to initialize Firebase and authenticate
+async function initializeFirebase() {
+    try {
+        firebaseApp = initializeApp(firebaseConfig);
+        db = getFirestore(firebaseApp);
+        auth = getAuth(firebaseApp);
+
+        // Listen for auth state changes
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+                console.log(`Firebase authenticated. User ID: ${userId}`);
+                // Now that we have a userId, we can start Firestore operations
+                await setupFirestoreListeners();
+            } else {
+                userId = crypto.randomUUID(); // Fallback for unauthenticated or anonymous
+                console.log(`Firebase not authenticated. Using anonymous/random User ID: ${userId}`);
+                await setupFirestoreListeners(); // Still set up listeners even if anonymous
+            }
+        });
+
+        // Attempt to sign in with custom token or anonymously
+        if (initialAuthToken) {
+            await signInWithCustomToken(auth, initialAuthToken);
+            console.log('Signed in with custom token.');
+        } else {
+            await signInAnonymously(auth);
+            console.log('Signed in anonymously.');
+        }
+
+    } catch (error) {
+        console.error('Error initializing Firebase or signing in:', error);
+    }
+}
+
+// Function to set up Firestore listeners
+async function setupFirestoreListeners() {
+    if (!db || !userId) {
+        console.warn('Firestore or User ID not ready for listeners.');
+        return;
+    }
+
+    // Example: Listen to a public bot status document
+    // Data will be stored in /artifacts/{appId}/public/data/botStatus/mainStatus
+    const botStatusDocRef = doc(collection(db, `artifacts/${appId}/public/data/botStatus`), 'mainStatus');
+
+    onSnapshot(botStatusDocRef, (docSnap) => {
+        if (docSnap.exists()) {
+            console.log("Current bot status from Firestore:", docSnap.data());
+        } else {
+            console.log("No bot status document found in Firestore.");
+        }
+    }, (error) => {
+        console.error("Error listening to bot status:", error);
+    });
+
+    // Example: Update bot status in Firestore on ready
+    // This will create or update a document in Firestore
+    try {
+        await setDoc(botStatusDocRef, {
+            status: 'Online',
+            lastUpdated: new Date().toISOString(),
+            botName: client.user ? client.user.tag : 'Discord Bot',
+            connectedUserId: userId // Displaying the userId as required for multi-user apps
+        }, { merge: true }); // Use merge: true to avoid overwriting other fields
+        console.log("Bot status updated in Firestore.");
+    } catch (e) {
+        console.error("Error writing bot status to Firestore:", e);
+    }
+}
+
+
 // --- Discord Client Setup ---
-// Create a new Discord client instance with necessary intents.
-// - GatewayIntentBits.Guilds: Required for guild-related events and interactions.
-// - GatewayIntentBits.GuildMessages: Required for messages in guilds.
-// - GatewayIntentBits.MessageContent: REQUIRED for reading message content (for prefix commands like !ping).
-//   You MUST enable "Message Content Intent" in your bot's settings on the Discord Developer Portal.
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -42,21 +122,18 @@ const client = new Client({
 });
 
 // --- Command Handling Setup ---
-// Collection to store slash commands, making them easily accessible by name.
 client.commands = new Collection();
-const slashCommandsToRegister = []; // Array to hold slash command data for Discord API registration.
+const slashCommandsToRegister = [];
 
-// Dynamically load slash commands from the 'commands' directory.
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 
 for (const file of commandFiles) {
     const filePath = path.join(commandsPath, file);
     const command = require(filePath);
-    // Ensure the command has 'data' and 'execute' properties.
     if ('data' in command && 'execute' in command) {
         client.commands.set(command.data.name, command);
-        slashCommandsToRegister.push(command.data.toJSON()); // Convert to JSON for Discord API.
+        slashCommandsToRegister.push(command.data.toJSON());
     } else {
         console.warn(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
     }
@@ -64,23 +141,18 @@ for (const file of commandFiles) {
 
 // --- Discord Event Handlers ---
 
-// Event: Client is ready and connected to Discord.
 client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
     console.log('------');
 
-    // Register slash commands with Discord's API.
-    // This happens only once when the bot starts or when commands are updated.
+    // Initialize Firebase and authenticate when the bot is ready
+    await initializeFirebase();
+
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
     try {
         console.log(`Started refreshing ${slashCommandsToRegister.length} application (/) commands.`);
 
-        // --- IMPORTANT: Choose one of the following for command deployment ---
-
-        // FOR DEVELOPMENT/TESTING (INSTANT REFRESH): Use guild-specific commands.
-        // Replace '1192414247196573747' with the ID of your specific Discord server (guild) for testing.
-        // This updates commands instantly in that guild.
         const GUILD_ID_FOR_TESTING = '1192414247196573747';
         const data = await rest.put(
             Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID_FOR_TESTING),
@@ -88,62 +160,38 @@ client.once('ready', async () => {
         );
         console.log(`Successfully reloaded ${data.length} guild (/) commands.`);
 
-
-        // FOR PRODUCTION (GLOBAL DEPLOYMENT): Use global commands.
-        // These commands will be available in all servers your bot is in but can take up to an hour to propagate.
-        // Uncomment the following block when you are ready for global deployment:
-        /*
-        const globalData = await rest.put(
-            Routes.applicationCommands(CLIENT_ID),
-            { body: slashCommandsToRegister },
-        );
-        console.log(`Successfully reloaded ${globalData.length} global (/) commands.`);
-        */
-
     } catch (error) {
         console.error('Failed to register slash commands:', error);
     }
 });
 
-// Event: Message created (for prefix commands like !ping)
 client.on('messageCreate', async message => {
-    // Ignore messages from bots to prevent infinite loops.
     if (message.author.bot) return;
-
-    // Check if the message starts with the defined prefix.
     if (!message.content.startsWith(PREFIX)) return;
 
-    // Extract the command name and arguments from the message.
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const commandName = args.shift().toLowerCase();
 
-    // Handle the !ping command.
     if (commandName === 'ping') {
         const latency_ms = Math.round(client.ws.ping);
         await message.reply({ content: `Pong! 🏓 My ping is \`${latency_ms}ms\`.` });
     }
 });
 
-// Event: Interaction created (for slash commands)
 client.on('interactionCreate', async interaction => {
-    // Only process chat input (slash) commands.
     if (!interaction.isChatInputCommand()) return;
 
-    // Retrieve the command from the client's commands collection.
     const command = client.commands.get(interaction.commandName);
 
-    // If the command doesn't exist in our collection, log an error and return.
     if (!command) {
         console.error(`No command matching ${interaction.commandName} was found.`);
         return;
     }
 
     try {
-        // Execute the command's logic.
         await command.execute(interaction);
     } catch (error) {
         console.error(`Error executing command ${interaction.commandName}:`, error);
-        // Reply to the user if an error occurs during command execution.
         if (interaction.replied || interaction.deferred) {
             await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
         } else {
@@ -156,8 +204,6 @@ client.on('interactionCreate', async interaction => {
 client.login(TOKEN);
 
 // --- Web Server for Hosting Platforms (e.g., Render) ---
-// This simple Express server ensures the application binds to a port,
-// satisfying requirements of web service hosting platforms.
 const app = express();
 
 app.get('/', (req, res) => {
