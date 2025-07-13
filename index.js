@@ -3,10 +3,12 @@ const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 const express = require('express');
+const path = require('path'); // For resolving file paths
+const fs = require('fs');     // For reading command files
 
 // Import Firebase modules
 const { initializeApp } = require('firebase/app');
-const { getAuth, signInAnonymously, onAuthStateChanged } = require('firebase/auth'); // Removed signInWithCustomToken
+const { getAuth, signInAnonymously, onAuthStateChanged } = require('firebase/auth');
 const { getFirestore, doc, setDoc, onSnapshot, collection } = require('firebase/firestore');
 
 // Load environment variables from a .env file (for local testing)
@@ -138,8 +140,7 @@ client.commands = new Collection();
 const slashCommandsToRegister = [];
 
 // path and fs are needed for dynamic command loading
-const path = require('path');
-const fs = require('fs');
+// These imports are already at the top for clarity.
 
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
@@ -160,6 +161,14 @@ for (const file of commandFiles) {
 client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
     console.log('------');
+
+    // Log guild information for debugging and context
+    if (client.guilds.cache.size > 0) {
+        const firstGuild = client.guilds.cache.first();
+        console.log(`Bot is in guild: ${firstGuild.name} (ID: ${firstGuild.id})`);
+    } else {
+        console.log('Bot is not in any guilds yet.');
+    }
 
     // Initialize Firebase and authenticate when the bot is ready
     await initializeFirebase();
@@ -205,7 +214,9 @@ client.on('interactionCreate', async interaction => {
     }
 
     try {
-        await command.execute(interaction);
+        // Pass the Firestore database instance to the command's execute function
+        // This allows commands to interact with Firestore directly.
+        await command.execute(interaction, db);
     } catch (error) {
         console.error(`Error executing command ${interaction.commandName}:`, error);
         if (interaction.replied || interaction.deferred) {
