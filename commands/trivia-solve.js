@@ -83,7 +83,14 @@ ${options}`;
             const chatHistory = [];
             chatHistory.push({ role: "user", parts: [{ text: prompt }] });
             const payload = { contents: chatHistory };
-            const apiKey = ""; // Canvas will automatically provide this in runtime
+            // --- IMPORTANT: For outside environments like Render, get API key from environment variables ---
+            const apiKey = process.env.GOOGLE_API_KEY; // <-- Updated: Get API key from environment variable
+            if (!apiKey) {
+                console.error('Trivia Solver Command: GOOGLE_API_KEY environment variable not set.');
+                replyContent += `**LLM Answer:** API key is missing. Please set GOOGLE_API_KEY environment variable.`;
+                await interaction.editReply({ content: replyContent, ephemeral: false });
+                return;
+            }
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
             const response = await fetch(apiUrl, {
