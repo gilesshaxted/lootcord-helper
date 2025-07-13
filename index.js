@@ -2,7 +2,7 @@
 const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
-const express = require('express'); // Required for Render web service type
+const express = require('express');
 const path = require('path');
 const fs = require('fs');
 
@@ -11,6 +11,9 @@ const { initializeApp } = require('firebase/app');
 const { getAuth, signInAnonymously, onAuthStateChanged } = require('firebase/auth');
 const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs } = require('firebase/firestore');
 
+// Import Stats Tracker Utility
+const statsTracker = require('./utils/statsTracker');
+
 // Load environment variables from a .env file (for local testing)
 require('dotenv').config();
 
@@ -18,7 +21,7 @@ require('dotenv').config();
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const PREFIX = '!';
-const PORT = process.env.PORT || 3000; // Port for the web server
+const PORT = process.env.PORT || 3000;
 
 // Firebase configuration loaded from environment variables for Render hosting
 const firebaseConfig = {
@@ -32,8 +35,11 @@ const firebaseConfig = {
 };
 
 // --- Pagination Specific Configuration (used by helper function) ---
-const CHANNELS_PER_PAGE = 25; // Max options for StringSelectMenuBuilder
-const TARGET_CATEGORY_ID = '1192414248299675663'; // Your specified category ID
+const CHANNELS_PER_PAGE = 25;
+const TARGET_CATEGORY_ID = '1192414248299675663';
+
+// --- Firestore App ID for data paths ---
+const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
 
 // --- Basic Validation for Environment Variables ---
 if (!TOKEN) {
@@ -45,7 +51,6 @@ if (!CLIENT_ID) {
     console.error('You can find your Client ID (Application ID) in the Discord Developer Portal under "General Information".');
     process.exit(1);
 }
-// Enhanced validation for Firebase environment variables
 if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.projectId || !firebaseConfig.appId) {
     console.error('Error: Incomplete Firebase configuration. Please ensure ALL required Firebase environment variables are set on Render:');
     console.error('  - FIREBASE_API_KEY');
@@ -61,13 +66,12 @@ if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.proj
 let firebaseApp;
 let db;
 let auth;
-let userId = 'unknown'; // Default until authenticated
-let isFirestoreReady = false; // Flag to indicate Firebase Firestore instance is ready
+let userId = 'unknown';
+let isFirestoreReady = false;
 
-// Function to initialize Firebase and authenticate
 async function initializeFirebase() {
     try {
-        console.log('Firebase config being used:', firebaseConfig); // Diagnostic log
+        console.log('Firebase config being used:', firebaseConfig);
 
         firebaseApp = initializeApp(firebaseConfig);
         db = getFirestore(firebaseApp);
@@ -101,9 +105,8 @@ async function setupFirestoreListeners() {
         return;
     }
 
-    const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
+    // Listener for bot status (original)
     const botStatusDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/botStatus`), 'mainStatus');
-
     onSnapshot(botStatusDocRef, (docSnap) => {
         if (docSnap.exists()) {
             console.log("Current bot status from Firestore:", docSnap.data());
@@ -125,6 +128,21 @@ async function setupFirestoreListeners() {
     } catch (e) {
         console.error("Error writing bot status to Firestore:", e);
     }
+
+    // NEW: Listener for bot statistics
+    const statsDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/stats`), 'botStats');
+    onSnapshot(statsDocRef, (docSnap) => {
+        if (docSnap.exists()) {
+            statsTracker.updateInMemoryStats(docSnap.data());
+            updateBotStatus(); // Update Discord status whenever stats change
+        } else {
+            console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
+            statsTracker.initializeStats({}); // Initialize with empty stats
+            updateBotStatus();
+        }
+    }, (error) => {
+        console.error("Stats Tracker: Error listening to botStats:", error);
+    });
 }
 
 
@@ -133,7 +151,7 @@ const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent, // REQUIRED for reading message content
+        GatewayIntentBits.MessageContent,
     ]
 });
 
@@ -163,15 +181,16 @@ for (const file of eventFiles) {
     const filePath = path.join(eventsPath, file);
     const event = require(filePath);
     if (event.once) {
-        client.once(event.name, (...args) => event.execute(...args, db, client, isFirestoreReady)); // Pass db, client, isFirestoreReady
+        // Pass db, client, isFirestoreReady, and APP_ID_FOR_FIRESTORE to event execute functions
+        client.once(event.name, (...args) => event.execute(...args, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE));
     } else {
-        client.on(event.name, (...args) => event.execute(...args, db, client, isFirestoreReady)); // Pass db, client, isFirestoreReady
+        // Pass db, client, isFirestoreReady, and APP_ID_FOR_FIRESTORE to event execute functions
+        client.on(event.name, (...args) => event.execute(...args, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE));
     }
 }
 
 
 // --- Helper Function for Channel Pagination UI ---
-// This function remains in index.js as it's used by interactionCreate event.
 async function createChannelPaginationMessage(guild, currentPage) {
     const allChannelsInTargetCategory = guild.channels.cache.filter(channel =>
         channel.parentId === TARGET_CATEGORY_ID &&
@@ -188,7 +207,6 @@ async function createChannelPaginationMessage(guild, currentPage) {
         };
     }
 
-    // Ensure currentPage is within bounds
     if (currentPage < 0) currentPage = 0;
     if (currentPage >= totalPages) currentPage = totalPages - 1;
 
@@ -203,7 +221,7 @@ async function createChannelPaginationMessage(guild, currentPage) {
     }));
 
     const selectMenu = new StringSelectMenuBuilder()
-        .setCustomId(`select-channels-to-set_page_${currentPage}`) // Embed page in custom ID
+        .setCustomId(`select-channels-to-set_page_${currentPage}`)
         .setPlaceholder(`Select channels (Page ${currentPage + 1}/${totalPages})...`)
         .setMinValues(1)
         .setMaxValues(selectOptions.length > 0 ? selectOptions.length : 1)
@@ -233,6 +251,18 @@ async function createChannelPaginationMessage(guild, currentPage) {
         content: contentMessage,
         components: [selectRow, buttonRow]
     };
+}
+
+// --- Bot Status Update Function ---
+function updateBotStatus() {
+    const stats = statsTracker.getBotStats();
+    const statusText = `Helped ${stats.uniqueActiveUsers} players ${stats.totalHelps} times`;
+    if (client.user) {
+        client.user.setActivity(statusText, { type: 'PLAYING' }); // 'PLAYING' is a common type
+        console.log(`Bot status updated to: "${statusText}"`);
+    } else {
+        console.warn('Cannot set bot status: client.user is not available.');
+    }
 }
 
 
@@ -267,9 +297,15 @@ client.once('ready', async () => {
     } catch (error) {
         console.error('Failed to register slash commands:', error);
     }
+
+    // Set initial status and update periodically
+    updateBotStatus();
+    // Update status every 5 minutes (300000 ms)
+    setInterval(updateBotStatus, 300000);
 });
 
-// The messageCreate event listener is now in events/MobDetect.js (renamed)
+// The messageCreate event listener is now in events/MobDetect.js and events/unscrambleListener.js
+// A new activePlayerTracker.js will be added for t- commands.
 
 // The interactionCreate event listener remains here because it handles
 // both slash commands and component interactions (buttons, select menus).
@@ -278,7 +314,6 @@ client.on('interactionCreate', async interaction => {
     if (!isFirestoreReady) {
         console.error('Firestore is not yet ready to process interactions. Skipping interaction.');
         if (interaction.isChatInputCommand() && !interaction.deferred && !interaction.replied) {
-            // Changed to non-ephemeral for testing
             await interaction.reply({ content: 'The bot is still starting up. Please try the command again in a moment.', ephemeral: false });
         }
         return;
@@ -296,22 +331,22 @@ client.on('interactionCreate', async interaction => {
         try {
             // For /channel-set, we handle the initial reply here
             if (command.data.name === 'channel-set') {
-                // Changed to non-ephemeral for testing
                 await interaction.deferReply({ ephemeral: false });
                 const { content, components } = await createChannelPaginationMessage(interaction.guild, 0);
-                // Changed to non-ephemeral for testing
                 await interaction.editReply({ content, components, ephemeral: false });
             } else {
-                // For other commands, execute as normal, passing db and client
-                await command.execute(interaction, db, client);
+                // For other commands, execute as normal, passing db and client (and APP_ID_FOR_FIRESTORE for stats)
+                await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
+            }
+            // Increment total helps for successful command execution (excluding /channel-set's initial trigger)
+            if (command.data.name !== 'channel-set') {
+                statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
             }
         } catch (error) {
             console.error(`Error executing command ${command.data.name}:`, error);
             if (!interaction.replied && !interaction.deferred) {
-                // Changed to non-ephemeral for testing
                 await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: false });
             } else if (interaction.deferred) {
-                // Changed to non-ephemeral for testing
                 await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: false });
             }
         }
@@ -320,10 +355,10 @@ client.on('interactionCreate', async interaction => {
     // Handle Button Interactions (for pagination)
     if (interaction.isButton()) {
         if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
-            await interaction.deferUpdate(); // Acknowledge the button click
+            await interaction.deferUpdate();
 
             const parts = interaction.customId.split('_');
-            const action = parts[1]; // 'prev' or 'next'
+            const action = parts[1];
             const currentPage = parseInt(parts[2], 10);
 
             let newPage = currentPage;
@@ -334,7 +369,6 @@ client.on('interactionCreate', async interaction => {
             }
 
             const { content, components } = await createChannelPaginationMessage(interaction.guild, newPage);
-            // Changed to non-ephemeral for testing
             await interaction.editReply({ content, components, ephemeral: false });
         }
     }
@@ -342,18 +376,17 @@ client.on('interactionCreate', async interaction => {
     // Handle String Select Menu Interactions (for channel selection)
     if (interaction.isStringSelectMenu()) {
         if (interaction.customId.startsWith('select-channels-to-set_page_')) {
-            await interaction.deferUpdate(); // Acknowledge the component interaction
+            await interaction.deferUpdate();
 
-            const selectedChannelIds = interaction.values; // Array of selected channel IDs
+            const selectedChannelIds = interaction.values;
             const guild = interaction.guild;
             const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
 
             if (!guild) {
-                // Changed to non-ephemeral for testing
                 return await interaction.followUp({ content: 'This action can only be performed in a guild.', ephemeral: false });
             }
 
-            const guildCollectionRef = collection(db, `Guilds`); // Top-level Guilds collection
+            const guildCollectionRef = collection(db, `Guilds`);
             const guildDocRef = doc(guildCollectionRef, guild.id);
 
             let successCount = 0;
@@ -372,7 +405,6 @@ client.on('interactionCreate', async interaction => {
                 const channelDocRef = doc(channelsSubCollectionRef, channel.id);
 
                 try {
-                    // Ensure guild document exists or is created
                     await setDoc(guildDocRef, {
                         guildId: guild.id,
                         guildName: guild.name,
@@ -380,11 +412,10 @@ client.on('interactionCreate', async interaction => {
                         lastUpdated: new Date().toISOString()
                     }, { merge: true });
 
-                    // Store original channel name here
                     await setDoc(channelDocRef, {
                         channelId: channel.id,
-                        channelName: channel.name, // Current name
-                        originalChannelName: channel.name, // Store original name for reverting
+                        channelName: channel.name,
+                        originalChannelName: channel.name,
                         setType: 'manual',
                         setByUserId: interaction.user.id,
                         setByUsername: interaction.user.tag,
@@ -392,6 +423,7 @@ client.on('interactionCreate', async interaction => {
                     });
                     successCount++;
                     successMessages.push(`<#${channel.id}>`);
+                    statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment for each channel set
                 } catch (error) {
                     console.error(`Error saving channel ${channel.name} (${channel.id}) to Firestore:`, error);
                     failureCount++;
@@ -406,7 +438,6 @@ client.on('interactionCreate', async interaction => {
                 replyContent += `\nFailed to set ${failureCount} channel(s). Check logs for details.`;
             }
 
-            // Changed to non-ephemeral for testing
             await interaction.editReply({ content: replyContent, components: [], ephemeral: false });
         }
     }
