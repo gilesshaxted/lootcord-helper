@@ -1,0 +1,80 @@
+// This event listener will listen for messageCreate events
+// It will detect trivia questions from a specific bot, use an LLM to find the answer, and post it.
+
+// Configuration specific to this listener
+const TARGET_BOT_ID = '493316754689359874'; // User ID of the other bot posting trivia
+
+module.exports = {
+    name: 'messageCreate', // This event listener will listen for messageCreate events
+    once: false, // This event should run every time a relevant message is created
+    // The execute function receives the message object, plus db, client, and isFirestoreReady from index.js
+    async execute(message, db, client, isFirestoreReady) { // db and isFirestoreReady are passed but not used by this specific listener
+        // Ignore messages from bots other than the target bot, or from this bot itself
+        if (message.author.bot && message.author.id !== TARGET_BOT_ID) return;
+        if (message.author.id === client.user.id) return; // Ignore messages from this bot itself
+
+        // Only process messages in guilds
+        if (!message.guild) return;
+
+        // Check if the message has an embed and if it's a trivia message
+        if (message.embeds.length > 0) {
+            const embed = message.embeds[0];
+            const hasTriviaStreakField = embed.fields.some(field => field.name && field.name.includes('Trivia Streak'));
+
+            if (hasTriviaStreakField && embed.title && embed.description) {
+                const question = embed.title;
+                const options = embed.description; // e.g., "**A**: 17\n**B**: 18\n**C**: 15\n**D**: 16"
+
+                // Construct the prompt for the LLM
+                const prompt = `Answer the following multiple-choice question by selecting only the letter (A, B, C, or D) that corresponds to the correct answer. Do not provide any other text, explanation, or punctuation.
+
+Question: ${question}
+Options:
+${options}`;
+
+                let llmAnswer = null;
+                try {
+                    // Call the LLM (Gemini API)
+                    const chatHistory = [];
+                    chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                    const payload = { contents: chatHistory };
+                    const apiKey = ""; // Canvas will automatically provide this in runtime
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await response.json();
+                    
+                    if (result.candidates && result.candidates.length > 0 &&
+                        result.candidates[0].content && result.candidates[0].content.parts &&
+                        result.candidates[0].content.parts.length > 0) {
+                        llmAnswer = result.candidates[0].content.parts[0].text.trim();
+                        // Ensure the answer is just a single letter (A, B, C, D)
+                        llmAnswer = llmAnswer.charAt(0).toUpperCase();
+                    } else {
+                        console.warn('Trivia Solver: LLM response structure unexpected or empty.');
+                    }
+
+                } catch (error) {
+                    console.error('Trivia Solver: Error calling LLM API:', error);
+                }
+
+                if (llmAnswer) {
+                    try {
+                        // Post the answer in the same channel
+                        await message.channel.send({ content: `${llmAnswer}` });
+                        console.log(`Trivia Solver: Answered '${question}' with '${llmAnswer}' in #${message.channel.name}`);
+                    } catch (error) {
+                        console.error(`Trivia Solver: Failed to post answer in #${message.channel.name}:`, error);
+                    }
+                } else {
+                    console.log(`Trivia Solver: Could not determine answer for '${question}'.`);
+                }
+            }
+        }
+    },
+};
