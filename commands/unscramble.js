@@ -89,6 +89,10 @@ module.exports = {
 
             const targetMessage = await channel.messages.fetch(messageId);
 
+            // --- Debugging: Log raw message object ---
+            debugOutput += `**Raw Message Object (Truncated to 1500 chars):**\n\`\`\`json\n${JSON.stringify(targetMessage, null, 2).substring(0, 1500)}...\n\`\`\`\n\n`;
+
+
             // Look for the scrambled letters in the first embed's description
             // And confirm the presence of a "Reward" field
             if (targetMessage.embeds.length > 0) {
@@ -99,8 +103,9 @@ module.exports = {
                 // --- Debugging: Log raw embed description ---
                 debugOutput += `**Raw Embed Description:**\n\`\`\`\n${embedDescription || 'N/A'}\n\`\`\`\n`;
 
-                // Updated regex: Looks for "Word:", then "fix" on a new line, then captures letters on the next line.
-                const wordMatch = embedDescription ? embedDescription.match(/Word:\s*\n\s*fix\s*\n\s*([a-zA-Z]+)/s) : null;
+                // Updated regex: Looks for "Word:", then optional whitespace/newlines, "fix", optional whitespace/newlines,
+                // then captures letters on the next line.
+                const wordMatch = embedDescription ? embedDescription.match(/Word:\s*[\r\n]+\s*fix\s*[\r\n]+\s*([a-zA-Z]+)/s) : null;
                 
                 // --- Debugging: Log regex match result ---
                 debugOutput += `**Regex Match Result:** \`${JSON.stringify(wordMatch)}\`\n`;
