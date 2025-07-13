@@ -74,6 +74,8 @@ module.exports = {
         const [, guildId, channelId, messageId] = match;
 
         let scrambledLetters = null;
+        let debugOutput = ''; // Initialize debug output
+
         try {
             const guild = client.guilds.cache.get(guildId);
             if (!guild) {
@@ -88,11 +90,11 @@ module.exports = {
             const targetMessage = await channel.messages.fetch(messageId);
 
             // Look for the scrambled letters in the first embed's description
-            // Updated regex to match "Word:" followed by optional whitespace and then capture the letters.
+            // New regex: grab all letters between "Word:" and "Reward"
             if (targetMessage.embeds.length > 0) {
                 const embedDescription = targetMessage.embeds[0].description;
                 if (embedDescription) {
-                    const contentMatch = embedDescription.match(/Word:\s*([a-zA-Z]+)/); // Updated regex
+                    const contentMatch = embedDescription.match(/Word:\s*([a-zA-Z]+)\s*Reward/s); // 's' flag for dotall
                     if (contentMatch && contentMatch[1]) {
                         scrambledLetters = contentMatch[1].toLowerCase();
                     }
@@ -100,7 +102,7 @@ module.exports = {
             }
 
             if (!scrambledLetters) {
-                return await interaction.editReply({ content: 'Could not find the scrambled word in the linked message\'s embed description (expected format: "Word: letters").', ephemeral: false });
+                return await interaction.editReply({ content: 'Could not find the scrambled word in the linked message\'s embed description (expected format: "Word: letters Reward").', ephemeral: false });
             }
 
         } catch (error) {
@@ -112,10 +114,13 @@ module.exports = {
             }
         }
 
+        // --- Debug Output ---
+        debugOutput += `**Extracted Letters:** \`${scrambledLetters || 'N/A'}\`\n\n`;
+
         // --- Find possible words using the local dictionary ---
         const possibleWords = findAnagramsFromDictionary(scrambledLetters);
 
-        let replyContent = `**Unscrambled word for \`${scrambledLetters}\`:**\n`;
+        let replyContent = `${debugOutput}**Unscrambled word for \`${scrambledLetters}\`:**\n`;
 
         if (possibleWords.length > 0) {
             possibleWords.sort(); // Sort alphabetically before displaying
