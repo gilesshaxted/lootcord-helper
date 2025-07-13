@@ -2,7 +2,7 @@
 const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
-const express = require('express');
+const express = require('express'); // Required for Render web service type
 const path = require('path');
 const fs = require('fs');
 
@@ -31,7 +31,7 @@ const firebaseConfig = {
     storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
     messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
     appId: process.env.FIREBASE_APP_ID,
-    // measurementId: process.env.FIREBASE_MEASUREMENT_ID // Uncomment if you use Measurement ID
+    // measurementId: process.env.MEASUREMENT_ID // Uncomment if you use Measurement ID
 };
 
 // --- Pagination Specific Configuration (used by helper function) ---
@@ -105,7 +105,6 @@ async function setupFirestoreListeners() {
         return;
     }
 
-    // Listener for bot status (original)
     const botStatusDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/botStatus`), 'mainStatus');
     onSnapshot(botStatusDocRef, (docSnap) => {
         if (docSnap.exists()) {
@@ -129,15 +128,14 @@ async function setupFirestoreListeners() {
         console.error("Error writing bot status to Firestore:", e);
     }
 
-    // NEW: Listener for bot statistics
     const statsDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/stats`), 'botStats');
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
             statsTracker.updateInMemoryStats(docSnap.data());
-            updateBotStatus(); // Update Discord status whenever stats change
+            updateBotStatus();
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
-            statsTracker.initializeStats({}); // Initialize with empty stats
+            statsTracker.initializeStats({});
             updateBotStatus();
         }
     }, (error) => {
@@ -181,11 +179,11 @@ for (const file of eventFiles) {
     const filePath = path.join(eventsPath, file);
     const event = require(filePath);
     if (event.once) {
-        // Pass db, client, isFirestoreReady, and APP_ID_FOR_FIRESTORE to event execute functions
-        client.once(event.name, (...args) => event.execute(...args, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE));
+        // Pass message as the first argument, followed by other context variables
+        client.once(event.name, (message, ...args) => event.execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE, ...args));
     } else {
-        // Pass db, client, isFirestoreReady, and APP_ID_FOR_FIRESTORE to event execute functions
-        client.on(event.name, (...args) => event.execute(...args, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE));
+        // Pass message as the first argument, followed by other context variables
+        client.on(event.name, (message, ...args) => event.execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE, ...args));
     }
 }
 
@@ -258,11 +256,113 @@ function updateBotStatus() {
     const stats = statsTracker.getBotStats();
     const statusText = `Helped ${stats.uniqueActiveUsers} players ${stats.totalHelps} times`;
     if (client.user) {
-        client.user.setActivity(statusText, { type: 'PLAYING' }); // 'PLAYING' is a common type
+        client.user.setActivity(statusText, { type: 'PLAYING' });
         console.log(`Bot status updated to: "${statusText}"`);
     } else {
         console.warn('Cannot set bot status: client.user is not available.');
     }
+}
+
+// --- Function to check and rename channels on startup (Downtime Recovery) ---
+async function checkAndRenameChannelsOnStartup() {
+    if (!db || !isFirestoreReady || !client.isReady()) {
+        console.warn('Startup Channel Check: Firestore or Client not ready. Skipping startup check.');
+        return;
+    }
+
+    console.log('Startup Channel Check: Initiating channel status check after bot restart...');
+
+    // Get all guilds the bot is in
+    for (const guild of client.guilds.cache.values()) {
+        const guildId = guild.id;
+        const guildChannelsRef = collection(db, `Guilds/${guildId}/channels`);
+
+        try {
+            const channelDocs = await getDocs(guildChannelsRef);
+            if (channelDocs.empty) {
+                console.log(`Startup Channel Check: No configured channels for guild ${guild.name}.`);
+                continue;
+            }
+
+            for (const docSnap of channelDocs.docs) {
+                const channelData = docSnap.data();
+                const channelId = channelData.channelId;
+                const originalChannelName = channelData.originalChannelName;
+
+                const channel = guild.channels.cache.get(channelId);
+                if (!channel || channel.type !== ChannelType.GuildText) {
+                    console.warn(`Startup Channel Check: Configured channel ${channelId} not found or not a text channel in guild ${guild.name}. Skipping.`);
+                    continue;
+                }
+
+                // Fetch the last message in the channel
+                const messages = await channel.messages.fetch({ limit: 1 });
+                const lastMessage = messages.first();
+
+                if (!lastMessage || lastMessage.author.id !== '493316754689359874' || lastMessage.embeds.length === 0) {
+                    // If no relevant last message, revert to original name if current name is not original
+                    if (channel.name !== originalChannelName) {
+                        try {
+                            await channel.setName(originalChannelName, 'Automated revert on startup: no relevant last message found.');
+                            console.log(`Startup Channel Check: Reverted ${channel.name} to ${originalChannelName} in ${guild.name}.`);
+                        } catch (error) {
+                            console.error(`Startup Channel Check: Failed to revert ${channel.name} to ${originalChannelName} on startup:`, error);
+                        }
+                    }
+                    continue; // No relevant message to check for renaming
+                }
+
+                const embedTitle = lastMessage.embeds[0].title;
+                const messageContent = lastMessage.content;
+                let newName = null;
+
+                // Apply renaming logic (similar to MobDetect.js)
+                if (embedTitle) {
+                    if (embedTitle.includes('Heavy Scientist')) {
+                        newName = '🐻╏heavy';
+                    } else if (embedTitle.includes('Scientist')) {
+                        newName = '🥼╏scientist';
+                    } else if (embedTitle.includes('Tunnel Dweller')) {
+                        newName = '🧟╏dweller';
+                    } else if (embedTitle.includes('Patrol Helicopter')) {
+                        newName = '🚁╏heli';
+                    } else if (embedTitle.includes('Bradley APC')) {
+                        newName = '🚨╏brad';
+                    }
+                }
+
+                // Apply revert logic (similar to MobDetect.js)
+                const embed = lastMessage.embeds[0];
+                const embedTitleRevert = embed && embed.title && embed.title.includes('left...');
+                const embedDescriptionRevert = embed && embed.description && embed.description.includes('killed a mob');
+                const contentDiedRevert = messageContent.includes(':deth: The **') && messageContent.includes('DIED!**');
+                const revertCondition = embedTitleRevert || embedDescriptionRevert || contentDiedRevert;
+
+                if (revertCondition) {
+                    if (channel.name !== originalChannelName) {
+                        try {
+                            await channel.setName(originalChannelName, 'Automated revert on startup: death/left message detected.');
+                            console.log(`Startup Channel Check: Reverted ${channel.name} to ${originalChannelName} in ${guild.name}.`);
+                        } catch (error) {
+                            console.error(`Startup Channel Check: Failed to revert ${channel.name} to ${originalChannelName} on startup:`, error);
+                        }
+                    }
+                } else if (newName && channel.name !== newName) { // Only rename if a newName is determined and current name is different
+                    try {
+                        await channel.setName(newName, 'Automated rename on startup: enemy spawn detected.');
+                        console.log(`Startup Channel Check: Renamed ${channel.name} to ${newName} in ${guild.name}.`);
+                    } catch (error) {
+                        console.error(`Startup Channel Check: Failed to rename ${channel.name} to ${newName} on startup:`, error);
+                    }
+                } else {
+                    console.log(`Startup Channel Check: Channel ${channel.name} in ${guild.name} is already correctly named.`);
+                }
+            }
+        } catch (error) {
+            console.error(`Startup Channel Check: Error processing guild ${guild.name} (${guild.id}):`, error);
+        }
+    }
+    console.log('Startup Channel Check: Completed channel status check.');
 }
 
 
@@ -280,7 +380,7 @@ client.once('ready', async () => {
     }
 
     await initializeFirebase();
-    await setupFirestoreListeners(); // Ensure Firestore listeners are set up AFTER Firebase is initialized and auth state is determined
+    await setupFirestoreListeners();
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
@@ -298,10 +398,11 @@ client.once('ready', async () => {
         console.error('Failed to register slash commands:', error);
     }
 
-    // Set initial status and update periodically
     updateBotStatus();
-    // Update status every 5 minutes (300000 ms)
-    setInterval(updateBotStatus, 300000);
+    setInterval(updateBotStatus, 300000); // Update status every 5 minutes
+
+    // NEW: Run channel check and rename on startup
+    await checkAndRenameChannelsOnStartup();
 });
 
 // The messageCreate event listener is now in events/MobDetect.js and events/unscrambleListener.js
@@ -310,7 +411,6 @@ client.once('ready', async () => {
 // The interactionCreate event listener remains here because it handles
 // both slash commands and component interactions (buttons, select menus).
 client.on('interactionCreate', async interaction => {
-    // Crucial: Check if Firestore is ready before processing any interaction that might use it
     if (!isFirestoreReady) {
         console.error('Firestore is not yet ready to process interactions. Skipping interaction.');
         if (interaction.isChatInputCommand() && !interaction.deferred && !interaction.replied) {
@@ -319,7 +419,6 @@ client.on('interactionCreate', async interaction => {
         return;
     }
 
-    // Handle Chat Input Commands (Slash Commands)
     if (interaction.isChatInputCommand()) {
         const command = client.commands.get(interaction.commandName);
 
@@ -329,16 +428,13 @@ client.on('interactionCreate', async interaction => {
         }
 
         try {
-            // For /channel-set, we handle the initial reply here
             if (command.data.name === 'channel-set') {
                 await interaction.deferReply({ ephemeral: false });
                 const { content, components } = await createChannelPaginationMessage(interaction.guild, 0);
                 await interaction.editReply({ content, components, ephemeral: false });
             } else {
-                // For other commands, execute as normal, passing db and client (and APP_ID_FOR_FIRESTORE for stats)
                 await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
             }
-            // Increment total helps for successful command execution (excluding /channel-set's initial trigger)
             if (command.data.name !== 'channel-set') {
                 statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
             }
@@ -352,7 +448,6 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // Handle Button Interactions (for pagination)
     if (interaction.isButton()) {
         if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
             await interaction.deferUpdate();
@@ -373,7 +468,6 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // Handle String Select Menu Interactions (for channel selection)
     if (interaction.isStringSelectMenu()) {
         if (interaction.customId.startsWith('select-channels-to-set_page_')) {
             await interaction.deferUpdate();
@@ -423,7 +517,7 @@ client.on('interactionCreate', async interaction => {
                     });
                     successCount++;
                     successMessages.push(`<#${channel.id}>`);
-                    statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment for each channel set
+                    statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
                 } catch (error) {
                     console.error(`Error saving channel ${channel.name} (${channel.id}) to Firestore:`, error);
                     failureCount++;
