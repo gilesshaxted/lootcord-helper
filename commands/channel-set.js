@@ -1,6 +1,6 @@
-const { SlashCommandBuilder, ChannelType } = require('discord.js');
-// Firestore imports are handled by index.js and passed via execute function
-// No need to re-initialize Firebase here if db is passed.
+const { SlashCommandBuilder, ChannelType, MessageFlags } = require('discord.js'); // Import MessageFlags
+// Import Firestore modular functions needed in this file
+const { collection, doc, setDoc } = require('firebase/firestore');
 
 module.exports = {
     // Defines the slash command's name, description, and options.
@@ -18,31 +18,36 @@ module.exports = {
     // It now accepts the 'db' (Firestore database instance) as an argument.
     async execute(interaction, db) {
         // Defer the reply to give the bot more time for Firestore operations.
-        // ephemeral: true means only the user who used the command sees the initial "Bot is thinking..." message.
-        await interaction.deferReply({ ephemeral: true });
+        // Use flags for ephemeral response, as 'ephemeral' property is deprecated.
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral }); // Updated here
 
         const channel = interaction.options.getChannel('channel');
         const guild = interaction.guild;
 
         if (!guild) {
-            return await interaction.editReply('This command can only be used in a guild.');
+            // Use flags for ephemeral response in error replies too
+            return await interaction.editReply({ content: 'This command can only be used in a guild.', flags: MessageFlags.Ephemeral });
         }
 
         // Define the app ID for Firestore paths (consistent with index.js)
         const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
 
-        // Firestore paths
+        // Firestore paths using modular API:
         // Collection: /artifacts/{APP_ID}/public/data/guilds
         // Document: {guildId}
-        const guildDocRef = db.collection(`artifacts/${APP_ID_FOR_FIRESTORE}/public/data/guilds`).doc(guild.id);
+        const guildCollectionRef = collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/guilds`);
+        const guildDocRef = doc(guildCollectionRef, guild.id);
+
         // Subcollection: channels
         // Document: {channelId}
-        const channelDocRef = guildDocRef.collection('channels').doc(channel.id);
+        const channelsSubCollectionRef = collection(guildDocRef, 'channels');
+        const channelDocRef = doc(channelsSubCollectionRef, channel.id);
+
 
         try {
             // Store or update guild details (name and owner) in the 'guilds' collection.
             // Using { merge: true } ensures existing fields are not overwritten.
-            await guildDocRef.set({
+            await setDoc(guildDocRef, {
                 guildId: guild.id,
                 guildName: guild.name,
                 guildOwnerId: guild.ownerId,
@@ -50,7 +55,7 @@ module.exports = {
             }, { merge: true });
 
             // Store channel details in the 'channels' subcollection under the guild.
-            await channelDocRef.set({
+            await setDoc(channelDocRef, {
                 channelId: channel.id,
                 channelName: channel.name,
                 setType: 'manual', // Example field: indicates it was set manually via command
@@ -59,10 +64,12 @@ module.exports = {
                 timestamp: new Date().toISOString()
             });
 
-            await interaction.editReply(`Successfully set and saved channel: ${channel.name} (<#${channel.id}>) for this guild.`);
+            // Use flags for ephemeral response
+            await interaction.editReply({ content: `Successfully set and saved channel: ${channel.name} (<#${channel.id}>) for this guild.`, flags: MessageFlags.Ephemeral });
         } catch (error) {
             console.error('Error saving channel to Firestore:', error);
-            await interaction.editReply('There was an error saving the channel to Firestore. Please try again later.');
+            // Use flags for ephemeral response
+            await interaction.editReply({ content: 'There was an error saving the channel to Firestore. Please try again later.', flags: MessageFlags.Ephemeral });
         }
     },
 };
