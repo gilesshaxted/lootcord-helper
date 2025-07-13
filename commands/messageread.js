@@ -116,4 +116,19 @@ module.exports = {
             // If the breakdown is too long, send it in multiple messages or truncate.
             if (breakdown.length > 2000) {
                 // For simplicity, we'll truncate. For production, you might send multiple messages.
-                breakdown = breakd
+                breakdown = breakdown.substring(0, 1990) + '...\n(Output truncated due to character limit)';
+            }
+
+            await interaction.editReply({ content: breakdown, flags: MessageFlags.Ephemeral });
+
+        } catch (error) {
+            console.error('Error fetching or breaking down message:', error);
+            // Check if the error is due to unknown message/channel/guild
+            if (error.code === 10003 || error.code === 10008 || error.code === 50001) { // Unknown Channel, Unknown Message, Missing Access
+                await interaction.editReply({ content: 'Could not fetch the message. Please ensure the link is correct and the bot has access to the channel and message.', flags: MessageFlags.Ephemeral });
+            } else {
+                await interaction.editReply({ content: 'An unexpected error occurred while trying to read the message. Please check the bot\'s logs.', flags: MessageFlags.Ephemeral });
+            }
+        }
+    },
+};
