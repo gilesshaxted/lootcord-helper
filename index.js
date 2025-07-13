@@ -41,10 +41,14 @@ if (!CLIENT_ID) {
     console.error('You can find your Client ID (Application ID) in the Discord Developer Portal under "General Information".');
     process.exit(1);
 }
-// Basic validation for Firebase environment variables
-if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-    console.error('Error: Firebase environment variables (e.g., FIREBASE_API_KEY, FIREBASE_PROJECT_ID) not fully set.');
-    console.error('Please ensure all required Firebase config variables are set on Render.');
+// Enhanced validation for Firebase environment variables
+if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.projectId || !firebaseConfig.appId) {
+    console.error('Error: Incomplete Firebase configuration. Please ensure ALL required Firebase environment variables are set on Render:');
+    console.error('  - FIREBASE_API_KEY');
+    console.error('  - FIREBASE_AUTH_DOMAIN');
+    console.error('  - FIREBASE_PROJECT_ID');
+    console.error('  - FIREBASE_APP_ID');
+    console.error('You can find these in your Firebase Console > Project settings > Your apps (Web app config).');
     process.exit(1);
 }
 
@@ -69,6 +73,7 @@ async function initializeFirebase() {
                 userId = user.uid;
                 console.log(`Firebase authenticated. User ID: ${userId}`);
             } else {
+                // This path is expected for anonymous sign-in if no user is initially found
                 userId = crypto.randomUUID(); // Fallback for anonymous/unauthenticated
                 console.log(`Firebase not authenticated. Using anonymous/random User ID: ${userId}`);
             }
@@ -79,11 +84,14 @@ async function initializeFirebase() {
         });
 
         // Attempt to sign in anonymously (since __initial_auth_token is not available on Render)
+        // This is where 'auth/configuration-not-found' typically occurs if authDomain is missing/wrong.
         await signInAnonymously(auth);
-        console.log('Signed in anonymously to Firebase.');
+        console.log('Attempted anonymous sign-in to Firebase.');
 
     } catch (error) {
         console.error('Error initializing Firebase or signing in:', error);
+        // Do not exit here, allow the bot to continue running without Firestore if it's a non-critical error
+        // However, for auth/configuration-not-found, it's usually fatal for Firestore operations.
     }
 }
 
@@ -212,7 +220,7 @@ client.on('interactionCreate', async interaction => {
         // Pass the Firestore database instance to the command's execute function
         await command.execute(interaction, db);
     } catch (error) {
-        console.error(`Error executing command ${interaction.commandName}:`, error);
+        console.error(`Error executing command ${command.data.name}:`, error); // Use command.data.name for better logging
         if (interaction.replied || interaction.deferred) {
             await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
         } else {
