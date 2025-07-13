@@ -44,7 +44,8 @@ module.exports = {
             if (targetMessage.embeds.length > 0) {
                 const embedDescription = targetMessage.embeds[0].description;
                 if (embedDescription) {
-                    const contentMatch = embedDescription.match(/```fix\n([a-zA-Z]+)\n```/);
+                    // Updated regex to match "fix" followed by a newline and then the letters
+                    const contentMatch = embedDescription.match(/\bfix\s*\n\s*([a-zA-Z]+)\b/);
                     if (contentMatch && contentMatch[1]) {
                         scrambledLetters = contentMatch[1].toLowerCase();
                     }
@@ -52,7 +53,7 @@ module.exports = {
             }
 
             if (!scrambledLetters) {
-                return await interaction.editReply({ content: 'Could not find the scrambled word in the linked message\'s embed description (expected format: ```fix\\nletters\\n```).', ephemeral: false });
+                return await interaction.editReply({ content: 'Could not find the scrambled word in the linked message\'s embed description (expected format: "Word: fix\\nletters").', ephemeral: false });
             }
 
         } catch (error) {
