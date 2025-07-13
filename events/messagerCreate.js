@@ -4,11 +4,18 @@ const { collection, getDocs, doc, setDoc } = require('firebase/firestore');
 // Configuration specific to this event listener
 const TARGET_BOT_ID = '493316754689359874'; // User ID of the other bot to listen to
 
+// Role IDs for specific enemy spawns
+const ROLE_IDS = {
+    HEAVY_SCIENTIST: '1302995091128057930',
+    PATROL_HELICOPTER: '1302994990166835251',
+    BRADLEY_APC: '1192414247196573753',
+};
+
 module.exports = {
     name: 'messageCreate', // This event listener will also listen for messageCreate events
     once: false, // This event should run every time a relevant message is created
     // The execute function receives the message object, plus db, client, and isFirestoreReady from index.js
-    async execute(message, db, client, isFirestoreReady) { // db and isFirestoreReady are passed but not used by this specific listener
+    async execute(message, db, client, isFirestoreReady) {
         // Ignore messages from bots other than the target bot, or from this bot itself
         if (message.author.bot && message.author.id !== TARGET_BOT_ID) return;
         if (message.author.id === client.user.id) return; // Ignore messages from this bot itself
@@ -41,7 +48,40 @@ module.exports = {
         const currentChannelData = storedChannels[channelId];
         const originalChannelName = currentChannelData.originalChannelName;
 
-        // --- Logic for Renaming (now triggered by embed title alone) ---
+        // --- Role Pinging Logic (ONLY if 'An enemy has spawned...' is in content) ---
+        if (message.content.includes('An enemy has spawned...') && message.embeds.length > 0) {
+            const embedTitle = message.embeds[0].title;
+            let roleToPingId = null;
+
+            if (embedTitle) {
+                if (embedTitle.includes('Heavy Scientist')) {
+                    roleToPingId = ROLE_IDS.HEAVY_SCIENTIST;
+                } else if (embedTitle.includes('Patrol Helicopter')) {
+                    roleToPingId = ROLE_IDS.PATROL_HELICOPTER;
+                } else if (embedTitle.includes('Bradley APC')) {
+                    roleToPingId = ROLE_IDS.BRADLEY_APC;
+                }
+            }
+
+            if (roleToPingId) {
+                try {
+                    // Send the role ping message
+                    await message.channel.send({ content: `<@&${roleToPingId}>` });
+                    console.log(`Pinged role ${roleToPingId} for ${embedTitle} in #${message.channel.name}`);
+                } catch (error) {
+                    console.error(`Failed to ping role ${roleToPingId} in #${message.channel.name}:`, error);
+                }
+            }
+            // Important: After a spawn message is processed (including potential ping),
+            // we return to avoid further processing of this specific message for renaming/reverting.
+            // The channel rename will happen on a subsequent message with the embed title.
+            // This ensures the ping happens only once per spawn message.
+            // return; // Removed this return to allow rename logic to follow immediately if conditions met
+        }
+
+
+        // --- Channel Renaming Logic (triggered by embed title alone for any message from target bot) ---
+        // This block will execute for any message from the target bot with an embed.
         if (message.embeds.length > 0) {
             const embedTitle = message.embeds[0].title;
             let newName = null;
