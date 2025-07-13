@@ -1,4 +1,4 @@
-const { doc, setDoc, updateDoc, increment } = require('firebase/firestore');
+const { doc, setDoc, updateDoc, increment, collection } = require('firebase/firestore'); // Added 'collection' import
 
 // In-memory cache for bot statistics
 let botStats = {
