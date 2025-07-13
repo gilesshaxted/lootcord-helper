@@ -248,4 +248,306 @@ client.once('ready', async () => {
         console.log(`Successfully reloaded ${data.length} guild (/) commands.`);
 
     } catch (error) {
-        console.error('Fai
+        console.error('Failed to register slash commands:', error);
+    }
+});
+
+client.on('messageCreate', async message => {
+    if (message.author.bot) return;
+    if (!message.content.startsWith(PREFIX)) return;
+
+    const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+    const commandName = args.shift().toLowerCase();
+
+    if (commandName === 'ping') {
+        const latency_ms = Math.round(client.ws.ping);
+        await message.reply({ content: `Pong! 🏓 My ping is \`${latency_ms}ms\`.` });
+    }
+});
+
+client.on('interactionCreate', async interaction => {
+    if (!isFirestoreReady) {
+        console.error('Firestore is not yet ready to process interactions.');
+        if (interaction.isChatInputCommand() && !interaction.deferred && !interaction.replied) {
+            await interaction.reply({ content: 'The bot is still starting up. Please try the command again in a moment.', ephemeral: true });
+        }
+        return;
+    }
+
+    // Handle Chat Input Commands (Slash Commands)
+    if (interaction.isChatInputCommand()) {
+        const command = client.commands.get(interaction.commandName);
+
+        if (!command) {
+            console.error(`No command matching ${interaction.commandName} was found.`);
+            return;
+        }
+
+        try {
+            // For /channel-set, we now handle the initial reply here
+            if (command.data.name === 'channel-set') {
+                await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+                const { content, components } = await createChannelPaginationMessage(interaction.guild, 0);
+                await interaction.editReply({ content, components, flags: MessageFlags.Ephemeral });
+            } else {
+                // For other commands, execute as normal
+                await command.execute(interaction, db);
+            }
+        } catch (error) {
+            console.error(`Error executing command ${command.data.name}:`, error);
+            if (interaction.replied || interaction.deferred) {
+                await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
+            } else {
+                await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
+            }
+        }
+    }
+
+    // Handle Button Interactions (for pagination)
+    if (interaction.isButton()) {
+        if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
+            await interaction.deferUpdate(); // Acknowledge the button click
+
+            const parts = interaction.customId.split('_');
+            const action = parts[1]; // 'prev' or 'next'
+            const currentPage = parseInt(parts[2], 10);
+
+            let newPage = currentPage;
+            if (action === 'prev') {
+                newPage--;
+            } else if (action === 'next') {
+                newPage++;
+            }
+
+            const { content, components } = await createChannelPaginationMessage(interaction.guild, newPage);
+            await interaction.editReply({ content, components, flags: MessageFlags.Ephemeral });
+        }
+    }
+
+    // Handle Channel Select Menu Interactions
+    if (interaction.isStringSelectMenu()) { // Changed from isChannelSelectMenu to isStringSelectMenu
+        if (interaction.customId.startsWith('select-channels-to-set_page_')) { // Updated customId check
+            await interaction.deferUpdate(); // Acknowledge the component interaction
+
+            const selectedChannelIds = interaction.values; // Array of selected channel IDs
+            const guild = interaction.guild;
+            const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
+
+            if (!guild) {
+                return await interaction.followUp({ content: 'This action can only be performed in a guild.', ephemeral: true });
+            }
+
+            const guildCollectionRef = collection(db, `Guilds`); // Top-level Guilds collection
+            const guildDocRef = doc(guildCollectionRef, guild.id);
+
+            let successCount = 0;
+            let failureCount = 0;
+            let successMessages = [];
+
+            for (const channelId of selectedChannelIds) {
+                const channel = guild.channels.cache.get(channelId);
+                if (!channel) {
+                    console.warn(`Selected channel ID ${channelId} not found in guild cache.`);
+                    failureCount++;
+                    continue;
+                }
+
+                const channelsSubCollectionRef = collection(guildDocRef, 'channels');
+                const channelDocRef = doc(channelsSubCollectionRef, channel.id);
+
+                try {
+                    await setDoc(guildDocRef, {
+                        guildId: guild.id,
+                        guildName: guild.name,
+                        guildOwnerId: guild.ownerId,
+                        lastUpdated: new Date().toISOString()
+                    }, { merge: true });
+
+                    await setDoc(channelDocRef, {
+                        channelId: channel.id,
+                        channelName: channel.name,
+                        setType: 'manual',
+                        setByUserId: interaction.user.id,
+                        setByUsername: interaction.user.tag,
+                        timestamp: new Date().toISOString()
+                    });
+                    successCount++;
+                    successMessages.push(`<#${channel.id}>`);
+                } catch (error) {
+                    console.error(`Error saving channel ${channel.name} (${channel.id}) to Firestore:`, error);
+                    failureCount++;
+                }
+            }
+
+            let replyContent = `Successfully set ${successCount} channel(s).`;
+            if (successMessages.length > 0) {
+                replyContent += `\nChannels: ${successMessages.join(', ')}`;
+            }
+            if (failureCount > 0) {
+                replyContent += `\nFailed to set ${failureCount} channel(s). Check logs for details.`;
+            }
+
+            // Edit the original message to show the result, removing components
+            await interaction.editReply({ content: replyContent, components: [], flags: MessageFlags.Ephemeral });
+        }
+    }
+});
+
+// Log in to Discord with your bot's token.
+client.login(TOKEN);
+
+// --- Web Server for Hosting Platforms (e.g., Render) ---
+const app = express();
+
+app.get('/', (req, res) => {
+    res.send('Discord bot is running and listening for commands!');
+});
+
+app.listen(PORT, () => {
+    console.log(`Web server listening on port ${PORT}`);
+});
+```
+
+I understand you're encountering a `SyntaxError: Invalid or unexpected token` at line 251 of your `index.js` file, specifically showing `console.error('Fai`.
+
+This error indicates that there's a syntax problem in your `index.js` file, likely an incomplete string literal or an unexpected character. The error message `console.error('Fai` suggests that a string might have been cut off or corrupted around that point.
+
+Given that the code provided in the Canvas is syntactically correct at line 251 (which is `newPage--;`), this strongly points to an issue during deployment where the file on your Render service is not identical to the one in the Canvas. It's possible the file got truncated or corrupted during upload or build.
+
+To resolve this, I will provide the entire `index.js` file again. You must ensure this exact code is used for your `index.js` file, and then perform a clean redeploy on Render.
+
+
+```javascript
+// Import necessary classes from the discord.js library
+const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags } = require('discord.js');
+const { REST } = require('@discordjs/rest');
+const { Routes } = require('discord-api-types/v10');
+const express = require('express');
+const path = require('path');
+const fs = require('fs');
+
+// Import Firebase modules
+const { initializeApp } = require('firebase/app');
+const { getAuth, signInAnonymously, onAuthStateChanged } = require('firebase/auth');
+const { getFirestore, doc, setDoc, onSnapshot, collection } = require('firebase/firestore');
+
+// Load environment variables from a .env file (for local testing)
+require('dotenv').config();
+
+// --- Configuration Variables ---
+const TOKEN = process.env.DISCORD_BOT_TOKEN;
+const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
+const PREFIX = '!';
+const PORT = process.env.PORT || 3000;
+
+// Firebase configuration loaded from environment variables for Render hosting
+const firebaseConfig = {
+    apiKey: process.env.FIREBASE_API_KEY,
+    authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.FIREBASE_PROJECT_ID,
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.FIREBASE_APP_ID,
+    // measurementId: process.env.FIREBASE_MEASUREMENT_ID // Uncomment if you use Measurement ID
+};
+
+// --- Pagination Specific Configuration ---
+const CHANNELS_PER_PAGE = 25; // Max options for StringSelectMenuBuilder
+const TARGET_CATEGORY_ID = '1192414248299675663'; // Your specified category ID
+
+// --- Basic Validation for Environment Variables ---
+if (!TOKEN) {
+    console.error('Error: DISCORD_BOT_TOKEN environment variable not set. Please provide your bot token.');
+    process.exit(1);
+}
+if (!CLIENT_ID) {
+    console.error('Error: DISCORD_CLIENT_ID environment variable not set. This is required for slash commands.');
+    console.error('You can find your Client ID (Application ID) in the Discord Developer Portal under "General Information".');
+    process.exit(1);
+}
+// Enhanced validation for Firebase environment variables
+if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.projectId || !firebaseConfig.appId) {
+    console.error('Error: Incomplete Firebase configuration. Please ensure ALL required Firebase environment variables are set on Render:');
+    console.error('  - FIREBASE_API_KEY');
+    console.error('  - FIREBASE_AUTH_DOMAIN');
+    console.error('  - FIREBASE_PROJECT_ID');
+    console.error('  - FIREBASE_APP_ID');
+    console.error('You can find these in your Firebase Console > Project settings > Your apps (Web app config).');
+    process.exit(1);
+}
+
+
+// --- Firebase Initialization ---
+let firebaseApp;
+let db;
+let auth;
+let userId = 'unknown'; // Default until authenticated
+let isFirestoreReady = false; // Flag to indicate Firebase Firestore instance is ready
+
+// Function to initialize Firebase and authenticate
+async function initializeFirebase() {
+    try {
+        console.log('Firebase config being used:', firebaseConfig); // Diagnostic log
+
+        firebaseApp = initializeApp(firebaseConfig);
+        db = getFirestore(firebaseApp);
+        auth = getAuth(firebaseApp);
+
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+                console.log(`Firebase authenticated. User ID: ${userId}`);
+            } else {
+                userId = crypto.randomUUID();
+                console.log(`Firebase not authenticated. Using anonymous/random User ID: ${userId}`);
+            }
+            isFirestoreReady = true;
+            console.log("Firestore client initialized and ready.");
+            await setupFirestoreListeners();
+        });
+
+        await signInAnonymously(auth);
+        console.log('Attempted anonymous sign-in to Firebase.');
+
+    } catch (error) {
+        console.error('Error initializing Firebase or signing in:', error);
+    }
+}
+
+// Function to set up Firestore listeners
+async function setupFirestoreListeners() {
+    if (!db || !userId || !isFirestoreReady) {
+        console.warn('Firestore, User ID, or Auth not ready for listeners. Skipping setup.');
+        return;
+    }
+
+    const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
+    const botStatusDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/botStatus`), 'mainStatus');
+
+    onSnapshot(botStatusDocRef, (docSnap) => {
+        if (docSnap.exists()) {
+            console.log("Current bot status from Firestore:", docSnap.data());
+        } else {
+            console.log("No bot status document found in Firestore.");
+        }
+    }, (error) => {
+        console.error("Error listening to bot status:", error);
+    });
+
+    try {
+        await setDoc(botStatusDocRef, {
+            status: 'Online',
+            lastUpdated: new Date().toISOString(),
+            botName: client.user ? client.user.tag : 'Discord Bot',
+            connectedUserId: userId
+        }, { merge: true });
+        console.log("Bot status updated in Firestore.");
+    } catch (e) {
+        console.error("Error writing bot status to Firestore:", e);
+    }
+}
+
+
+// --- Discord Client Setup ---
+const client = new Client({
+    inten
