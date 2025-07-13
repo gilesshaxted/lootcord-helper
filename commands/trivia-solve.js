@@ -94,6 +94,9 @@ ${options}`;
 
             const result = await response.json();
             
+            // --- DIAGNOSTIC LOG: Log the raw LLM response ---
+            console.log('Trivia Solver Command: Raw LLM response:', JSON.stringify(result, null, 2));
+
             if (result.candidates && result.candidates.length > 0 &&
                 result.candidates[0].content && result.candidates[0].content.parts &&
                 result.candidates[0].content.parts.length > 0) {
