@@ -83,7 +83,7 @@ async function initializeFirebase() {
             }
             isFirestoreReady = true;
             console.log("Firestore client initialized and ready.");
-            // setupFirestoreListeners(); // Moved to client.once('ready') to ensure db is ready before listeners
+            await setupFirestoreListeners();
         });
 
         await signInAnonymously(auth);
@@ -250,8 +250,7 @@ client.once('ready', async () => {
     }
 
     await initializeFirebase();
-    // Ensure Firestore listeners are set up AFTER Firebase is initialized and auth state is determined
-    await setupFirestoreListeners();
+    await setupFirestoreListeners(); // Ensure Firestore listeners are set up AFTER Firebase is initialized and auth state is determined
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
@@ -271,6 +270,7 @@ client.once('ready', async () => {
 });
 
 // The messageCreate event listener is now in events/messageCreate.js
+
 // The interactionCreate event listener remains here because it handles
 // both slash commands and component interactions (buttons, select menus).
 client.on('interactionCreate', async interaction => {
@@ -299,8 +299,8 @@ client.on('interactionCreate', async interaction => {
                 const { content, components } = await createChannelPaginationMessage(interaction.guild, 0);
                 await interaction.editReply({ content, components, flags: MessageFlags.Ephemeral });
             } else {
-                // For other commands, execute as normal (passing db if needed by the command)
-                await command.execute(interaction, db);
+                // For other commands, execute as normal, passing db and client
+                await command.execute(interaction, db, client); // Pass client here
             }
         } catch (error) {
             console.error(`Error executing command ${command.data.name}:`, error);
