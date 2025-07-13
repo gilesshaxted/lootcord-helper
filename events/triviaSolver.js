@@ -27,9 +27,8 @@ module.exports = {
         // Check if the message has an embed and if it's a trivia message
         if (message.embeds.length > 0) {
             const embed = message.embeds[0];
-            const hasTriviaStreakField = embed.fields.some(field => field.name && field.name.includes('Trivia Streak'));
-
-            if (hasTriviaStreakField && embed.title && embed.description) {
+            // Updated trigger: if the embed title exists, ends with '?', and there's a description
+            if (embed.title && embed.title.endsWith('?') && embed.description) {
                 const question = embed.title;
                 const options = embed.description; // e.g., "**A**: 17\n**B**: 18\n**C**: 15\n**D**: 16"
 
