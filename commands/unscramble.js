@@ -1,5 +1,53 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const { callUnscrambleApi } = require('../utils/apiHelpers'); // Import from new utility file
+const fs = require('fs');
+const path = require('path');
+
+// --- Word Dictionary Loading ---
+// Define the path to your dictionary file.
+// This command will read 'words.txt' from the 'utils/' directory.
+const DICTIONARY_FILE_PATH = path.join(__dirname, '../utils/words.txt'); // Path to words.txt in utils folder
+let WORD_DICTIONARY_SORTED_BY_LETTERS = {}; // Dictionary to store words grouped by their sorted letters
+
+// Helper function to sort a string alphabetically
+function sortLetters(str) {
+    return str.toLowerCase().split('').sort().join('');
+}
+
+// Function to load and preprocess the dictionary from the file
+function loadAndPreprocessDictionary() {
+    try {
+        const data = fs.readFileSync(DICTIONARY_FILE_PATH, 'utf8');
+        const rawWords = data.split('\n')
+                             .map(word => word.trim().toLowerCase())
+                             .filter(word => word.length > 0);
+
+        // Preprocess the dictionary: group words by their sorted letters
+        rawWords.forEach(word => {
+            const sorted = sortLetters(word);
+            if (!WORD_DICTIONARY_SORTED_BY_LETTERS[sorted]) {
+                WORD_DICTIONARY_SORTED_BY_LETTERS[sorted] = [];
+            }
+            WORD_DICTIONARY_SORTED_BY_LETTERS[sorted].push(word);
+        });
+
+        console.log(`Unscramble Command: Loaded and preprocessed ${rawWords.length} words from ${DICTIONARY_FILE_PATH}`);
+    } catch (error) {
+        console.error(`Unscramble Command: Failed to load dictionary from ${DICTIONARY_FILE_PATH}:`, error);
+        console.error('Please ensure words.txt exists in the utils/ directory and is readable.');
+        WORD_DICTIONARY_SORTED_BY_LETTERS = {}; // Ensure dictionary is empty if loading fails
+    }
+}
+
+// Load the dictionary when the script is first required (i.e., when bot starts)
+loadAndPreprocessDictionary();
+
+// Function to find all anagrams of a given scrambled word using the preprocessed dictionary
+function findAnagramsFromDictionary(scrambledWord) {
+    const sortedScrambled = sortLetters(scrambledWord);
+    // Return a copy of the array, or an empty array if no matches
+    return WORD_DICTIONARY_SORTED_BY_LETTERS[sortedScrambled] ? [...WORD_DICTIONARY_SORTED_BY_LETTERS[sortedScrambled]] : [];
+}
+
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -12,8 +60,7 @@ module.exports = {
         ),
 
     async execute(interaction, db, client) { // db is passed but not used by this specific command
-        // Changed to non-ephemeral for testing
-        await interaction.deferReply({ ephemeral: false });
+        await interaction.deferReply({ ephemeral: false }); // Changed to non-ephemeral for testing
 
         const messageLink = interaction.options.getString('link');
 
@@ -41,11 +88,11 @@ module.exports = {
             const targetMessage = await channel.messages.fetch(messageId);
 
             // Look for the scrambled letters in the first embed's description
+            // The regex matches "Word: " followed by "fix" and then captures the letters on the next line.
             if (targetMessage.embeds.length > 0) {
                 const embedDescription = targetMessage.embeds[0].description;
                 if (embedDescription) {
-                    // Updated regex to match "fix" followed by a newline and then the letters
-                    const contentMatch = embedDescription.match(/\bfix\s*\n\s*([a-zA-Z]+)\b/);
+                    const contentMatch = embedDescription.match(/Word:\s*fix\s*\n\s*([a-zA-Z]+)/);
                     if (contentMatch && contentMatch[1]) {
                         scrambledLetters = contentMatch[1].toLowerCase();
                     }
@@ -65,24 +112,16 @@ module.exports = {
             }
         }
 
-        // --- Call the API to find possible words ---
-        let possibleWords = [];
-        let apiErrorOccurred = false;
-        try {
-            possibleWords = await callUnscrambleApi(scrambledLetters);
-        } catch (apiError) {
-            console.error(`Unscramble command: Error calling API for '${scrambledLetters}':`, apiError);
-            apiErrorOccurred = true;
-        }
+        // --- Find possible words using the local dictionary ---
+        const possibleWords = findAnagramsFromDictionary(scrambledLetters);
 
         let replyContent = `**Unscrambled word for \`${scrambledLetters}\`:**\n`;
 
-        if (apiErrorOccurred) {
-            replyContent += `*Failed to get words from API due to an error. Please check bot logs.*`;
-        } else if (possibleWords.length > 0) {
-            replyContent += `Possible words (from API, using all letters if API supports): \n${possibleWords.map(word => `\`${word}\``).join(', ')}`;
+        if (possibleWords.length > 0) {
+            possibleWords.sort(); // Sort alphabetically before displaying
+            replyContent += `Possible words (from local dictionary, using all letters): \n${possibleWords.map(word => `\`${word}\``).join(', ')}`;
         } else {
-            replyContent += `No words found by the API using all letters.`;
+            replyContent += `No words found in the local dictionary using all letters.`;
         }
 
         if (replyContent.length > 2000) {
