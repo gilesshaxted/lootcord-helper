@@ -101,8 +101,14 @@ ${options}`;
 
             const result = await response.json();
             
-            // --- DIAGNOSTIC LOG: Log the raw LLM response ---
+            // --- DIAGNOSTIC LOG: Log the raw LLM response to console (already there) ---
             console.log('Trivia Solver Command: Raw LLM response:', JSON.stringify(result, null, 2));
+
+            // --- ADDED: Display what was sent to LLM ---
+            replyContent += `\n**Prompt Sent to LLM:**\n\`\`\`\n${prompt}\n\`\`\`\n`;
+
+            // --- ADDED: Display raw LLM response in the reply ---
+            replyContent += `**Raw LLM Response JSON:**\n\`\`\`json\n${JSON.stringify(result, null, 2).substring(0, 1500)}...\n\`\`\`\n`; // Truncate for Discord limit
 
             if (result.candidates && result.candidates.length > 0 &&
                 result.candidates[0].content && result.candidates[0].content.parts &&
