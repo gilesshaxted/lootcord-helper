@@ -1,124 +1,124 @@
 // Import necessary classes from the discord.js library
 const { Client, GatewayIntentBits, Collection } = require('discord.js');
-// REST and Routes are needed for slash commands
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
+const express = require('express'); // For the web server
+const path = require('path'); // For resolving file paths
+const fs = require('fs');     // For reading command files
 
-// Load environment variables from a .env file if it exists
-// This is good practice for local development. For deployment,
-// you'll set these variables directly in your hosting environment.
+// Load environment variables from a .env file
+// This is crucial for local development and deployment.
 require('dotenv').config();
 
-// Retrieve the bot token and client ID from environment variables
-// It's crucial to keep these secret and never hardcode them.
+// --- Configuration Variables ---
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
-const CLIENT_ID = process.env.DISCORD_CLIENT_ID; // Your bot's application ID (REQUIRED for slash commands)
+const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
+const PREFIX = '!'; // Prefix for traditional message commands
+const PORT = process.env.PORT || 3000; // Port for the web server
 
-// Define the prefix for your bot commands (re-introduced for !ping)
-const PREFIX = '!';
-
-// Basic validation for environment variables
+// --- Basic Validation for Environment Variables ---
 if (!TOKEN) {
-    console.error('Error: DISCORD_BOT_TOKEN environment variable not set.');
+    console.error('Error: DISCORD_BOT_TOKEN environment variable not set. Please provide your bot token.');
     process.exit(1);
 }
-// CLIENT_ID is required for slash commands
 if (!CLIENT_ID) {
-    console.error('Error: DISCORD_CLIENT_ID environment variable not set.');
-    console.error('You can find your Client ID (Application ID) in the Discord Developer Portal under "General Information" for your application.');
+    console.error('Error: DISCORD_CLIENT_ID environment variable not set. This is required for slash commands.');
+    console.error('You can find your Client ID (Application ID) in the Discord Developer Portal under "General Information".');
     process.exit(1);
 }
 
-// Create a new Discord client instance
-// GatewayIntentBits.MessageContent is now REQUIRED again for prefix commands.
-// You must also enable "Message Content Intent" in your bot's settings on the Discord Developer Portal.
+// --- Discord Client Setup ---
+// Create a new Discord client instance with necessary intents.
+// - GatewayIntentBits.Guilds: Required for guild-related events and interactions.
+// - GatewayIntentBits.GuildMessages: Required for messages in guilds.
+// - GatewayIntentBits.MessageContent: REQUIRED for reading message content (for prefix commands like !ping).
+//   You MUST enable "Message Content Intent" in your bot's settings on the Discord Developer Portal.
 const client = new Client({
     intents: [
-        GatewayIntentBits.Guilds,           // Required for guild-related events (and slash commands)
-        GatewayIntentBits.GuildMessages,    // Required for messages in guilds (and interactions)
-        GatewayIntentBits.MessageContent,   // REQUIRED for reading message content (for prefix commands)
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
     ]
 });
 
-// Create a Collection to store your commands (good practice for slash commands)
+// --- Command Handling Setup ---
+// Collection to store slash commands, making them easily accessible by name.
 client.commands = new Collection();
-const slashCommands = []; // Array to hold slash command data for Discord API registration
+const slashCommandsToRegister = []; // Array to hold slash command data for Discord API registration.
 
-// --- Command Loading ---
-// Define the /ping slash command structure
-const pingSlashCommand = {
-    data: {
-        name: 'ping',
-        description: 'Responds with the bot\'s latency.',
-    },
-    async execute(interaction) {
-        // Calculate the bot's current latency in milliseconds
-        // client.ws.ping provides the WebSocket heartbeat latency.
-        const latency_ms = Math.round(client.ws.ping);
-        await interaction.reply({ content: `Pong! 🏓 My ping is \`${latency_ms}ms\`.`, ephemeral: false });
-        // ephemeral: true means only the user who used the command can see the response.
-        // ephemeral: false (default) means everyone can see the response.
-    },
-};
+// Dynamically load slash commands from the 'commands' directory.
+const commandsPath = path.join(__dirname, 'commands');
+const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 
-// Add the slash command to the commands collection and array
-client.commands.set(pingSlashCommand.data.name, pingSlashCommand);
-slashCommands.push(pingSlashCommand.data);
+for (const file of commandFiles) {
+    const filePath = path.join(commandsPath, file);
+    const command = require(filePath);
+    // Ensure the command has 'data' and 'execute' properties.
+    if ('data' in command && 'execute' in command) {
+        client.commands.set(command.data.name, command);
+        slashCommandsToRegister.push(command.data.toJSON()); // Convert to JSON for Discord API.
+    } else {
+        console.warn(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
+    }
+}
 
+// --- Discord Event Handlers ---
 
-// --- Event Handlers ---
-
-// Event: Client is ready
+// Event: Client is ready and connected to Discord.
 client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
     console.log('------');
 
-    // Register slash commands globally (or per guild)
-    // Global commands can take up to an hour to propagate.
-    // Guild-specific commands register instantly for testing.
+    // Register slash commands with Discord's API.
+    // This happens only once when the bot starts or when commands are updated.
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
     try {
-        console.log(`Started refreshing ${slashCommands.length} application (/) commands.`);
+        console.log(`Started refreshing ${slashCommandsToRegister.length} application (/) commands.`);
 
-        // FOR DEVELOPMENT/TESTING: Use Routes.applicationGuildCommands for instant refresh.
-        // Replaced 'YOUR_GUILD_ID_HERE' with the provided guild ID.
-        const GUILD_ID = '1192414247196573747'; // Your specific guild ID for testing
+        // --- IMPORTANT: Choose one of the following for command deployment ---
+
+        // FOR DEVELOPMENT/TESTING (INSTANT REFRESH): Use guild-specific commands.
+        // Replace '1192414247196573747' with the ID of your specific Discord server (guild) for testing.
+        // This updates commands instantly in that guild.
+        const GUILD_ID_FOR_TESTING = '1192414247196573747';
         const data = await rest.put(
-            Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), // For guild-specific commands (faster for testing)
-            { body: slashCommands },
+            Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID_FOR_TESTING),
+            { body: slashCommandsToRegister },
         );
+        console.log(`Successfully reloaded ${data.length} guild (/) commands.`);
 
-        // FOR PRODUCTION: Use Routes.applicationCommands for global deployment (takes time to propagate).
-        // Commented out for now to prioritize guild-specific testing.
-        // const data = await rest.put(
-        //     Routes.applicationCommands(CLIENT_ID), // For global commands
-        //     { body: slashCommands },
-        // );
 
-        console.log(`Successfully reloaded ${data.length} application (/) commands.`);
+        // FOR PRODUCTION (GLOBAL DEPLOYMENT): Use global commands.
+        // These commands will be available in all servers your bot is in but can take up to an hour to propagate.
+        // Uncomment the following block when you are ready for global deployment:
+        /*
+        const globalData = await rest.put(
+            Routes.applicationCommands(CLIENT_ID),
+            { body: slashCommandsToRegister },
+        );
+        console.log(`Successfully reloaded ${globalData.length} global (/) commands.`);
+        */
+
     } catch (error) {
-        // Catch any errors and log them
         console.error('Failed to register slash commands:', error);
     }
 });
 
-// Event: Message created (for prefix commands)
+// Event: Message created (for prefix commands like !ping)
 client.on('messageCreate', async message => {
-    // Ignore messages from bots to prevent infinite loops
+    // Ignore messages from bots to prevent infinite loops.
     if (message.author.bot) return;
 
-    // Ignore messages that don't start with the defined prefix
+    // Check if the message starts with the defined prefix.
     if (!message.content.startsWith(PREFIX)) return;
 
-    // Extract the command and arguments
+    // Extract the command name and arguments from the message.
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const commandName = args.shift().toLowerCase();
 
-    // Handle the !ping command
+    // Handle the !ping command.
     if (commandName === 'ping') {
-        // Calculate the bot's current latency in milliseconds
-        // client.ws.ping provides the WebSocket heartbeat latency.
         const latency_ms = Math.round(client.ws.ping);
         await message.reply({ content: `Pong! 🏓 My ping is \`${latency_ms}ms\`.` });
     }
@@ -126,24 +126,24 @@ client.on('messageCreate', async message => {
 
 // Event: Interaction created (for slash commands)
 client.on('interactionCreate', async interaction => {
-    // Only process slash command interactions
+    // Only process chat input (slash) commands.
     if (!interaction.isChatInputCommand()) return;
 
-    // Get the command from the client's commands collection
+    // Retrieve the command from the client's commands collection.
     const command = client.commands.get(interaction.commandName);
 
-    // If the command doesn't exist, return
+    // If the command doesn't exist in our collection, log an error and return.
     if (!command) {
         console.error(`No command matching ${interaction.commandName} was found.`);
         return;
     }
 
     try {
-        // Execute the command
+        // Execute the command's logic.
         await command.execute(interaction);
     } catch (error) {
         console.error(`Error executing command ${interaction.commandName}:`, error);
-        // Reply to the user if an error occurs
+        // Reply to the user if an error occurs during command execution.
         if (interaction.replied || interaction.deferred) {
             await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
         } else {
@@ -152,5 +152,18 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// Log in to Discord with your client's token
+// Log in to Discord with your bot's token.
 client.login(TOKEN);
+
+// --- Web Server for Hosting Platforms (e.g., Render) ---
+// This simple Express server ensures the application binds to a port,
+// satisfying requirements of web service hosting platforms.
+const app = express();
+
+app.get('/', (req, res) => {
+    res.send('Discord bot is running and listening for commands!');
+});
+
+app.listen(PORT, () => {
+    console.log(`Web server listening on port ${PORT}`);
+});
