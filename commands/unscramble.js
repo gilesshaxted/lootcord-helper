@@ -103,9 +103,9 @@ module.exports = {
                 // --- Debugging: Log raw embed description ---
                 debugOutput += `**Raw Embed Description:**\n\`\`\`\n${embedDescription || 'N/A'}\n\`\`\`\n`;
 
-                // Updated regex: Looks for "Word:", then optional whitespace/newlines, "fix", optional whitespace/newlines,
-                // then captures letters on the next line.
-                const wordMatch = embedDescription ? embedDescription.match(/Word:\s*[\r\n]+\s*fix\s*[\r\n]+\s*([a-zA-Z]+)/s) : null;
+                // Updated regex: Matches "Word:", then optional whitespace, then "```fix\n",
+                // then captures the letters, and then looks for "```"
+                const wordMatch = embedDescription ? embedDescription.match(/Word:\s*```fix\n([a-zA-Z]+)```/s) : null;
                 
                 // --- Debugging: Log regex match result ---
                 debugOutput += `**Regex Match Result:** \`${JSON.stringify(wordMatch)}\`\n`;
@@ -116,13 +116,13 @@ module.exports = {
 
                 if (wordMatch && wordMatch[1] && hasRewardField) {
                     // Extract only alphabetic characters from the captured segment
-                    scrambledLetters = wordMatch[1].replace(/[^a-zA-Z]/g, '').toLowerCase();
+                    scrambledLetters = wordMatch[1].toLowerCase(); // No need to replace non-alpha if regex is precise
                 }
             }
 
             if (!scrambledLetters) {
                 debugOutput += 'Could not find the scrambled word based on current regex and conditions.\n';
-                return await interaction.editReply({ content: debugOutput + 'Expected format: "Word:\\nfix\\n[letters]" and a "Reward" field.', ephemeral: false });
+                return await interaction.editReply({ content: debugOutput + 'Expected format: "Word: ```fix\\n[letters]```" and a "Reward" field.', ephemeral: false });
             }
 
         } catch (error) {
