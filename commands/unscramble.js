@@ -96,11 +96,18 @@ module.exports = {
                 const embedDescription = embed.description;
                 const embedFields = embed.fields;
 
+                // --- Debugging: Log raw embed description ---
+                debugOutput += `**Raw Embed Description:**\n\`\`\`\n${embedDescription || 'N/A'}\n\`\`\`\n`;
+
                 // Updated regex: Looks for "Word:", then "fix" on a new line, then captures letters on the next line.
                 const wordMatch = embedDescription ? embedDescription.match(/Word:\s*\n\s*fix\s*\n\s*([a-zA-Z]+)/s) : null;
                 
+                // --- Debugging: Log regex match result ---
+                debugOutput += `**Regex Match Result:** \`${JSON.stringify(wordMatch)}\`\n`;
+
                 // Check for "Reward" field
                 const hasRewardField = embedFields.some(field => field.name && field.name.includes('Reward'));
+                debugOutput += `**Has Reward Field:** \`${hasRewardField}\`\n\n`; // Debugging: Log Reward field check
 
                 if (wordMatch && wordMatch[1] && hasRewardField) {
                     // Extract only alphabetic characters from the captured segment
@@ -109,7 +116,8 @@ module.exports = {
             }
 
             if (!scrambledLetters) {
-                return await interaction.editReply({ content: 'Could not find the scrambled word in the linked message\'s embed description (expected format: "Word:\\nfix\\n[letters]" and a "Reward" field).', ephemeral: false });
+                debugOutput += 'Could not find the scrambled word based on current regex and conditions.\n';
+                return await interaction.editReply({ content: debugOutput + 'Expected format: "Word:\\nfix\\n[letters]" and a "Reward" field.', ephemeral: false });
             }
 
         } catch (error) {
@@ -122,7 +130,7 @@ module.exports = {
         }
 
         // --- Debug Output ---
-        debugOutput += `**Extracted Letters:** \`${scrambledLetters || 'N/A'}\`\n\n`;
+        debugOutput += `**Extracted Letters (Cleaned):** \`${scrambledLetters || 'N/A'}\`\n\n`;
 
         // --- Find possible words using the local dictionary ---
         const possibleWords = findAnagramsFromDictionary(scrambledLetters);
