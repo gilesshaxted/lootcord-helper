@@ -1,10 +1,13 @@
-// Import necessary Firestore functions
-const { collection, getDocs, doc, setDoc } = require('firebase/firestore');
+// This event listener will listen for messageCreate events
+// It will extract scrambled words from a specific bot's messages and find anagrams using a local dictionary file.
 
-// Configuration specific to this event listener
+const { findAnagramsFromDictionary } = require('../utils/dictionary'); // Import from new utility file
+const { collection, getDocs } = require('firebase/firestore'); // Import Firestore functions needed
+
+// Configuration specific to this listener
 const TARGET_BOT_ID = '493316754689359874'; // User ID of the other bot to listen to
 
-// Role IDs for specific enemy spawns
+// Role IDs for specific enemy spawns (moved from index.js)
 const ROLE_IDS = {
     HEAVY_SCIENTIST: '1302995091128057930',
     PATROL_HELICOPTER: '1302994990166835251',
@@ -113,11 +116,21 @@ module.exports = {
             }
         }
 
-        // --- Logic for Reverting to original name (same conditions) ---
+        // --- Logic for Reverting to original name (updated conditions) ---
         // This block will only execute if the channel was NOT renamed in the current message.
-        if (message.embeds.length > 0) {
-            const embed = message.embeds[0];
-            const revertCondition = (embed.title && embed.title.includes('left...')) || (embed.description && embed.description.includes('killed a mob'));
+        if (message.embeds.length > 0 || message.content) { // Check if there's content or embeds
+            const embed = message.embeds.length > 0 ? message.embeds[0] : null;
+
+            // Condition 1: Embed title includes 'left...'
+            const embedTitleRevert = embed && embed.title && embed.title.includes('left...');
+            
+            // Condition 2: Embed description includes 'killed a mob'
+            const embedDescriptionRevert = embed && embed.description && embed.description.includes('killed a mob');
+
+            // Condition 3: Message content contains ":deth: The **[Enemy Name] DIED!**"
+            const contentDiedRevert = message.content.includes(':deth: The **') && message.content.includes('DIED!**');
+
+            const revertCondition = embedTitleRevert || embedDescriptionRevert || contentDiedRevert;
 
             if (revertCondition) {
                 if (originalChannelName && message.channel.name !== originalChannelName) {
@@ -128,6 +141,48 @@ module.exports = {
                         console.error(`Failed to revert channel ${message.channel.name} to original name:`, error);
                     }
                 }
+            }
+        }
+
+        // --- Unscrambler Logic (now using embed description) ---
+        let scrambledLetters = null;
+        if (message.embeds.length > 0) {
+            const embed = message.embeds[0];
+            const embedDescription = embed.description;
+            const embedFields = embed.fields; // Also need to check fields for "Reward"
+
+            // Updated regex: Matches "Word:", then optional whitespace, then "```fix\n",
+            // then captures the letters, and then looks for "```"
+            const wordMatch = embedDescription ? embedDescription.match(/Word:\s*```fix\n([a-zA-Z]+)```/s) : null;
+            
+            // Check for "Reward" field as a validation
+            const hasRewardField = embedFields.some(field => field.name && field.name.includes('Reward'));
+
+            if (wordMatch && wordMatch[1] && hasRewardField) {
+                scrambledLetters = wordMatch[1].toLowerCase();
+            }
+        }
+
+        if (scrambledLetters) {
+            const possibleWords = findAnagramsFromDictionary(scrambledLetters);
+
+            let replyContent = `**Unscrambled word for \`${scrambledLetters}\`:**\n`;
+
+            if (possibleWords.length > 0) {
+                replyContent += `Possible words (from local dictionary, using all letters): \n${possibleWords.map(word => `\`${word}\``).join(', ')}`;
+            } else {
+                replyContent += `No words found in the local dictionary using all letters.`;
+            }
+
+            if (replyContent.length > 2000) {
+                replyContent = replyContent.substring(0, 1990) + '...\n(Output truncated due to character limit)';
+            }
+
+            try {
+                await message.channel.send({ content: replyContent });
+                console.log(`Unscrambler: Posted possible words for '${scrambledLetters}' in #${message.channel.name}`);
+            } catch (error) {
+                console.error(`Unscrambler: Failed to post words in #${message.channel.name}:`, error);
             }
         }
     },
