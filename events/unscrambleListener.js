@@ -1,82 +1,11 @@
 // This event listener will listen for messageCreate events
 // It will extract scrambled words from a specific bot's messages and find anagrams using an API.
 
-const https = require('https'); // Node.js HTTPS module for API calls
+// Removed direct https import and API config, now using shared helper
+const { callUnscrambleApi } = require('../utils/apiHelpers'); // Import from new utility file
 
 // Configuration specific to this listener
 const TARGET_BOT_ID = '493316754689359874'; // User ID of the other bot to listen to
-
-// --- API Configuration ---
-// IMPORTANT: Move your RapidAPI key to an environment variable for security!
-const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY; // Get API key from environment variable
-const RAPIDAPI_HOST = 'unscramble1.p.rapidapi.com';
-
-// Basic validation for API key
-if (!RAPIDAPI_KEY) {
-    console.error('Unscrambler: RAPIDAPI_KEY environment variable not set. Unscrambling will not work.');
-}
-
-// Function to call the Unscramble API
-async function callUnscrambleApi(scrambledWord) {
-    if (!RAPIDAPI_KEY) {
-        console.error('Unscrambler: API key is missing. Cannot call Unscramble API.');
-        return [];
-    }
-
-    const options = {
-        method: 'GET',
-        hostname: RAPIDAPI_HOST,
-        port: null,
-        // Path adjusted to use the scrambledWord dynamically
-        path: `/unscramble?word=${encodeURIComponent(scrambledWord)}`,
-        headers: {
-            'x-rapidapi-key': RAPIDAPI_KEY,
-            'x-rapidapi-host': RAPIDAPI_HOST
-        }
-    };
-
-    return new Promise((resolve, reject) => {
-        const req = https.request(options, (res) => {
-            const chunks = [];
-
-            res.on('data', (chunk) => {
-                chunks.push(chunk);
-            });
-
-            res.on('end', () => {
-                const body = Buffer.concat(chunks);
-                const rawResponse = body.toString(); // Get the raw string response
-
-                // --- DIAGNOSTIC LOG: Print the raw API response ---
-                console.log(`Unscrambler API raw response for '${scrambledWord}':`, rawResponse);
-
-                try {
-                    const responseData = JSON.parse(rawResponse); // Parse the response
-
-                    // Assuming the API returns an array of words directly, or an object with a 'words' key
-                    if (Array.isArray(responseData)) {
-                        resolve(responseData.map(word => word.toLowerCase()));
-                    } else if (responseData && Array.isArray(responseData.words)) {
-                        resolve(responseData.words.map(word => word.toLowerCase()));
-                    } else {
-                        console.warn('Unscrambler: Unexpected API response format:', responseData);
-                        resolve([]);
-                    }
-                } catch (parseError) {
-                    console.error('Unscrambler: Error parsing API response:', parseError);
-                    resolve([]); // Resolve with empty array on parse error
-                }
-            });
-        });
-
-        req.on('error', (e) => {
-            console.error('Unscrambler: API request error:', e);
-            reject(e); // Reject the promise on request error
-        });
-
-        req.end();
-    });
-}
 
 module.exports = {
     name: 'messageCreate', // This event listener will also listen for messageCreate events
@@ -96,7 +25,7 @@ module.exports = {
         if (contentMatch && contentMatch[1]) {
             const scrambledLetters = contentMatch[1].toLowerCase(); // Extract and convert to lowercase
 
-            // Call the API to find possible words
+            // Call the API to find possible words using the shared helper
             let possibleWords = [];
             try {
                 possibleWords = await callUnscrambleApi(scrambledLetters);
