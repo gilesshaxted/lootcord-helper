@@ -1,53 +1,6 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
-
-// --- Word Dictionary Loading ---
-// Define the path to your dictionary file.
-// This command will read 'words.txt' from the 'utils/' directory.
-const DICTIONARY_FILE_PATH = path.join(__dirname, '../utils/words.txt'); // Path to words.txt in utils folder
-let WORD_DICTIONARY_SORTED_BY_LETTERS = {}; // Dictionary to store words grouped by their sorted letters
-
-// Helper function to sort a string alphabetically
-function sortLetters(str) {
-    return str.toLowerCase().split('').sort().join('');
-}
-
-// Function to load and preprocess the dictionary from the file
-function loadAndPreprocessDictionary() {
-    try {
-        const data = fs.readFileSync(DICTIONARY_FILE_PATH, 'utf8');
-        const rawWords = data.split('\n')
-                             .map(word => word.trim().toLowerCase())
-                             .filter(word => word.length > 0);
-
-        // Preprocess the dictionary: group words by their sorted letters
-        rawWords.forEach(word => {
-            const sorted = sortLetters(word);
-            if (!WORD_DICTIONARY_SORTED_BY_LETTERS[sorted]) {
-                WORD_DICTIONARY_SORTED_BY_LETTERS[sorted] = [];
-            }
-            WORD_DICTIONARY_SORTED_BY_LETTERS[sorted].push(word);
-        });
-
-        console.log(`Unscramble Command: Loaded and preprocessed ${rawWords.length} words from ${DICTIONARY_FILE_PATH}`);
-    } catch (error) {
-        console.error(`Unscramble Command: Failed to load dictionary from ${DICTIONARY_FILE_PATH}:`, error);
-        console.error('Please ensure words.txt exists in the utils/ directory and is readable.');
-        WORD_DICTIONARY_SORTED_BY_LETTERS = {}; // Ensure dictionary is empty if loading fails
-    }
-}
-
-// Load the dictionary when the script is first required (i.e., when bot starts)
-loadAndPreprocessDictionary();
-
-// Function to find all anagrams of a given scrambled word using the preprocessed dictionary
-function findAnagramsFromDictionary(scrambledWord) {
-    const sortedScrambled = sortLetters(scrambledWord);
-    // Return a copy of the array, or an empty array if no matches
-    return WORD_DICTIONARY_SORTED_BY_LETTERS[sortedScrambled] ? [...WORD_DICTIONARY_SORTED_BY_LETTERS[sortedScrambled]] : [];
-}
-
+const { findAnagramsFromDictionary } = require('../utils/dictionary');
+const statsTracker = require('../utils/statsTracker'); // Import Stats Tracker
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -59,11 +12,10 @@ module.exports = {
                 .setRequired(true)
         ),
 
-    async execute(interaction, db, client) { // db is passed but not used by this specific command
-        await interaction.deferReply({ ephemeral: false }); // Changed to non-ephemeral for testing
+    async execute(interaction, db, client, APP_ID_FOR_FIRESTORE) { // Added APP_ID_FOR_FIRESTORE
+        await interaction.deferReply({ ephemeral: false });
 
         const messageLink = interaction.options.getString('link');
-
         const linkRegex = /discord(?:app)?\.com\/channels\/(\d+)\/(\d+)\/(\d+)/;
         const match = messageLink.match(linkRegex);
 
@@ -74,7 +26,7 @@ module.exports = {
         const [, guildId, channelId, messageId] = match;
 
         let scrambledLetters = null;
-        // debugOutput removed
+        let debugOutput = '';
 
         try {
             const guild = client.guilds.cache.get(guildId);
@@ -89,47 +41,40 @@ module.exports = {
 
             const targetMessage = await channel.messages.fetch(messageId);
 
-            // Look for the scrambled letters in the first embed's description
-            // And confirm the presence of a "Reward" field
             if (targetMessage.embeds.length > 0) {
                 const embed = targetMessage.embeds[0];
                 const embedDescription = embed.description;
                 const embedFields = embed.fields;
 
-                // Updated regex: Matches "Word:", then optional whitespace, then "```fix\n",
-                // then captures the letters, and then looks for "```"
                 const wordMatch = embedDescription ? embedDescription.match(/Word:\s*```fix\n([a-zA-Z]+)```/s) : null;
-                
-                // Check for "Reward" field
                 const hasRewardField = embedFields.some(field => field.name && field.name.includes('Reward'));
 
                 if (wordMatch && wordMatch[1] && hasRewardField) {
-                    // Extract only alphabetic characters from the captured segment
-                    scrambledLetters = wordMatch[1].toLowerCase(); // No need to replace non-alpha if regex is precise
+                    scrambledLetters = wordMatch[1].toLowerCase();
                 }
             }
 
             if (!scrambledLetters) {
-                return await interaction.editReply({ content: 'Could not find the scrambled word in the linked message\'s embed description (expected format: "Word: ```fix\\n[letters]```" and a "Reward" field).', ephemeral: false });
+                debugOutput += 'Could not find the scrambled word based on current regex and conditions.\n';
+                return await interaction.editReply({ content: debugOutput + 'Expected format: "Word: ```fix\\n[letters]```" and a "Reward" field.', ephemeral: false });
             }
 
         } catch (error) {
             console.error('Error fetching or parsing message for unscramble command:', error);
-            if (error.code === 10003 || error.code === 10008 || error.code === 50001) { // Unknown Channel, Unknown Message, Missing Access
+            if (error.code === 10003 || error.code === 10008 || error.code === 50001) {
                 return await interaction.editReply({ content: 'Could not fetch the message. Please ensure the link is correct and the bot has access to the channel and message.', ephemeral: false });
             } else {
                 await interaction.editReply({ content: 'An unexpected error occurred while trying to read the message for unscrambling. Please check the bot\'s logs.', ephemeral: false });
             }
         }
 
-        // --- Find possible words using the local dictionary ---
         const possibleWords = findAnagramsFromDictionary(scrambledLetters);
 
-        let replyContent = `**Unscrambled word for \`${scrambledLetters}\`:**\n`; // Simplified reply
+        let replyContent = `**Unscrambled word for \`${scrambledLetters}\`:**\n`;
 
         if (possibleWords.length > 0) {
-            // Sorting is now handled inside findAnagramsFromDictionary
             replyContent += `Possible words (from local dictionary, using all letters): \n${possibleWords.map(word => `\`${word}\``).join(', ')}`;
+            statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps for unscramble
         } else {
             replyContent += `No words found in the local dictionary using all letters.`;
         }
