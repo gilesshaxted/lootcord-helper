@@ -2,14 +2,14 @@
 const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
-const express = require('express');
+const express = require('express'); // Required for Render web service type
 const path = require('path');
 const fs = require('fs');
 
 // Import Firebase modules
 const { initializeApp } = require('firebase/app');
 const { getAuth, signInAnonymously, onAuthStateChanged } = require('firebase/auth');
-const { getFirestore, doc, setDoc, onSnapshot, collection } = require('firebase/firestore');
+const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs } = require('firebase/firestore');
 
 // Load environment variables from a .env file (for local testing)
 require('dotenv').config();
@@ -18,7 +18,7 @@ require('dotenv').config();
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const PREFIX = '!';
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000; // Port for the web server
 
 // Firebase configuration loaded from environment variables for Render hosting
 const firebaseConfig = {
@@ -31,7 +31,7 @@ const firebaseConfig = {
     // measurementId: process.env.FIREBASE_MEASUREMENT_ID // Uncomment if you use Measurement ID
 };
 
-// --- Pagination Specific Configuration ---
+// --- Pagination Specific Configuration (used by helper function) ---
 const CHANNELS_PER_PAGE = 25; // Max options for StringSelectMenuBuilder
 const TARGET_CATEGORY_ID = '1192414248299675663'; // Your specified category ID
 
@@ -83,7 +83,7 @@ async function initializeFirebase() {
             }
             isFirestoreReady = true;
             console.log("Firestore client initialized and ready.");
-            await setupFirestoreListeners();
+            // setupFirestoreListeners(); // Moved to client.once('ready') to ensure db is ready before listeners
         });
 
         await signInAnonymously(auth);
@@ -133,7 +133,7 @@ const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.MessageContent, // REQUIRED for reading message content
     ]
 });
 
@@ -155,7 +155,23 @@ for (const file of commandFiles) {
     }
 }
 
+// --- Event Handling Setup ---
+const eventsPath = path.join(__dirname, 'events');
+const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
+
+for (const file of eventFiles) {
+    const filePath = path.join(eventsPath, file);
+    const event = require(filePath);
+    if (event.once) {
+        client.once(event.name, (...args) => event.execute(...args, db, client, isFirestoreReady)); // Pass db, client, isFirestoreReady
+    } else {
+        client.on(event.name, (...args) => event.execute(...args, db, client, isFirestoreReady)); // Pass db, client, isFirestoreReady
+    }
+}
+
+
 // --- Helper Function for Channel Pagination UI ---
+// This function remains in index.js as it's used by interactionCreate event.
 async function createChannelPaginationMessage(guild, currentPage) {
     const allChannelsInTargetCategory = guild.channels.cache.filter(channel =>
         channel.parentId === TARGET_CATEGORY_ID &&
@@ -220,7 +236,7 @@ async function createChannelPaginationMessage(guild, currentPage) {
 }
 
 
-// --- Discord Event Handlers ---
+// --- Discord Event Handlers (main ones remaining in index.js) ---
 
 client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
@@ -234,6 +250,8 @@ client.once('ready', async () => {
     }
 
     await initializeFirebase();
+    // Ensure Firestore listeners are set up AFTER Firebase is initialized and auth state is determined
+    await setupFirestoreListeners();
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
@@ -252,22 +270,13 @@ client.once('ready', async () => {
     }
 });
 
-client.on('messageCreate', async message => {
-    if (message.author.bot) return;
-    if (!message.content.startsWith(PREFIX)) return;
-
-    const args = message.content.slice(PREFIX.length).trim().split(/ +/);
-    const commandName = args.shift().toLowerCase();
-
-    if (commandName === 'ping') {
-        const latency_ms = Math.round(client.ws.ping);
-        await message.reply({ content: `Pong! 🏓 My ping is \`${latency_ms}ms\`.` });
-    }
-});
-
+// The messageCreate event listener is now in events/messageCreate.js
+// The interactionCreate event listener remains here because it handles
+// both slash commands and component interactions (buttons, select menus).
 client.on('interactionCreate', async interaction => {
+    // Crucial: Check if Firestore is ready before processing any interaction that might use it
     if (!isFirestoreReady) {
-        console.error('Firestore is not yet ready to process interactions.');
+        console.error('Firestore is not yet ready to process interactions. Skipping interaction.');
         if (interaction.isChatInputCommand() && !interaction.deferred && !interaction.replied) {
             await interaction.reply({ content: 'The bot is still starting up. Please try the command again in a moment.', ephemeral: true });
         }
@@ -284,21 +293,21 @@ client.on('interactionCreate', async interaction => {
         }
 
         try {
-            // For /channel-set, we now handle the initial reply here
+            // For /channel-set, we handle the initial reply here
             if (command.data.name === 'channel-set') {
                 await interaction.deferReply({ flags: MessageFlags.Ephemeral });
                 const { content, components } = await createChannelPaginationMessage(interaction.guild, 0);
                 await interaction.editReply({ content, components, flags: MessageFlags.Ephemeral });
             } else {
-                // For other commands, execute as normal
+                // For other commands, execute as normal (passing db if needed by the command)
                 await command.execute(interaction, db);
             }
         } catch (error) {
             console.error(`Error executing command ${command.data.name}:`, error);
-            if (interaction.replied || interaction.deferred) {
-                await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
-            } else {
+            if (!interaction.replied && !interaction.deferred) {
                 await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
+            } else if (interaction.deferred) {
+                await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
             }
         }
     }
@@ -324,9 +333,9 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // Handle Channel Select Menu Interactions
-    if (interaction.isStringSelectMenu()) { // Changed from isChannelSelectMenu to isStringSelectMenu
-        if (interaction.customId.startsWith('select-channels-to-set_page_')) { // Updated customId check
+    // Handle String Select Menu Interactions (for channel selection)
+    if (interaction.isStringSelectMenu()) {
+        if (interaction.customId.startsWith('select-channels-to-set_page_')) {
             await interaction.deferUpdate(); // Acknowledge the component interaction
 
             const selectedChannelIds = interaction.values; // Array of selected channel IDs
@@ -356,6 +365,7 @@ client.on('interactionCreate', async interaction => {
                 const channelDocRef = doc(channelsSubCollectionRef, channel.id);
 
                 try {
+                    // Ensure guild document exists or is created
                     await setDoc(guildDocRef, {
                         guildId: guild.id,
                         guildName: guild.name,
@@ -363,9 +373,11 @@ client.on('interactionCreate', async interaction => {
                         lastUpdated: new Date().toISOString()
                     }, { merge: true });
 
+                    // Store original channel name here
                     await setDoc(channelDocRef, {
                         channelId: channel.id,
-                        channelName: channel.name,
+                        channelName: channel.name, // Current name
+                        originalChannelName: channel.name, // Store original name for reverting
                         setType: 'manual',
                         setByUserId: interaction.user.id,
                         setByUsername: interaction.user.tag,
@@ -387,7 +399,6 @@ client.on('interactionCreate', async interaction => {
                 replyContent += `\nFailed to set ${failureCount} channel(s). Check logs for details.`;
             }
 
-            // Edit the original message to show the result, removing components
             await interaction.editReply({ content: replyContent, components: [], flags: MessageFlags.Ephemeral });
         }
     }
