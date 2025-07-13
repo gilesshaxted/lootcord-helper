@@ -12,8 +12,9 @@ module.exports = {
         ),
 
     // The execute function now accepts the 'client' object as an argument.
-    async execute(interaction, db, client) { // Added client as a parameter
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral }); // Acknowledge interaction
+    async execute(interaction, db, client) { // db is passed but not used by this specific command
+        // Changed to non-ephemeral for testing
+        await interaction.deferReply({ ephemeral: false });
 
         const messageLink = interaction.options.getString('link');
 
@@ -23,21 +24,24 @@ module.exports = {
         const match = messageLink.match(linkRegex);
 
         if (!match) {
-            return await interaction.editReply({ content: 'Invalid Discord message link provided. Please ensure it is a direct link to a message.', flags: MessageFlags.Ephemeral });
+            // Changed to non-ephemeral for testing
+            return await interaction.editReply({ content: 'Invalid Discord message link provided. Please ensure it is a direct link to a message.', ephemeral: false });
         }
 
         const [, guildId, channelId, messageId] = match;
 
         try {
-            // client is now passed as an argument to the execute function
+            // client is passed as an argument to the execute function
             const guild = client.guilds.cache.get(guildId);
             if (!guild) {
-                return await interaction.editReply({ content: 'Could not find the guild specified in the link. Is the bot in that guild?', flags: MessageFlags.Ephemeral });
+                // Changed to non-ephemeral for testing
+                return await interaction.editReply({ content: 'Could not find the guild specified in the link. Is the bot in that guild?', ephemeral: false });
             }
 
             const channel = guild.channels.cache.get(channelId);
             if (!channel) {
-                return await interaction.editReply({ content: 'Could not find the channel specified in the link. Is the bot in that channel?', flags: MessageFlags.Ephemeral });
+                // Changed to non-ephemeral for testing
+                return await interaction.editReply({ content: 'Could not find the channel specified in the link. Is the bot in that channel?', ephemeral: false });
             }
 
             const targetMessage = await channel.messages.fetch(messageId);
@@ -115,19 +119,21 @@ module.exports = {
             // Discord has a message character limit of 2000.
             // If the breakdown is too long, send it in multiple messages or truncate.
             if (breakdown.length > 2000) {
-                // For simplicity, we'll truncate. For production, you might send multiple messages.
                 breakdown = breakdown.substring(0, 1990) + '...\n(Output truncated due to character limit)';
             }
 
-            await interaction.editReply({ content: breakdown, flags: MessageFlags.Ephemeral });
+            // Changed to non-ephemeral for testing
+            await interaction.editReply({ content: breakdown, ephemeral: false });
 
         } catch (error) {
             console.error('Error fetching or breaking down message:', error);
             // Check if the error is due to unknown message/channel/guild
             if (error.code === 10003 || error.code === 10008 || error.code === 50001) { // Unknown Channel, Unknown Message, Missing Access
-                await interaction.editReply({ content: 'Could not fetch the message. Please ensure the link is correct and the bot has access to the channel and message.', flags: MessageFlags.Ephemeral });
+                // Changed to non-ephemeral for testing
+                await interaction.editReply({ content: 'Could not fetch the message. Please ensure the link is correct and the bot has access to the channel and message.', ephemeral: false });
             } else {
-                await interaction.editReply({ content: 'An unexpected error occurred while trying to read the message. Please check the bot\'s logs.', flags: MessageFlags.Ephemeral });
+                // Changed to non-ephemeral for testing
+                await interaction.editReply({ content: 'An unexpected error occurred while trying to read the message. Please check the bot\'s logs.', ephemeral: false });
             }
         }
     },
