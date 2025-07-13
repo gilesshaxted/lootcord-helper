@@ -25,38 +25,32 @@ module.exports = {
             return;
         }
 
-        let repostContent = `--- Message from <@${TARGET_BOT_ID}> in <#${message.channel.id}> ---\n\n`;
+        let repostContent = `--- Raw Message from <@${TARGET_BOT_ID}> in <#${message.channel.id}> ---\n\n`;
 
-        // Break down message content
-        if (message.content) {
-            repostContent += `**Content:**\n\`\`\`\n${message.content}\n\`\`\`\n`;
-        } else {
-            repostContent += `**Content:** (None)\n`;
-        }
-
-        // Break down embed details if present
-        if (message.embeds.length > 0) {
-            const embed = message.embeds[0]; // Assuming we're interested in the first embed
-
-            repostContent += `**Embed Details:**\n`;
-            if (embed.title) {
-                repostContent += `  **Title:** \`${embed.title}\`\n`;
+        // Stringify the entire message object for raw output
+        // Truncate to stay within Discord's 2000 character limit per message
+        const rawMessageJson = JSON.stringify(message, (key, value) => {
+            // Avoid circular references and excessively large objects
+            if (key === 'client' || key === 'guild' || key === 'channel' || key === 'author' || key === 'member' || key === 'reactions' || key === 'attachments' || key === 'components') {
+                return undefined; // Exclude large or circular properties
             }
-            if (embed.description) {
-                repostContent += `  **Description:**\n\`\`\`\n${embed.description}\n\`\`\`\n`;
-            }
-            // You can add more embed fields here if needed (e.g., embed.fields, embed.footer, embed.image)
-        } else {
-            repostContent += `**Embeds:** (None)\n`;
-        }
+            return value;
+        }, 2); // Use 2 spaces for indentation
 
+        // Truncate if necessary to fit in Discord message
+        const MAX_JSON_LENGTH = 1800; // Leave room for other text
+        const truncatedJson = rawMessageJson.length > MAX_JSON_LENGTH
+            ? rawMessageJson.substring(0, MAX_JSON_LENGTH) + '...\n(Truncated)'
+            : rawMessageJson;
+
+        repostContent += `\`\`\`json\n${truncatedJson}\n\`\`\`\n`;
         repostContent += `------------------------------------\n`;
 
         try {
             await repostChannel.send({ content: repostContent });
-            console.log(`Test listener: Reposted message from ${message.author.tag} in ${message.channel.name} to ${repostChannel.name}`);
+            console.log(`Test listener: Reposted raw message from ${message.author.tag} in ${message.channel.name} to ${repostChannel.name}`);
         } catch (error) {
-            console.error(`Test listener: Failed to repost message to channel ${repostChannel.name}:`, error);
+            console.error(`Test listener: Failed to repost raw message to channel ${repostChannel.name}:`, error);
         }
     },
 };
