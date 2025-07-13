@@ -1,6 +1,6 @@
 {
   "name": "Lootcord-Helper",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "A discord bot designed to interact with Lootcord bot and help it's players.",
   "main": "index.js",
   "scripts": {
@@ -15,6 +15,7 @@
   "license": "ISC",
   "dependencies": {
     "discord.js": "^14.15.3",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
   }
 }
