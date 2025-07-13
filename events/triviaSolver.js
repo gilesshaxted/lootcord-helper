@@ -1,20 +1,28 @@
 // This event listener will listen for messageCreate events
 // It will detect trivia questions from a specific bot, use an LLM to find the answer, and post it.
 
+const statsTracker = require('../utils/statsTracker'); // Import Stats Tracker
+
 // Configuration specific to this listener
 const TARGET_BOT_ID = '493316754689359874'; // User ID of the other bot posting trivia
 
 module.exports = {
-    name: 'messageCreate', // This event listener will listen for messageCreate events
+    name: 'messageCreate', // This event listener will also listen for messageCreate events
     once: false, // This event should run every time a relevant message is created
-    // The execute function receives the message object, plus db, client, and isFirestoreReady from index.js
-    async execute(message, db, client, isFirestoreReady) { // db and isFirestoreReady are passed but not used by this specific listener
+    // The execute function receives the message object, plus db, client, isFirestoreReady, and APP_ID_FOR_FIRESTORE from index.js
+    async execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
         // Ignore messages from bots other than the target bot, or from this bot itself
         if (message.author.bot && message.author.id !== TARGET_BOT_ID) return;
         if (message.author.id === client.user.id) return; // Ignore messages from this bot itself
 
         // Only process messages in guilds
         if (!message.guild) return;
+
+        // Crucial: Check if Firestore is ready before attempting any DB operations (for stats tracking)
+        if (!isFirestoreReady) {
+            console.warn('Trivia Solver: Firestore not ready. Skipping processing.');
+            return;
+        }
 
         // Check if the message has an embed and if it's a trivia message
         if (message.embeds.length > 0) {
@@ -38,7 +46,13 @@ ${options}`;
                     const chatHistory = [];
                     chatHistory.push({ role: "user", parts: [{ text: prompt }] });
                     const payload = { contents: chatHistory };
-                    const apiKey = ""; // Canvas will automatically provide this in runtime
+                    const apiKey = process.env.GOOGLE_API_KEY; // Get API key from environment variable
+
+                    if (!apiKey) {
+                        console.error('Trivia Solver: GOOGLE_API_KEY environment variable not set. Cannot solve trivia.');
+                        return;
+                    }
+
                     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
                     const response = await fetch(apiUrl, {
@@ -56,11 +70,11 @@ ${options}`;
                         // Ensure the answer is just a single letter (A, B, C, D)
                         llmAnswer = llmAnswer.charAt(0).toUpperCase();
                     } else {
-                        console.warn('Trivia Solver: LLM response structure unexpected or empty.');
+                        console.warn('Trivia Solver: LLM response structure unexpected or empty for question:', question);
                     }
 
                 } catch (error) {
-                    console.error('Trivia Solver: Error calling LLM API:', error);
+                    console.error('Trivia Solver: Error calling LLM API for question:', question, error);
                 }
 
                 if (llmAnswer) {
@@ -68,6 +82,7 @@ ${options}`;
                         // Post the answer in the same channel
                         await message.channel.send({ content: `${llmAnswer}` });
                         console.log(`Trivia Solver: Answered '${question}' with '${llmAnswer}' in #${message.channel.name}`);
+                        statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps for answering trivia
                     } catch (error) {
                         console.error(`Trivia Solver: Failed to post answer in #${message.channel.name}:`, error);
                     }
