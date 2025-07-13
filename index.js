@@ -1,10 +1,10 @@
 // Import necessary classes from the discord.js library
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 const express = require('express');
-const path = require('path'); // For resolving file paths
-const fs = require('fs');     // For reading command files
+const path = require('path');
+const fs = require('fs');
 
 // Import Firebase modules
 const { initializeApp } = require('firebase/app');
@@ -30,6 +30,10 @@ const firebaseConfig = {
     appId: process.env.FIREBASE_APP_ID,
     // measurementId: process.env.FIREBASE_MEASUREMENT_ID // Uncomment if you use Measurement ID
 };
+
+// --- Pagination Specific Configuration ---
+const CHANNELS_PER_PAGE = 25; // Max options for StringSelectMenuBuilder
+const TARGET_CATEGORY_ID = '1192414248299675663'; // Your specified category ID
 
 // --- Basic Validation for Environment Variables ---
 if (!TOKEN) {
@@ -63,53 +67,41 @@ let isFirestoreReady = false; // Flag to indicate Firebase Firestore instance is
 // Function to initialize Firebase and authenticate
 async function initializeFirebase() {
     try {
-        // --- DIAGNOSTIC LOG: Print the firebaseConfig object being used ---
-        console.log('Firebase config being used:', firebaseConfig);
+        console.log('Firebase config being used:', firebaseConfig); // Diagnostic log
 
         firebaseApp = initializeApp(firebaseConfig);
-        db = getFirestore(firebaseApp); // db is assigned here
+        db = getFirestore(firebaseApp);
         auth = getAuth(firebaseApp);
 
-        // Listen for auth state changes
         onAuthStateChanged(auth, async (user) => {
             if (user) {
                 userId = user.uid;
                 console.log(`Firebase authenticated. User ID: ${userId}`);
             } else {
-                // This path is expected for anonymous sign-in if no user is initially found
-                userId = crypto.randomUUID(); // Fallback for anonymous/unauthenticated
+                userId = crypto.randomUUID();
                 console.log(`Firebase not authenticated. Using anonymous/random User ID: ${userId}`);
             }
-            // Once auth state is determined and db is assigned, mark Firestore as ready
             isFirestoreReady = true;
             console.log("Firestore client initialized and ready.");
-            await setupFirestoreListeners(); // Now that db is ready, set up listeners
+            await setupFirestoreListeners();
         });
 
-        // Attempt to sign in anonymously (since __initial_auth_token is not available on Render)
-        // This is where 'auth/configuration-not-found' typically occurs if authDomain is missing/wrong.
         await signInAnonymously(auth);
         console.log('Attempted anonymous sign-in to Firebase.');
 
     } catch (error) {
         console.error('Error initializing Firebase or signing in:', error);
-        // Do not exit here, allow the bot to continue running without Firestore if it's a non-critical error
-        // However, for auth/configuration-not-found, it's usually fatal for Firestore operations.
     }
 }
 
 // Function to set up Firestore listeners
 async function setupFirestoreListeners() {
-    // Ensure Firestore is initialized and auth state is ready before proceeding
-    if (!db || !userId || !isFirestoreReady) { // Use isFirestoreReady flag
+    if (!db || !userId || !isFirestoreReady) {
         console.warn('Firestore, User ID, or Auth not ready for listeners. Skipping setup.');
         return;
     }
 
-    // Define the app ID for Firestore paths (can be a fixed string or derived from your Render service ID)
     const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
-
-    // Example: Listen to a public bot status document
     const botStatusDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/botStatus`), 'mainStatus');
 
     onSnapshot(botStatusDocRef, (docSnap) => {
@@ -122,7 +114,6 @@ async function setupFirestoreListeners() {
         console.error("Error listening to bot status:", error);
     });
 
-    // Example: Update bot status in Firestore on ready
     try {
         await setDoc(botStatusDocRef, {
             status: 'Online',
@@ -164,21 +155,92 @@ for (const file of commandFiles) {
     }
 }
 
+// --- Helper Function for Channel Pagination UI ---
+async function createChannelPaginationMessage(guild, currentPage) {
+    const allChannelsInTargetCategory = guild.channels.cache.filter(channel =>
+        channel.parentId === TARGET_CATEGORY_ID &&
+        channel.type === ChannelType.GuildText
+    ).sort((a, b) => a.position - b.position);
+
+    const totalChannels = allChannelsInTargetCategory.size;
+    const totalPages = Math.ceil(totalChannels / CHANNELS_PER_PAGE);
+
+    if (totalChannels === 0) {
+        return {
+            content: `No text channels found in the specified category (<#${TARGET_CATEGORY_ID}>) that the bot can see.`,
+            components: []
+        };
+    }
+
+    // Ensure currentPage is within bounds
+    if (currentPage < 0) currentPage = 0;
+    if (currentPage >= totalPages) currentPage = totalPages - 1;
+
+    const channelsForPage = allChannelsInTargetCategory.toJSON().slice(
+        currentPage * CHANNELS_PER_PAGE,
+        (currentPage + 1) * CHANNELS_PER_PAGE
+    );
+
+    const selectOptions = channelsForPage.map(channel => ({
+        label: channel.name,
+        value: channel.id,
+    }));
+
+    const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId(`select-channels-to-set_page_${currentPage}`) // Embed page in custom ID
+        .setPlaceholder(`Select channels (Page ${currentPage + 1}/${totalPages})...`)
+        .setMinValues(1)
+        .setMaxValues(selectOptions.length > 0 ? selectOptions.length : 1)
+        .addOptions(selectOptions);
+
+    const prevButton = new ButtonBuilder()
+        .setCustomId(`page_prev_${currentPage}`)
+        .setLabel('Previous Page')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(currentPage === 0);
+
+    const nextButton = new ButtonBuilder()
+        .setCustomId(`page_next_${currentPage}`)
+        .setLabel('Next Page')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(currentPage === totalPages - 1);
+
+    const selectRow = new ActionRowBuilder().addComponents(selectMenu);
+    const buttonRow = new ActionRowBuilder().addComponents(prevButton, nextButton);
+
+    let contentMessage = `Please select channels from the category (<#${TARGET_CATEGORY_ID}>). Page ${currentPage + 1} of ${totalPages}:`;
+    if (totalChannels > CHANNELS_PER_PAGE) {
+        contentMessage += `\n(Showing ${channelsForPage.length} of ${totalChannels} channels)`;
+    }
+
+    return {
+        content: contentMessage,
+        components: [selectRow, buttonRow]
+    };
+}
+
+
 // --- Discord Event Handlers ---
 
 client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
     console.log('------');
 
-    // Initialize Firebase and authenticate when the bot is ready
-    await initializeFirebase(); // Ensure this completes before proceeding with commands
+    if (client.guilds.cache.size > 0) {
+        const firstGuild = client.guilds.cache.first();
+        console.log(`Bot is in guild: ${firstGuild.name} (ID: ${firstGuild.id})`);
+    } else {
+        console.log('Bot is not in any guilds yet.');
+    }
+
+    await initializeFirebase();
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
     try {
         console.log(`Started refreshing ${slashCommandsToRegister.length} application (/) commands.`);
 
-        const GUILD_ID_FOR_TESTING = '1192414247196573747'; // Your specific guild ID for testing
+        const GUILD_ID_FOR_TESTING = '1192414247196573747';
         const data = await rest.put(
             Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID_FOR_TESTING),
             { body: slashCommandsToRegister },
@@ -186,62 +248,4 @@ client.once('ready', async () => {
         console.log(`Successfully reloaded ${data.length} guild (/) commands.`);
 
     } catch (error) {
-        console.error('Failed to register slash commands:', error);
-    }
-});
-
-client.on('messageCreate', async message => {
-    if (message.author.bot) return;
-    if (!message.content.startsWith(PREFIX)) return;
-
-    const args = message.content.slice(PREFIX.length).trim().split(/ +/);
-    const commandName = args.shift().toLowerCase();
-
-    if (commandName === 'ping') {
-        const latency_ms = Math.round(client.ws.ping);
-        await message.reply({ content: `Pong! 🏓 My ping is \`${latency_ms}ms\`.` });
-    }
-});
-
-client.on('interactionCreate', async interaction => {
-    if (!interaction.isChatInputCommand()) return;
-
-    // Check if Firestore is ready before attempting to execute a command that uses it
-    if (!isFirestoreReady) {
-        console.error('Firestore is not yet ready to process commands.');
-        return await interaction.reply({ content: 'The bot is still starting up. Please try the command again in a moment.', ephemeral: true });
-    }
-
-    const command = client.commands.get(interaction.commandName);
-
-    if (!command) {
-        console.error(`No command matching ${interaction.commandName} was found.`);
-        return;
-    }
-
-    try {
-        // Pass the Firestore database instance to the command's execute function
-        await command.execute(interaction, db);
-    } catch (error) {
-        console.error(`Error executing command ${command.data.name}:`, error); // Use command.data.name for better logging
-        if (interaction.replied || interaction.deferred) {
-            await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
-        } else {
-            await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
-        }
-    }
-});
-
-// Log in to Discord with your bot's token.
-client.login(TOKEN);
-
-// --- Web Server for Hosting Platforms (e.g., Render) ---
-const app = express();
-
-app.get('/', (req, res) => {
-    res.send('Discord bot is running and listening for commands!');
-});
-
-app.listen(PORT, () => {
-    console.log(`Web server listening on port ${PORT}`);
-});
+        console.error('Fai
