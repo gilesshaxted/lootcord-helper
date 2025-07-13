@@ -269,7 +269,7 @@ client.once('ready', async () => {
     }
 });
 
-// The messageCreate event listener is now in events/messageCreate.js
+// The messageCreate event listener is now in events/MobDetect.js (renamed)
 
 // The interactionCreate event listener remains here because it handles
 // both slash commands and component interactions (buttons, select menus).
