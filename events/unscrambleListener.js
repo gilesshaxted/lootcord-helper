@@ -9,8 +9,8 @@ const TARGET_BOT_ID = '493316754689359874'; // User ID of the other bot to liste
 
 // --- Word Dictionary Loading ---
 // Define the path to your dictionary file.
-// You MUST create a 'words.txt' file in the same directory as this listener (events/ directory).
-const DICTIONARY_FILE_PATH = path.join(__dirname, 'words.txt');
+// You MUST create a 'words.txt' file in the 'utils/' directory.
+const DICTIONARY_FILE_PATH = path.join(__dirname, '../utils/words.txt'); // Updated path
 let WORD_DICTIONARY_SORTED_BY_LETTERS = {}; // Dictionary to store words sorted by their letters
 
 // Helper function to sort a string alphabetically
@@ -38,7 +38,7 @@ function loadAndPreprocessDictionary() {
         console.log(`Unscrambler: Loaded and preprocessed ${rawWords.length} words from ${DICTIONARY_FILE_PATH}`);
     } catch (error) {
         console.error(`Unscrambler: Failed to load dictionary from ${DICTIONARY_FILE_PATH}:`, error);
-        console.error('Please ensure words.txt exists in the events/ directory and is readable.');
+        console.error('Please ensure words.txt exists in the utils/ directory and is readable.');
         WORD_DICTIONARY_SORTED_BY_LETTERS = {}; // Ensure dictionary is empty if loading fails
     }
 }
