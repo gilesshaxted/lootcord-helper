@@ -33,13 +33,22 @@ module.exports = {
                 const options = embed.description; // e.g., "**A**: 17\n**B**: 18\n**C**: 15\n**D**: 16"
 
                 // Construct the prompt for the LLM
-                const prompt = `Answer the following multiple-choice question by selecting only the letter (A, B, C, or D) that corresponds to the correct answer. Do not provide any other text, explanation, or punctuation.
+                // Updated prompt to ask for most likely, alternative, and explanation
+                const prompt = `Answer the following multiple-choice question. Provide the single most likely correct answer (A, B, C, or D). If there is a plausible alternative answer, provide one. Also, provide a brief explanation for the choices. Format your response strictly as:
+Most Likely: [Letter]
+Possible Alternative: [Letter] (if applicable, otherwise omit this line)
+Explanation:
+[Brief explanation of why the choices are correct/incorrect]
 
 Question: ${question}
 Options:
 ${options}`;
 
-                let llmAnswer = null;
+                let llmAnswerRaw = null;
+                let mostLikelyAnswer = null;
+                let possibleAlternative = null;
+                let explanation = null;
+
                 try {
                     // Call the LLM (Gemini API)
                     const chatHistory = [];
@@ -65,9 +74,23 @@ ${options}`;
                     if (result.candidates && result.candidates.length > 0 &&
                         result.candidates[0].content && result.candidates[0].content.parts &&
                         result.candidates[0].content.parts.length > 0) {
-                        llmAnswer = result.candidates[0].content.parts[0].text.trim();
-                        // Ensure the answer is just a single letter (A, B, C, D)
-                        llmAnswer = llmAnswer.charAt(0).toUpperCase();
+                        llmAnswerRaw = result.candidates[0].content.parts[0].text.trim();
+
+                        // Parse the LLM's response based on the new format
+                        const mostLikelyMatch = llmAnswerRaw.match(/Most Likely:\s*([A-D])/i);
+                        const alternativeMatch = llmAnswerRaw.match(/Possible Alternative:\s*([A-D])/i);
+                        const explanationMatch = llmAnswerRaw.match(/Explanation:\s*([\s\S]*)/i); // Capture everything after "Explanation:"
+
+                        if (mostLikelyMatch && mostLikelyMatch[1]) {
+                            mostLikelyAnswer = mostLikelyMatch[1].toUpperCase();
+                        }
+                        if (alternativeMatch && alternativeMatch[1]) {
+                            possibleAlternative = alternativeMatch[1].toUpperCase();
+                        }
+                        if (explanationMatch && explanationMatch[1]) {
+                            explanation = explanationMatch[1].trim();
+                        }
+
                     } else {
                         console.warn('Trivia Solver: LLM response structure unexpected or empty for question:', question);
                     }
@@ -76,17 +99,36 @@ ${options}`;
                     console.error('Trivia Solver: Error calling LLM API for question:', question, error);
                 }
 
-                if (llmAnswer) {
+                let replyContent = `**Trivia Answer for:** \`${question}\`\n`;
+                if (mostLikelyAnswer) {
+                    replyContent += `Most Likely: \`${mostLikelyAnswer}\`\n`;
+                    if (possibleAlternative) {
+                        replyContent += `Possible Alternative: \`${possibleAlternative}\`\n`;
+                    }
+                    if (explanation) {
+                        replyContent += `\n**Explanation:**\n\`\`\`\n${explanation}\n\`\`\``;
+                    }
+                    statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps for answering trivia
+                } else {
+                    replyContent += `Could not determine the answer using LLM.`;
+                    if (llmAnswerRaw) {
+                         replyContent += `\nRaw LLM Output: \n\`\`\`\n${llmAnswerRaw.substring(0, 500)}...\n\`\`\``; // Truncate raw output
+                    }
+                }
+
+                if (replyContent.length > 2000) {
+                    replyContent = replyContent.substring(0, 1990) + '...\n(Output truncated due to character limit)';
+                }
+
+                if (mostLikelyAnswer) { // Only send if we got a primary answer
                     try {
-                        // Post the answer in the same channel
-                        await message.channel.send({ content: `${llmAnswer}` });
-                        console.log(`Trivia Solver: Answered '${question}' with '${llmAnswer}' in #${message.channel.name}`);
-                        statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps for answering trivia
+                        await message.channel.send({ content: replyContent });
+                        console.log(`Trivia Solver: Answered '${question}' with '${mostLikelyAnswer}' in #${message.channel.name}`);
                     } catch (error) {
                         console.error(`Trivia Solver: Failed to post answer in #${message.channel.name}:`, error);
                     }
                 } else {
-                    console.log(`Trivia Solver: Could not determine answer for '${question}'.`);
+                    console.log(`Trivia Solver: Could not determine primary answer for '${question}'.`);
                 }
             }
         }
