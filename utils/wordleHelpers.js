@@ -41,14 +41,4 @@ const EMOJI_MAP = {
     ':gray_v:': { color: 'gray', letter: 'v' }, ':gray_w:': { color: 'gray', letter: 'w' }, ':gray_x:': { color: 'gray', letter: 'x' },
     ':gray_y:': { color: 'gray', letter: 'y' }, ':gray_z:': { color: 'gray', letter: 'z' },
 
-    // Placeholder gray square
-    ':medium_gray_square:': { color: 'placeholder', letter: '' }
-};
-
-// Updated regex to find all Discord custom emoji formats
-const EMOJI_REGEX = /<:([a-z_]+):(\d+)>/g;
-
-/**
- * Parses a single row of emoji results into structured letter feedback.
- * @param {string} emojiRowString E.g., "<:gray_a:ID><:green_r:ID>..."
- * @returns {Array<{letter: string, color: string, position: number}>} Array
+    // Placeholder g
