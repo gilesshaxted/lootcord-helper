@@ -1,5 +1,5 @@
 // Import necessary classes from the discord.js library
-const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder } = require('discord.js'); // Added AttachmentBuilder
+const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 const express = require('express');
@@ -179,25 +179,11 @@ for (const file of eventFiles) {
     const filePath = path.join(eventsPath, file);
     const event = require(filePath);
     if (event.once) {
-        client.once(event.name, (message, ...args) => event.execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE, ...args));
+        client.once(event.name, (message, ...args) => event.execute(message, db, client, APP_ID_FOR_FIRESTORE, ...args));
     } else {
         client.on(event.name, (message, ...args) => event.execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE, ...args));
     }
 }
-
-
-// --- Helper Function for Channel Pagination UI ---
-// This function is now imported from utils/pagination.js
-// async function createChannelPaginationMessage(guild, currentPage) { ... }
-
-
-// --- Bot Status Update Function ---
-// This function is now part of statsTracker.js
-// function updateBotStatus() { ... }
-
-// --- Function to check and rename channels on startup (Downtime Recovery) ---
-// This function is now part of utils/startupChecks.js
-// async function checkAndRenameChannelsOnStartup() { ... }
 
 
 // --- Discord Event Handlers (main ones remaining in index.js) ---
@@ -238,7 +224,7 @@ client.once('ready', async () => {
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
 });
 
-// --- NEW: Handle !wordlelog command ---
+// --- Handle !wordlelog command ---
 const WORDLE_LOG_CHANNEL_ID = '1394316724819591318'; // The channel where Wordle games are played
 const WORDLE_LOG_REQUESTER_ID = '444211741774184458'; // User ID of the authorized requester
 
@@ -307,7 +293,6 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isButton()) {
         // Removed Wordle game start button handling from here
         if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
-            // Existing pagination button handling
             await interaction.deferUpdate();
 
             const parts = interaction.customId.split('_');
@@ -321,7 +306,7 @@ client.on('interactionCreate', async interaction => {
                 newPage++;
             }
 
-            const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage); // Use helper
+            const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage);
             await interaction.editReply({ content, components, ephemeral: false });
         }
     }
