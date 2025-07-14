@@ -131,11 +131,13 @@ async function setupFirestoreListeners() {
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
             statsTracker.updateInMemoryStats(docSnap.data());
-            statsTracker.updateBotStatus(client); // Pass client to updateBotStatus
+            // Trigger status update only when stats change from Firestore
+            statsTracker.updateBotStatus(client);
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
             statsTracker.initializeStats({});
-            statsTracker.updateBotStatus(client); // Pass client to updateBotStatus
+            // Trigger status update for initial defaults
+            statsTracker.updateBotStatus(client);
         }
     }, (error) => {
         console.error("Stats Tracker: Error listening to botStats:", error);
@@ -179,27 +181,11 @@ for (const file of eventFiles) {
     const filePath = path.join(eventsPath, file);
     const event = require(filePath);
     if (event.once) {
-        // Pass message as the first argument, followed by other context variables
         client.once(event.name, (message, ...args) => event.execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE, ...args));
     } else {
-        // Pass message as the first argument, followed by other context variables
         client.on(event.name, (message, ...args) => event.execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE, ...args));
     }
 }
-
-
-// --- Helper Function for Channel Pagination UI ---
-// This function is now imported from utils/pagination.js
-// async function createChannelPaginationMessage(guild, currentPage) { ... }
-
-
-// --- Bot Status Update Function ---
-// This function is now part of statsTracker.js
-// function updateBotStatus() { ... }
-
-// --- Function to check and rename channels on startup (Downtime Recovery) ---
-// This function is now part of utils/startupChecks.js
-// async function checkAndRenameChannelsOnStartup() { ... }
 
 
 // --- Discord Event Handlers (main ones remaining in index.js) ---
@@ -216,7 +202,7 @@ client.once('ready', async () => {
     }
 
     await initializeFirebase();
-    await setupFirestoreListeners();
+    await setupFirestoreListeners(); // This sets up the onSnapshot for stats, which will trigger updateBotStatus
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
@@ -234,18 +220,17 @@ client.once('ready', async () => {
         console.error('Failed to register slash commands:', error);
     }
 
-    // Removed setInterval for updateBotStatus to test manual/onSnapshot updates
-    // setInterval(() => statsTracker.updateBotStatus(client), 300000);
+    // Removed setInterval for updateBotStatus. It is now triggered by onSnapshot.
+    // statsTracker.updateBotStatus(client); // Initial call is handled by onSnapshot's first trigger.
 
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
 });
 
-// --- NEW: Handle !wordlelog command ---
-const WORDLE_LOG_CHANNEL_ID = '1394316724819591318'; // The channel where Wordle games are played
-const WORDLE_LOG_REQUESTER_ID = '444211741774184458'; // User ID of the authorized requester
+// --- Handle !wordlelog command ---
+const WORDLE_LOG_CHANNEL_ID = '1394316724819591318';
+const WORDLE_LOG_REQUESTER_ID = '444211741774184458';
 
 client.on('messageCreate', async message => {
-    // Check for !wordlelog command
     if (message.author.id === WORDLE_LOG_REQUESTER_ID && message.content === '!wordlelog') {
         if (message.channel.id !== WORDLE_LOG_CHANNEL_ID) {
             await message.reply('This command can only be used in the designated Wordle channel.');
@@ -253,11 +238,10 @@ client.on('messageCreate', async message => {
         }
 
         try {
-            // Fetch last 50 messages from the Wordle channel
             const messages = await message.channel.messages.fetch({ limit: 50 });
             let logContent = `--- Wordle Channel Log (${message.channel.name}) ---\n\n`;
 
-            messages.reverse().forEach(msg => { // Reverse to show oldest first
+            messages.reverse().forEach(msg => {
                 logContent += `[${msg.createdAt.toISOString()}] ${msg.author.tag} (${msg.author.id}):\n`;
                 if (msg.content) {
                     logContent += `  Content: "${msg.content}"\n`;
@@ -294,8 +278,6 @@ client.on('messageCreate', async message => {
 });
 
 
-// The interactionCreate event listener remains here because it handles
-// both slash commands and component interactions (buttons, select menus).
 client.on('interactionCreate', async interaction => {
     if (!isFirestoreReady) {
         console.error('Firestore is not yet ready to process interactions. Skipping interaction.');
