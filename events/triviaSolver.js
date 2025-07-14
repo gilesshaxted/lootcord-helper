@@ -106,8 +106,8 @@ ${options}`;
                         replyContent += `Possible Alternative: \`${possibleAlternative}\`\n`;
                     }
                     if (explanation) {
-                        // Corrected syntax for explanation block
-                        replyContent += `\n-# **Explanation:**\n\-# `\`\`\n${explanation}\n\`\`\``;
+                        // Corrected syntax for explanation block to preserve markdown
+                        replyContent += `\n-# **Explanation:**\n\`\`\`\n${explanation}\n\`\`\``;
                     }
                     statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps for answering trivia
                 } else {
