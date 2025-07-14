@@ -23,10 +23,18 @@ function initializeStats(initialData) {
 }
 
 /**
- * [REMOVED] Updates the in-memory bot stats from a Firestore snapshot.
- * This function is no longer needed as onSnapshot will not trigger automatic status updates.
+ * Updates the in-memory bot stats from a Firestore snapshot.
+ * @param {object} data Latest data from Firestore.
  */
-// function updateInMemoryStats(data) { ... }
+function updateInMemoryStats(data) {
+    if (data) {
+        botStats.totalHelps = data.totalHelps || 0;
+        botStats.activeUsersMap = data.activeUsersMap || {};
+        botStats.uniqueActiveUsers = Object.keys(botStats.activeUsersMap).length;
+        botStats.lastUpdated = data.lastUpdated || null;
+    }
+    console.log('Stats Tracker: Updated in-memory stats:', botStats);
+}
 
 /**
  * Increments the total helps counter in Firestore.
@@ -102,16 +110,25 @@ function getBotStats() {
 }
 
 /**
- * [REMOVED] Updates the bot's Discord status based on current in-memory stats.
- * This function is now handled directly by the /set-status command.
+ * Updates the bot's Discord status based on current in-memory stats.
+ * @param {Client} client The Discord client instance.
  */
-// function updateBotStatus(client) { ... }
+function updateBotStatus(client) {
+    const stats = getBotStats();
+    const statusText = `Helped ${stats.uniqueActiveUsers} players ${stats.totalHelps} times`;
+    if (client.user) {
+        client.user.setActivity(statusText, { type: 'PLAYING' });
+        console.log(`Stats Tracker: Bot status updated to: "${statusText}"`); // Added more specific log
+    } else {
+        console.warn('Stats Tracker: Cannot set bot status: client.user is not available.');
+    }
+}
 
 module.exports = {
     initializeStats,
-    // updateInMemoryStats, // Removed from export
+    updateInMemoryStats,
     incrementTotalHelps,
     addActiveUser,
     getBotStats,
-    // updateBotStatus // Removed from export
+    updateBotStatus
 };
