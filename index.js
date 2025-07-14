@@ -1,5 +1,5 @@
 // Import necessary classes from the discord.js library
-const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js'); // Added ModalBuilder, TextInputBuilder, TextInputStyle
+const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 const express = require('express');
@@ -11,8 +11,10 @@ const { initializeApp } = require('firebase/app');
 const { getAuth, signInAnonymously, onAuthStateChanged } = require('firebase/auth');
 const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs } = require('firebase/firestore');
 
-// Import Stats Tracker Utility
+// Import Utilities
 const statsTracker = require('./utils/statsTracker');
+const paginationHelpers = require('./utils/pagination'); // NEW: Import pagination helpers
+const startupChecks = require('./utils/startupChecks'); // NEW: Import startup checks
 
 // Load environment variables from a .env file (for local testing)
 require('dotenv').config();
@@ -33,10 +35,6 @@ const firebaseConfig = {
     appId: process.env.FIREBASE_APP_ID,
     // measurementId: process.env.MEASUREMENT_ID // Uncomment if you use Measurement ID
 };
-
-// --- Pagination Specific Configuration (used by helper function) ---
-const CHANNELS_PER_PAGE = 25;
-const TARGET_CATEGORY_ID = '1192414248299675663';
 
 // --- Firestore App ID for data paths ---
 const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
@@ -132,11 +130,11 @@ async function setupFirestoreListeners() {
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
             statsTracker.updateInMemoryStats(docSnap.data());
-            updateBotStatus();
+            statsTracker.updateBotStatus(client); // Pass client to updateBotStatus
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
             statsTracker.initializeStats({});
-            updateBotStatus();
+            statsTracker.updateBotStatus(client); // Pass client to updateBotStatus
         }
     }, (error) => {
         console.error("Stats Tracker: Error listening to botStats:", error);
@@ -189,179 +187,6 @@ for (const file of eventFiles) {
 }
 
 
-// --- Helper Function for Channel Pagination UI ---
-async function createChannelPaginationMessage(guild, currentPage) {
-    const allChannelsInTargetCategory = guild.channels.cache.filter(channel =>
-        channel.parentId === TARGET_CATEGORY_ID &&
-        channel.type === ChannelType.GuildText
-    ).sort((a, b) => a.position - b.position);
-
-    const totalChannels = allChannelsInTargetCategory.size;
-    const totalPages = Math.ceil(totalChannels / CHANNELS_PER_PAGE);
-
-    if (totalChannels === 0) {
-        return {
-            content: `No text channels found in the specified category (<#${TARGET_CATEGORY_ID}>) that the bot can see.`,
-            components: []
-        };
-    }
-
-    if (currentPage < 0) currentPage = 0;
-    if (currentPage >= totalPages) currentPage = totalPages - 1;
-
-    const channelsForPage = allChannelsInTargetCategory.toJSON().slice(
-        currentPage * CHANNELS_PER_PAGE,
-        (currentPage + 1) * CHANNELS_PER_PAGE
-    );
-
-    const selectOptions = channelsForPage.map(channel => ({
-        label: channel.name,
-        value: channel.id,
-    }));
-
-    const selectMenu = new StringSelectMenuBuilder()
-        .setCustomId(`select-channels-to-set_page_${currentPage}`)
-        .setPlaceholder(`Select channels (Page ${currentPage + 1}/${totalPages})...`)
-        .setMinValues(1)
-        .setMaxValues(selectOptions.length > 0 ? selectOptions.length : 1)
-        .addOptions(selectOptions);
-
-    const prevButton = new ButtonBuilder()
-        .setCustomId(`page_prev_${currentPage}`)
-        .setLabel('Previous Page')
-        .setStyle(ButtonStyle.Primary)
-        .setDisabled(currentPage === 0);
-
-    const nextButton = new ButtonBuilder()
-        .setCustomId(`page_next_${currentPage}`)
-        .setLabel('Next Page')
-        .setStyle(ButtonStyle.Primary)
-        .setDisabled(currentPage === totalPages - 1);
-
-    const selectRow = new ActionRowBuilder().addComponents(selectMenu);
-    const buttonRow = new ActionRowBuilder().addComponents(prevButton, nextButton);
-
-    let contentMessage = `Please select channels from the category (<#${TARGET_CATEGORY_ID}>). Page ${currentPage + 1} of ${totalPages}:`;
-    if (totalChannels > CHANNELS_PER_PAGE) {
-        contentMessage += `\n(Showing ${channelsForPage.length} of ${totalChannels} channels)`;
-    }
-
-    return {
-        content: contentMessage,
-        components: [selectRow, buttonRow]
-    };
-}
-
-// --- Bot Status Update Function ---
-function updateBotStatus() {
-    const stats = statsTracker.getBotStats();
-    const statusText = `Helped ${stats.uniqueActiveUsers} players ${stats.totalHelps} times`;
-    if (client.user) {
-        client.user.setActivity(statusText, { type: 'PLAYING' });
-        console.log(`Bot status updated to: "${statusText}"`);
-    } else {
-        console.warn('Cannot set bot status: client.user is not available.');
-    }
-}
-
-// --- Function to check and rename channels on startup (Downtime Recovery) ---
-async function checkAndRenameChannelsOnStartup() {
-    if (!db || !isFirestoreReady || !client.isReady()) {
-        console.warn('Startup Channel Check: Firestore or Client not ready. Skipping startup check.');
-        return;
-    }
-
-    console.log('Startup Channel Check: Initiating channel status check after bot restart...');
-
-    for (const guild of client.guilds.cache.values()) {
-        const guildId = guild.id;
-        const guildChannelsRef = collection(db, `Guilds/${guildId}/channels`);
-
-        try {
-            const channelDocs = await getDocs(guildChannelsRef);
-            if (channelDocs.empty) {
-                console.log(`Startup Channel Check: No configured channels for guild ${guild.name}.`);
-                continue;
-            }
-
-            for (const docSnap of channelDocs.docs) {
-                const channelData = docSnap.data();
-                const channelId = channelData.channelId;
-                const originalChannelName = channelData.originalChannelName;
-
-                const channel = guild.channels.cache.get(channelId);
-                if (!channel || channel.type !== ChannelType.GuildText) {
-                    console.warn(`Startup Channel Check: Configured channel ${channelId} not found or not a text channel in guild ${guild.name}. Skipping.`);
-                    continue;
-                }
-
-                const messages = await channel.messages.fetch({ limit: 1 });
-                const lastMessage = messages.first();
-
-                if (!lastMessage || lastMessage.author.id !== '493316754689359874' || lastMessage.embeds.length === 0) {
-                    if (channel.name !== originalChannelName) {
-                        try {
-                            await channel.setName(originalChannelName, 'Automated revert on startup: no relevant last message found.');
-                            console.log(`Startup Channel Check: Reverted ${channel.name} to ${originalChannelName} in ${guild.name}.`);
-                        } catch (error) {
-                            console.error(`Startup Channel Check: Failed to revert ${channel.name} to ${originalChannelName} on startup:`, error);
-                        }
-                    }
-                    continue;
-                }
-
-                const embedTitle = lastMessage.embeds[0].title;
-                const messageContent = lastMessage.content;
-                let newName = null;
-
-                if (embedTitle) {
-                    if (embedTitle.includes('Heavy Scientist')) {
-                        newName = '🐻╏heavy';
-                    } else if (embedTitle.includes('Scientist')) {
-                        newName = '🥼╏scientist';
-                    } else if (embedTitle.includes('Tunnel Dweller')) {
-                        newName = '🧟╏dweller';
-                    } else if (embedTitle.includes('Patrol Helicopter')) {
-                        newName = '🚁╏heli';
-                    } else if (embedTitle.includes('Bradley APC')) {
-                        newName = '🚨╏brad';
-                    }
-                }
-
-                const embed = lastMessage.embeds[0];
-                const embedTitleRevert = embed && embed.title && embed.title.includes('left...');
-                const embedDescriptionRevert = embed && embed.description && embed.description.includes('killed a mob');
-                const contentDiedRevert = messageContent.includes(':deth: The **') && messageContent.includes('DIED!**');
-                const revertCondition = embedTitleRevert || embedDescriptionRevert || contentDiedRevert;
-
-                if (revertCondition) {
-                    if (channel.name !== originalChannelName) {
-                        try {
-                            await channel.setName(originalChannelName, 'Automated revert on startup: death/left message detected.');
-                            console.log(`Startup Channel Check: Reverted ${channel.name} to ${originalChannelName} in ${guild.name}.`);
-                        } catch (error) {
-                            console.error(`Startup Channel Check: Failed to revert ${channel.name} to ${originalChannelName} on startup:`, error);
-                        }
-                    }
-                } else if (newName && channel.name !== newName) {
-                    try {
-                        await channel.setName(newName, 'Automated rename on startup: enemy spawn detected.');
-                        console.log(`Startup Channel Check: Renamed ${channel.name} to ${newName} in ${guild.name}.`);
-                    } catch (error) {
-                        console.error(`Startup Channel Check: Failed to rename ${channel.name} to ${newName} on startup:`, error);
-                    }
-                } else {
-                    console.log(`Startup Channel Check: Channel ${channel.name} in ${guild.name} is already correctly named.`);
-                }
-            }
-        } catch (error) {
-            console.error(`Startup Channel Check: Error processing guild ${guild.name} (${guild.id}):`, error);
-        }
-    }
-    console.log('Startup Channel Check: Completed channel status check.');
-}
-
-
 // --- Discord Event Handlers (main ones remaining in index.js) ---
 
 client.once('ready', async () => {
@@ -394,15 +219,13 @@ client.once('ready', async () => {
         console.error('Failed to register slash commands:', error);
     }
 
-    updateBotStatus();
-    setInterval(updateBotStatus, 300000); // Update status every 5 minutes
+    // Set initial status and update periodically
+    statsTracker.updateBotStatus(client); // Initial call, pass client
+    setInterval(() => statsTracker.updateBotStatus(client), 300000); // Pass client to interval call
 
-    // NEW: Run channel check and rename on startup
-    await checkAndRenameChannelsOnStartup();
+    // Run channel check and rename on startup
+    await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client); // Pass db, isFirestoreReady, client
 });
-
-// The messageCreate event listener is now in events/MobDetect.js and events/unscrambleListener.js
-// A new activePlayerTracker.js will be added for t- commands.
 
 // The interactionCreate event listener remains here because it handles
 // both slash commands and component interactions (buttons, select menus).
@@ -458,7 +281,7 @@ client.on('interactionCreate', async interaction => {
                 newPage++;
             }
 
-            const { content, components } = await createChannelPaginationMessage(interaction.guild, newPage);
+            const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage); // Use helper
             await interaction.editReply({ content, components, ephemeral: false });
         }
     }
@@ -549,7 +372,7 @@ client.on('interactionCreate', async interaction => {
         try {
             if (command.data.name === 'channel-set') {
                 await interaction.deferReply({ ephemeral: false });
-                const { content, components } = await createChannelPaginationMessage(interaction.guild, 0);
+                const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, 0); // Use helper
                 await interaction.editReply({ content, components, ephemeral: false });
             } else {
                 await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
@@ -564,29 +387,6 @@ client.on('interactionCreate', async interaction => {
             } else if (interaction.deferred) {
                 await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: false });
             }
-        }
-    }
-
-    // Handle Button Interactions (for pagination) - other than wordle_start_game
-    if (interaction.isButton()) {
-        // wordle_start_game is handled above
-        if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
-            // Existing pagination button handling
-            await interaction.deferUpdate();
-
-            const parts = interaction.customId.split('_');
-            const action = parts[1];
-            const currentPage = parseInt(parts[2], 10);
-
-            let newPage = currentPage;
-            if (action === 'prev') {
-                newPage--;
-            } else if (action === 'next') {
-                newPage++;
-            }
-
-            const { content, components } = await createChannelPaginationMessage(interaction.guild, newPage);
-            await interaction.editReply({ content, components, ephemeral: false });
         }
     }
 
