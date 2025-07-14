@@ -1,15 +1,15 @@
-const { collection, doc, getDoc, setDoc, updateDoc } = require('firebase/firestore'); // Firestore functions
-const { TARGET_GAME_BOT_ID, WORD_LENGTH, parseEmojiRow, updateWordleGameState, getLLMWordleSuggestion } = require('../utils/wordleHelpers'); // Import helpers
-const statsTracker = require('../utils/statsTracker'); // Import Stats Tracker
+const { collection, doc, getDoc, setDoc, updateDoc } = require('firebase/firestore');
+const { TARGET_GAME_BOT_ID, WORD_LENGTH, parseEmojiRow, updateWordleGameState, getLLMWordleSuggestion } = require('../utils/wordleHelpers');
+const statsTracker = require('../utils/statsTracker');
 
 // Configuration specific to this listener
 const TARGET_WORDLE_CHANNEL_ID = '1394316724819591318'; // The channel where Wordle games will be played
 
 module.exports = {
-    name: 'messageCreate', // Listen for all message creations
+    name: 'messageCreate',
     once: false,
     async execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
-        // --- NEW: Only process messages in the target Wordle channel ---
+        // --- Only process messages in the target Wordle channel ---
         if (message.channel.id !== TARGET_WORDLE_CHANNEL_ID) {
             return; // Ignore messages not in the designated Wordle channel
         }
@@ -30,7 +30,7 @@ module.exports = {
             return;
         }
 
-        // --- NEW: Acknowledge every message from the target game bot in this channel ---
+        // --- NEW: Log every message from the target game bot in this channel ---
         console.log(`\n--- [Wordle Solver - Debug] Incoming Message from Game Bot ---`);
         console.log(`From: ${message.author.tag} (ID: ${message.author.id})`);
         console.log(`Channel: #${message.channel.name} (ID: ${message.channel.id})`);
@@ -63,6 +63,7 @@ module.exports = {
         // --- Game Start Detection (First message with gray squares) ---
         if (message.content.includes('You will have 6 tries to guess the word correctly') && message.embeds.length > 0) {
             const embedDescription = message.embeds[0].description;
+            // Regex to match the initial state with "Reward: ..." and 6 rows of gray squares
             const allGraySquaresRegex = /^Reward:.*?\n\n(<:medium_gray_square:\d+>){5}\n(<:medium_gray_square:\d+>){5}\n(<:medium_gray_square:\d+>){5}\n(<:medium_gray_square:\d+>){5}\n(<:medium_gray_square:\d+>){5}\n(<:medium_gray_square:\d+>){5}$/s;
             
             if (embedDescription && allGraySquaresRegex.test(embedDescription)) {
@@ -106,6 +107,8 @@ module.exports = {
         }
 
         // --- Subsequent Guess Results Detection ---
+        // Trigger: Message content matches "Guess #X · Y guesses remaining"
+        // AND there's an embed.
         const guessContentMatch = message.content.match(/Guess #(\d+)\s*·\s*\*\*(\d+)\*\* guesses remaining/);
         
         if (guessContentMatch && message.embeds.length > 0) {
@@ -124,8 +127,6 @@ module.exports = {
             }
 
             let gameState = gameDocSnap.data();
-            console.log(`[Wordle Solver - Debug] Current Game State (before update):`, JSON.stringify(gameState, null, 2));
-
 
             // Ensure we are processing the next expected guess
             if (currentGuessNumber !== gameState.currentGuessNumber + 1) {
@@ -134,6 +135,7 @@ module.exports = {
             }
 
             // Extract the emoji rows
+            // The first line of the description is "Reward: ...", so we need to skip it.
             const rawEmojiRows = embedDescription.split('\n').slice(2); // Skip Reward line and blank line
             const emojiRows = rawEmojiRows.filter(row => row.includes('<:')); // Filter out empty or non-emoji lines
 
@@ -153,6 +155,8 @@ module.exports = {
             console.log(`[Wordle Solver - Debug] Parsed Emoji Results:`, JSON.stringify(parsedResults, null, 2));
 
             // --- Infer guessed word from the previous guess in game state ---
+            // This is crucial because the game bot only shows emoji results, not the word itself.
+            // We assume the player typed the word we suggested last turn.
             const guessedWord = gameState.guessesMade.length > 0
                                 ? gameState.guessesMade[gameState.guessesMade.length - 1].word
                                 : 'UNKNOWN'; // Should not happen for guess #2+
