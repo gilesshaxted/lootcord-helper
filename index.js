@@ -1,5 +1,5 @@
 // Import necessary classes from the discord.js library
-const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder } = require('discord.js'); // Added AttachmentBuilder
+const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 const express = require('express');
@@ -131,11 +131,11 @@ async function setupFirestoreListeners() {
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
             statsTracker.updateInMemoryStats(docSnap.data());
-            statsTracker.updateBotStatus(client);
+            statsTracker.updateBotStatus(client); // Pass client to updateBotStatus
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
             statsTracker.initializeStats({});
-            statsTracker.updateBotStatus(client);
+            statsTracker.updateBotStatus(client); // Pass client to updateBotStatus
         }
     }, (error) => {
         console.error("Stats Tracker: Error listening to botStats:", error);
@@ -149,7 +149,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.GuildPresences, // Required for setting bot status/presence
     ]
 });
 
@@ -179,8 +179,10 @@ for (const file of eventFiles) {
     const filePath = path.join(eventsPath, file);
     const event = require(filePath);
     if (event.once) {
+        // Pass message as the first argument, followed by other context variables
         client.once(event.name, (message, ...args) => event.execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE, ...args));
     } else {
+        // Pass message as the first argument, followed by other context variables
         client.on(event.name, (message, ...args) => event.execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE, ...args));
     }
 }
@@ -232,8 +234,8 @@ client.once('ready', async () => {
         console.error('Failed to register slash commands:', error);
     }
 
-    statsTracker.updateBotStatus(client);
-    setInterval(() => statsTracker.updateBotStatus(client), 300000);
+    // Removed setInterval for updateBotStatus to test manual/onSnapshot updates
+    // setInterval(() => statsTracker.updateBotStatus(client), 300000);
 
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
 });
@@ -305,9 +307,7 @@ client.on('interactionCreate', async interaction => {
 
     // Handle Button Interactions (for pagination)
     if (interaction.isButton()) {
-        // Removed Wordle game start button handling from here
         if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
-            // Existing pagination button handling
             await interaction.deferUpdate();
 
             const parts = interaction.customId.split('_');
@@ -321,13 +321,10 @@ client.on('interactionCreate', async interaction => {
                 newPage++;
             }
 
-            const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage); // Use helper
+            const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage);
             await interaction.editReply({ content, components, ephemeral: false });
         }
     }
-
-    // Handle Modal Submissions (for Wordle first guess) - Removed from here, now handled by wordleSolver.js
-    // if (interaction.isModalSubmit()) { ... }
 
     // Handle Chat Input Commands (Slash Commands)
     if (interaction.isChatInputCommand()) {
