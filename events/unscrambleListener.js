@@ -133,9 +133,14 @@ module.exports = {
         }
 
         if (scrambledLetters) {
-            // Updated prompt to suggest country names/adjectives
-            const prompt = `Unscramble the following letters to form a single, most likely English word. This word might be a country name or an adjective related to a country (e.g., Britain, British, Turkey, Turkish). Only provide the unscrambled word, no other text or punctuation: ${scrambledLetters}`;
+            // Updated prompt to ask for most likely and 3 alternatives
+            const prompt = `Unscramble the following letters to form English words. Provide the single most likely word first, then provide 3 alternative words that can also be formed using all the given letters. Format your response as:
+Most Likely: [word]
+Alternatives: [word1], [word2], [word3]
+Letters: ${scrambledLetters}`;
             let llmAnswer = null;
+            let mostLikelyWord = 'N/A';
+            let alternativeWords = [];
 
             try {
                 // Call the LLM (Gemini API)
@@ -162,7 +167,18 @@ module.exports = {
                 if (result.candidates && result.candidates.length > 0 &&
                     result.candidates[0].content && result.candidates[0].content.parts &&
                     result.candidates[0].content.parts.length > 0) {
-                    llmAnswer = result.candidates[0].content.parts[0].text.trim().toLowerCase();
+                    llmAnswer = result.candidates[0].content.parts[0].text.trim();
+
+                    // Parse the LLM's response
+                    const mostLikelyMatch = llmAnswer.match(/Most Likely:\s*([a-zA-Z]+)/i);
+                    const alternativesMatch = llmAnswer.match(/Alternatives:\s*(.*)/i);
+
+                    if (mostLikelyMatch && mostLikelyMatch[1]) {
+                        mostLikelyWord = mostLikelyMatch[1].toLowerCase();
+                    }
+                    if (alternativesMatch && alternativesMatch[1]) {
+                        alternativeWords = alternativesMatch[1].split(',').map(word => word.trim().toLowerCase()).filter(word => word.length > 0);
+                    }
                 } else {
                     console.warn('Unscrambler: LLM response structure unexpected or empty for scrambled letters:', scrambledLetters);
                 }
@@ -173,11 +189,14 @@ module.exports = {
 
             let replyContent = `**Unscrambled word for \`${scrambledLetters}\`:**\n`;
 
-            if (llmAnswer) {
-                replyContent += `Most likely word (from LLM): \`${llmAnswer}\``;
+            if (mostLikelyWord !== 'N/A') {
+                replyContent += `Most likely word: \`${mostLikelyWord}\`\n`;
+                if (alternativeWords.length > 0) {
+                    replyContent += `Alternatives: ${alternativeWords.map(word => `\`${word}\``).join(', ')}`;
+                }
                 statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps for unscramble
             } else {
-                replyContent += `Could not determine the most likely word using LLM.`;
+                replyContent += `Could not determine any likely words using LLM.`;
             }
 
             if (replyContent.length > 2000) {
