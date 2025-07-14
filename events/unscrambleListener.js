@@ -133,7 +133,8 @@ module.exports = {
         }
 
         if (scrambledLetters) {
-            const prompt = `Unscramble the following letters to form a single, most likely English word. Only provide the unscrambled word, no other text or punctuation: ${scrambledLetters}`;
+            // Updated prompt to suggest country names/adjectives
+            const prompt = `Unscramble the following letters to form a single, most likely English word. This word might be a country name or an adjective related to a country (e.g., Britain, British, Turkey, Turkish). Only provide the unscrambled word, no other text or punctuation: ${scrambledLetters}`;
             let llmAnswer = null;
 
             try {
