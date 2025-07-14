@@ -13,8 +13,9 @@ const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs } = require('
 
 // Import Utilities
 const statsTracker = require('./utils/statsTracker');
-const paginationHelpers = require('./utils/pagination'); // NEW: Import pagination helpers
-const startupChecks = require('./utils/startupChecks'); // NEW: Import startup checks
+const paginationHelpers = require('./utils/pagination');
+const startupChecks = require('./utils/startupChecks');
+const wordleHelpers = require('./utils/wordleHelpers'); // NEW: Import Wordle helpers
 
 // Load environment variables from a .env file (for local testing)
 require('dotenv').config();
@@ -35,6 +36,11 @@ const firebaseConfig = {
     appId: process.env.FIREBASE_APP_ID,
     // measurementId: process.env.MEASUREMENT_ID // Uncomment if you use Measurement ID
 };
+
+// --- Pagination Specific Configuration (used by paginationHelpers) ---
+// These constants are now defined within paginationHelpers.js
+// const CHANNELS_PER_PAGE = 25;
+// const TARGET_CATEGORY_ID = '1192414248299675663';
 
 // --- Firestore App ID for data paths ---
 const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
@@ -238,35 +244,10 @@ client.on('interactionCreate', async interaction => {
         return;
     }
 
-    // Handle Button Interactions (for Wordle game start)
+    // Handle Button Interactions (for pagination)
     if (interaction.isButton()) {
-        if (interaction.customId === 'wordle_start_game') {
-            await interaction.deferUpdate(); // Acknowledge the button click
-
-            // Create the modal for the first guess
-            const modal = new ModalBuilder()
-                .setCustomId('wordle_first_guess_modal')
-                .setTitle('Enter Your First Wordle Guess');
-
-            const guessInput = new TextInputBuilder()
-                .setCustomId('wordle_guess_input')
-                .setLabel('Your 5-letter guess')
-                .setStyle(TextInputStyle.Short)
-                .setMinLength(5)
-                .setMaxLength(5)
-                .setPlaceholder('e.g., CRANE');
-
-            const firstActionRow = new ActionRowBuilder().addComponents(guessInput);
-
-            modal.addComponents(firstActionRow);
-
-            await interaction.showModal(modal);
-            console.log(`Wordle Game: Showed modal for first guess to ${interaction.user.tag}`);
-
-            // Optionally, make an LLM call here to get a best starting word,
-            // then set it as a default value in the TextInputBuilder if desired.
-            // For now, we'll just prompt the user.
-        } else if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
+        // Wordle game start button is now handled by wordleSolver.js directly
+        if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
             // Existing pagination button handling
             await interaction.deferUpdate();
 
@@ -286,79 +267,8 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // Handle Modal Submissions (for Wordle first guess)
-    if (interaction.isModalSubmit()) {
-        if (interaction.customId === 'wordle_first_guess_modal') {
-            await interaction.deferReply({ ephemeral: false }); // Defer reply for modal submission
-
-            const userGuess = interaction.fields.getTextInputValue('wordle_guess_input').toLowerCase();
-            const channelId = interaction.channel.id;
-
-            // --- LLM Call to get best starting word (e.g., CRANE) ---
-            const promptForBestStart = `Suggest the single best 5-letter English word to start a Wordle game. Only provide the word, no other text or punctuation.`;
-            let bestStartingWord = 'CRANE'; // Default fallback
-
-            try {
-                const chatHistory = [];
-                chatHistory.push({ role: "user", parts: [{ text: promptForBestStart }] });
-                const payload = { contents: chatHistory };
-                const apiKey = process.env.GOOGLE_API_KEY;
-
-                if (apiKey) {
-                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-                    const response = await fetch(apiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                    const result = await response.json();
-                    if (result.candidates && result.candidates.length > 0 && result.candidates[0].content && result.candidates[0].content.parts && result.candidates[0].content.parts.length > 0) {
-                        bestStartingWord = result.candidates[0].content.parts[0].text.trim().toUpperCase();
-                        // Basic validation for 5-letter word
-                        if (bestStartingWord.length !== 5 || !/^[A-Z]+$/.test(bestStartingWord)) {
-                            bestStartingWord = 'CRANE'; // Fallback if LLM gives bad format
-                        }
-                    }
-                } else {
-                    console.warn('Wordle Solver: GOOGLE_API_KEY not set, using default starting word.');
-                }
-            } catch (error) {
-                console.error('Wordle Solver: Error getting best starting word from LLM:', error);
-            }
-
-            // --- Store initial game state in Firestore ---
-            const gameDocRef = doc(collection(db, `WordleGames`), channelId);
-            try {
-                await setDoc(gameDocRef, {
-                    channelId: channelId,
-                    userId: interaction.user.id,
-                    status: 'active',
-                    wordLength: 5,
-                    guessesMade: [], // Store previous guesses and their results
-                    currentGuessNumber: 0,
-                    correctLetters: {}, // {index: letter}
-                    misplacedLetters: {}, // {letter: [indices where it's not]}
-                    wrongLetters: [], // [letters]
-                    gameStartedAt: new Date().toISOString(),
-                    // gameBotMessageId: message.id // Need to store the game bot's initial message ID for context
-                });
-                console.log(`Wordle Game: Initialized game state for channel ${channelId}`);
-            } catch (error) {
-                console.error(`Wordle Game: Failed to save initial game state for channel ${channelId}:`, error);
-                await interaction.editReply({ content: 'An error occurred while starting the Wordle game. Please try again.', ephemeral: false });
-                return;
-            }
-
-            // Reply with the suggested word and prompt the user to make their guess in the game
-            await interaction.editReply({
-                content: `You entered: \`${userGuess}\`\n\nMy suggestion for your next guess is: \`${bestStartingWord}\`\n\nPlease type \`${bestStartingWord}\` into the Wordle game.`,
-                components: [], // Remove components after initial prompt
-                ephemeral: false
-            });
-            statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps for starting Wordle
-            console.log(`Wordle Game: Suggested first word '${bestStartingWord}' to ${interaction.user.tag} in #${interaction.channel.name}`);
-        }
-    }
+    // Handle Modal Submissions (for Wordle first guess) - Removed from here, now handled by wordleSolver.js
+    // if (interaction.isModalSubmit()) { ... }
 
     // Handle Chat Input Commands (Slash Commands)
     if (interaction.isChatInputCommand()) {
