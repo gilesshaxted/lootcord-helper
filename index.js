@@ -1,5 +1,5 @@
 // Import necessary classes from the discord.js library
-const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder } = require('discord.js'); // Added AttachmentBuilder
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 const express = require('express');
@@ -15,7 +15,7 @@ const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs } = require('
 const statsTracker = require('./utils/statsTracker');
 const paginationHelpers = require('./utils/pagination');
 const startupChecks = require('./utils/startupChecks');
-const wordleHelpers = require('./utils/wordleHelpers'); // NEW: Import Wordle helpers
+const wordleHelpers = require('./utils/wordleHelpers'); // Import Wordle helpers
 
 // Load environment variables from a .env file (for local testing)
 require('dotenv').config();
@@ -23,7 +23,7 @@ require('dotenv').config();
 // --- Configuration Variables ---
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
-const PREFIX = '!';
+const PREFIX = '!'; // Prefix for traditional message commands
 const PORT = process.env.PORT || 3000;
 
 // Firebase configuration loaded from environment variables for Render hosting
@@ -32,15 +32,10 @@ const firebaseConfig = {
     authDomain: process.env.FIREBASE_AUTH_DOMAIN,
     projectId: process.env.FIREBASE_PROJECT_ID,
     storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+    messagingSenderId: process.env.MESSAGING_SENDER_ID,
     appId: process.env.FIREBASE_APP_ID,
     // measurementId: process.env.MEASUREMENT_ID // Uncomment if you use Measurement ID
 };
-
-// --- Pagination Specific Configuration (used by paginationHelpers) ---
-// These constants are now defined within paginationHelpers.js
-// const CHANNELS_PER_PAGE = 25;
-// const TARGET_CATEGORY_ID = '1192414248299675663';
 
 // --- Firestore App ID for data paths ---
 const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
@@ -136,11 +131,11 @@ async function setupFirestoreListeners() {
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
             statsTracker.updateInMemoryStats(docSnap.data());
-            statsTracker.updateBotStatus(client); // Pass client to updateBotStatus
+            statsTracker.updateBotStatus(client);
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
             statsTracker.initializeStats({});
-            statsTracker.updateBotStatus(client); // Pass client to updateBotStatus
+            statsTracker.updateBotStatus(client);
         }
     }, (error) => {
         console.error("Stats Tracker: Error listening to botStats:", error);
@@ -154,7 +149,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildPresences, // Required for setting bot status/presence
+        GatewayIntentBits.GuildPresences,
     ]
 });
 
@@ -184,13 +179,25 @@ for (const file of eventFiles) {
     const filePath = path.join(eventsPath, file);
     const event = require(filePath);
     if (event.once) {
-        // Pass message as the first argument, followed by other context variables
         client.once(event.name, (message, ...args) => event.execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE, ...args));
     } else {
-        // Pass message as the first argument, followed by other context variables
         client.on(event.name, (message, ...args) => event.execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE, ...args));
     }
 }
+
+
+// --- Helper Function for Channel Pagination UI ---
+// This function is now imported from utils/pagination.js
+// async function createChannelPaginationMessage(guild, currentPage) { ... }
+
+
+// --- Bot Status Update Function ---
+// This function is now part of statsTracker.js
+// function updateBotStatus() { ... }
+
+// --- Function to check and rename channels on startup (Downtime Recovery) ---
+// This function is now part of utils/startupChecks.js
+// async function checkAndRenameChannelsOnStartup() { ... }
 
 
 // --- Discord Event Handlers (main ones remaining in index.js) ---
@@ -225,13 +232,65 @@ client.once('ready', async () => {
         console.error('Failed to register slash commands:', error);
     }
 
-    // Set initial status and update periodically
-    statsTracker.updateBotStatus(client); // Initial call, pass client
-    setInterval(() => statsTracker.updateBotStatus(client), 300000); // Pass client to interval call
+    statsTracker.updateBotStatus(client);
+    setInterval(() => statsTracker.updateBotStatus(client), 300000);
 
-    // Run channel check and rename on startup
-    await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client); // Pass db, isFirestoreReady, client
+    await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
 });
+
+// --- NEW: Handle !wordlelog command ---
+const WORDLE_LOG_CHANNEL_ID = '1394316724819591318'; // The channel where Wordle games are played
+const WORDLE_LOG_REQUESTER_ID = '444211741774184458'; // User ID of the authorized requester
+
+client.on('messageCreate', async message => {
+    // Check for !wordlelog command
+    if (message.author.id === WORDLE_LOG_REQUESTER_ID && message.content === '!wordlelog') {
+        if (message.channel.id !== WORDLE_LOG_CHANNEL_ID) {
+            await message.reply('This command can only be used in the designated Wordle channel.');
+            return;
+        }
+
+        try {
+            // Fetch last 50 messages from the Wordle channel
+            const messages = await message.channel.messages.fetch({ limit: 50 });
+            let logContent = `--- Wordle Channel Log (${message.channel.name}) ---\n\n`;
+
+            messages.reverse().forEach(msg => { // Reverse to show oldest first
+                logContent += `[${msg.createdAt.toISOString()}] ${msg.author.tag} (${msg.author.id}):\n`;
+                if (msg.content) {
+                    logContent += `  Content: "${msg.content}"\n`;
+                }
+                if (msg.embeds.length > 0) {
+                    logContent += `  Embeds (${msg.embeds.length}):\n`;
+                    msg.embeds.forEach((embed, index) => {
+                        logContent += `    Embed ${index + 1}:\n`;
+                        if (embed.title) logContent += `      Title: "${embed.title}"\n`;
+                        if (embed.description) logContent += `      Description:\n\`\`\`\n${embed.description}\n\`\`\`\n`;
+                        if (embed.fields.length > 0) {
+                            logContent += `      Fields:\n`;
+                            embed.fields.forEach(field => logContent += `        - ${field.name}: ${field.value}\n`);
+                        }
+                    });
+                }
+                logContent += `\n`;
+            });
+
+            const logBuffer = Buffer.from(logContent, 'utf8');
+            const attachment = new AttachmentBuilder(logBuffer, { name: 'wordle_log.txt' });
+
+            await message.channel.send({
+                content: 'Here is the recent Wordle channel log:',
+                files: [attachment]
+            });
+            console.log(`Generated and sent Wordle log to #${message.channel.name}`);
+
+        } catch (error) {
+            console.error('Error generating wordle log:', error);
+            await message.channel.send('Failed to generate Wordle log. Check bot permissions or logs.');
+        }
+    }
+});
+
 
 // The interactionCreate event listener remains here because it handles
 // both slash commands and component interactions (buttons, select menus).
@@ -246,7 +305,7 @@ client.on('interactionCreate', async interaction => {
 
     // Handle Button Interactions (for pagination)
     if (interaction.isButton()) {
-        // Wordle game start button is now handled by wordleSolver.js directly
+        // Removed Wordle game start button handling from here
         if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
             // Existing pagination button handling
             await interaction.deferUpdate();
@@ -282,7 +341,7 @@ client.on('interactionCreate', async interaction => {
         try {
             if (command.data.name === 'channel-set') {
                 await interaction.deferReply({ ephemeral: false });
-                const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, 0); // Use helper
+                const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, 0);
                 await interaction.editReply({ content, components, ephemeral: false });
             } else {
                 await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
