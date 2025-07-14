@@ -107,7 +107,12 @@ ${options}`;
                     }
                     if (explanation) {
                         // Corrected syntax for explanation block to preserve markdown
-                        replyContent += `\n-# **Explanation:**\n\`\`\`\n${explanation}\n\`\`\``;
+                        // Split explanation by lines and prefix each with '-# '
+                        const explanationLines = explanation.split('\n');
+                        replyContent += `\n-# **Explanation:**\n`;
+                        explanationLines.forEach(line => {
+                            replyContent += `-# ${line}\n`;
+                        });
                     }
                     statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps for answering trivia
                 } else {
