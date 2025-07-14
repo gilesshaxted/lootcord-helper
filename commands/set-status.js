@@ -1,64 +1,99 @@
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const { doc, collection, getDoc } = require('firebase/firestore'); // Import getDoc
-const statsTracker = require('../utils/statsTracker'); // Import statsTracker utility
+const { SlashCommandBuilder, ActivityType } = require('discord.js');
+const { doc, collection, getDoc } = require('firebase/firestore');
 
 module.exports = {
-    // Defines the slash command's name, description, and options.
     data: new SlashCommandBuilder()
         .setName('set-status')
         .setDescription('Manually updates the bot\'s Discord status or uses current statistics.')
         .addStringOption(option =>
             option.setName('text')
                 .setDescription('Optional: The custom text to set as the bot\'s status.')
-                .setRequired(false) // Make this option optional
+                .setRequired(false)
+        )
+        .addStringOption(option =>
+            option.setName('activity')
+                .setDescription('Optional: Select the activity type (default is PLAYING).')
+                .setRequired(false)
+                .addChoices(
+                    { name: 'Playing', value: 'PLAYING' },
+                    { name: 'Watching', value: 'WATCHING' },
+                    { name: 'Listening', value: 'LISTENING' },
+                    { name: 'Competing', value: 'COMPETING' }
+                    // Streaming intentionally omitted unless you want to handle URLs
+                )
         ),
 
-    // The execute function now accepts db, client, and APP_ID_FOR_FIRESTORE.
     async execute(interaction, db, client, APP_ID_FOR_FIRESTORE) {
-        await interaction.deferReply({ ephemeral: false }); // Non-ephemeral for testing
+        await interaction.deferReply({ ephemeral: false });
 
-        const customStatusText = interaction.options.getString('text'); // Get the optional text input
+        // ✅ Permissions Check
+        if (!interaction.member.permissions.has('Administrator')) {
+            return await interaction.editReply({
+                content: '❌ You do not have permission to use this command.',
+                ephemeral: true,
+            });
+        }
+
+        const customStatusText = interaction.options.getString('text');
+        const activityTypeInput = interaction.options.getString('activity');
+        const activityType = ActivityType[activityTypeInput] ?? ActivityType.Playing;
 
         let statusText = '';
 
         if (customStatusText) {
-            // If custom text is provided, use it directly
             statusText = customStatusText;
+            console.log(`Set Status Command: Custom status used: "${customStatusText}"`);
         } else {
-            // If no custom text, fetch stats from Firestore (existing logic)
             if (!db || !APP_ID_FOR_FIRESTORE) {
-                return await interaction.editReply({ content: 'Bot is not fully initialized (Firestore not ready) to fetch statistics. Please try again in a moment or provide custom text.', ephemeral: false });
+                return await interaction.editReply({
+                    content: '⚠️ Bot is not fully initialized (Firestore not ready) to fetch statistics. Please try again in a moment or provide custom text.',
+                    ephemeral: false
+                });
             }
 
             const statsDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/stats`), 'botStats');
 
             try {
                 const docSnap = await getDoc(statsDocRef);
-                let totalHelps = 0;
-                let uniqueActiveUsers = 0;
+                const data = docSnap.exists() ? docSnap.data() : {};
+                const totalHelps = data.totalHelps ?? 0;
+                const uniqueActiveUsers = Object.keys(data.activeUsersMap ?? {}).length;
 
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    totalHelps = data.totalHelps || 0;
-                    uniqueActiveUsers = Object.keys(data.activeUsersMap || {}).length;
-                } else {
-                    console.warn('Set Status Command: botStats document not found in Firestore. Using default 0s.');
-                }
                 statusText = `Helped ${uniqueActiveUsers} players ${totalHelps} times`;
+                console.log(`Set Status Command: Dynamic status used: "${statusText}"`);
             } catch (error) {
                 console.error('Set Status Command: Error fetching stats:', error);
-                return await interaction.editReply({ content: 'An error occurred while trying to fetch statistics. Please check logs.', ephemeral: false });
+                return await interaction.editReply({
+                    content: '❌ An error occurred while fetching statistics. Please check the logs.',
+                    ephemeral: false
+                });
             }
         }
 
-        // Attempt to set the bot's activity
-        if (client.user) {
-            client.user.setActivity(statusText, { type: 'PLAYING' }); // 'PLAYING' is a common type
-            await interaction.editReply({ content: `Bot status updated to: \`${statusText}\`.`, ephemeral: false });
-            console.log(`Set Status Command: Bot status manually updated to: "${statusText}"`);
-        } else {
-            await interaction.editReply({ content: 'Error: Bot client user not available to set status.', ephemeral: false });
-            console.error('Set Status Command: Cannot set bot status: client.user is not available.');
+        if (statusText.length > 128) {
+            return await interaction.editReply({
+                content: '⚠️ Status text exceeds the 128 character limit. Please shorten it.',
+                ephemeral: false
+            });
+        }
+
+        try {
+            if (client.user) {
+                client.user.setActivity(statusText, { type: activityType });
+                await interaction.editReply({
+                    content: `✅ Bot status updated to: \`${statusText}\` (Activity type: \`${ActivityType[activityType]}\`)`,
+                    ephemeral: false
+                });
+                console.log(`Set Status Command: Bot status updated to "${statusText}" [${ActivityType[activityType]}]`);
+            } else {
+                throw new Error('client.user is null or undefined');
+            }
+        } catch (err) {
+            console.error('Set Status Command: Failed to set bot activity:', err);
+            await interaction.editReply({
+                content: '❌ Failed to set bot status due to an internal error.',
+                ephemeral: false
+            });
         }
     },
 };
