@@ -1,4 +1,5 @@
 const { doc, setDoc, updateDoc, increment, collection } = require('firebase/firestore');
+const { ActivityType } = require('discord.js'); // Import ActivityType here
 
 // In-memory cache for bot statistics
 let botStats = {
@@ -137,6 +138,7 @@ function getBotStats() {
  */
 function updateBotStatus(client) {
     const stats = getBotStats();
+    // Corrected format for statusText
     const statusText = `Helped ${stats.uniqueActiveUsers} players ${stats.totalHelps} times`;
 
     // Update the internal last known values
@@ -144,8 +146,9 @@ function updateBotStatus(client) {
     _lastUniqueActiveUsers = stats.uniqueActiveUsers;
 
     if (client.user) {
-        client.user.setActivity(statusText, { type: 'PLAYING' });
-        console.log(`Stats Tracker: Bot status updated to: "${statusText}"`);
+        // Correctly set the activity name and type
+        client.user.setActivity(statusText, { type: ActivityType.Playing }); // Use ActivityType.Playing
+        console.log(`Stats Tracker: Bot status updated to: "${statusText}" [${ActivityType[ActivityType.Playing]}]`);
     } else {
         console.warn('Stats Tracker: Cannot set bot status: client.user is not available.');
     }
