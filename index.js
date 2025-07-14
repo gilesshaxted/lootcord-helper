@@ -32,7 +32,7 @@ const firebaseConfig = {
     authDomain: process.env.FIREBASE_AUTH_DOMAIN,
     projectId: process.env.FIREBASE_PROJECT_ID,
     storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: process.env.MESSAGING_SENDER_ID, // Corrected from undefined in logs
+    messagingSenderId: process.env.MESSAGING_SENDER_ID,
     appId: process.env.FIREBASE_APP_ID,
     // measurementId: process.env.MEASUREMENT_ID // Uncomment if you use Measurement ID
 };
@@ -131,13 +131,11 @@ async function setupFirestoreListeners() {
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
             statsTracker.updateInMemoryStats(docSnap.data());
-            // Trigger status update only when stats change from Firestore
-            statsTracker.updateBotStatus(client);
+            statsTracker.updateBotStatus(client); // Pass client to updateBotStatus
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
             statsTracker.initializeStats({});
-            // Trigger status update for initial defaults
-            statsTracker.updateBotStatus(client);
+            statsTracker.updateBotStatus(client); // Pass client to updateBotStatus
         }
     }, (error) => {
         console.error("Stats Tracker: Error listening to botStats:", error);
@@ -220,14 +218,8 @@ client.once('ready', async () => {
         console.error('Failed to register slash commands:', error);
     }
 
-    // NEW: Add a small delay and then explicitly set status after everything else is ready
-    setTimeout(() => {
-        statsTracker.updateBotStatus(client);
-        console.log('Index.js: Forcing status update after 5 seconds.');
-    }, 5000); // 5-second delay
-
-    // Re-enable periodic update after the initial forced update
-    setInterval(() => statsTracker.updateBotStatus(client), 300000); // Update status every 5 minutes
+    // Removed setInterval for updateBotStatus. It is now triggered by onSnapshot.
+    // statsTracker.updateBotStatus(client); // Initial call is handled by onSnapshot's first trigger.
 
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
 });
@@ -333,4 +325,98 @@ client.on('interactionCreate', async interaction => {
                 await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
             }
             if (command.data.name !== 'channel-set') {
-                statsTracker.incrementTo
+                statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
+            }
+        } catch (error) {
+            console.error(`Error executing command ${command.data.name}:`, error);
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: false });
+            } else if (interaction.deferred) {
+                await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: false });
+            }
+        }
+    }
+
+    // Handle String Select Menu Interactions (for channel selection)
+    if (interaction.isStringSelectMenu()) {
+        if (interaction.customId.startsWith('select-channels-to-set_page_')) {
+            await interaction.deferUpdate();
+
+            const selectedChannelIds = interaction.values;
+            const guild = interaction.guild;
+            const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
+
+            if (!guild) {
+                return await interaction.followUp({ content: 'This action can only be performed in a guild.', ephemeral: false });
+            }
+
+            const guildCollectionRef = collection(db, `Guilds`);
+            const guildDocRef = doc(guildCollectionRef, guild.id);
+
+            let successCount = 0;
+            let failureCount = 0;
+            let successMessages = [];
+
+            for (const channelId of selectedChannelIds) {
+                const channel = guild.channels.cache.get(channelId);
+                if (!channel) {
+                    console.warn(`Selected channel ID ${channelId} not found in guild cache.`);
+                    failureCount++;
+                    continue;
+                }
+
+                const channelsSubCollectionRef = collection(guildDocRef, 'channels');
+                const channelDocRef = doc(channelsSubCollectionRef, channel.id);
+
+                try {
+                    await setDoc(guildDocRef, {
+                        guildId: guild.id,
+                        guildName: guild.name,
+                        guildOwnerId: guild.ownerId,
+                        lastUpdated: new Date().toISOString()
+                    }, { merge: true });
+
+                    await setDoc(channelDocRef, {
+                        channelId: channel.id,
+                        channelName: channel.name,
+                        originalChannelName: channel.name,
+                        setType: 'manual',
+                        setByUserId: interaction.user.id,
+                        setByUsername: interaction.user.tag,
+                        timestamp: new Date().toISOString()
+                    });
+                    successCount++;
+                    successMessages.push(`<#${channel.id}>`);
+                    statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
+                } catch (error) {
+                    console.error(`Error saving channel ${channel.name} (${channel.id}) to Firestore:`, error);
+                    failureCount++;
+                }
+            }
+
+            let replyContent = `Successfully set ${successCount} channel(s).`;
+            if (successMessages.length > 0) {
+                replyContent += `\nChannels: ${successMessages.join(', ')}`;
+            }
+            if (failureCount > 0) {
+                replyContent += `\nFailed to set ${failureCount} channel(s). Check logs for details.`;
+            }
+
+            await interaction.editReply({ content: replyContent, components: [], ephemeral: false });
+        }
+    }
+});
+
+// Log in to Discord with your bot's token.
+client.login(TOKEN);
+
+// --- Web Server for Hosting Platforms (e.g., Render) ---
+const app = express();
+
+app.get('/', (req, res) => {
+    res.send('Discord bot is running and listening for commands!');
+});
+
+app.listen(PORT, () => {
+    console.log(`Web server listening on port ${PORT}`);
+});
