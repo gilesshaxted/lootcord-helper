@@ -1,4 +1,4 @@
-const { doc, setDoc, updateDoc, increment, collection } = require('firebase/firestore'); // Added 'collection' import
+const { doc, setDoc, updateDoc, increment, collection } = require('firebase/firestore');
 
 // In-memory cache for bot statistics
 let botStats = {
@@ -23,18 +23,10 @@ function initializeStats(initialData) {
 }
 
 /**
- * Updates the in-memory bot stats from a Firestore snapshot.
- * @param {object} data Latest data from Firestore.
+ * [REMOVED] Updates the in-memory bot stats from a Firestore snapshot.
+ * This function is no longer needed as onSnapshot will not trigger automatic status updates.
  */
-function updateInMemoryStats(data) {
-    if (data) {
-        botStats.totalHelps = data.totalHelps || 0;
-        botStats.activeUsersMap = data.activeUsersMap || {};
-        botStats.uniqueActiveUsers = Object.keys(botStats.activeUsersMap).length;
-        botStats.lastUpdated = data.lastUpdated || null;
-    }
-    console.log('Stats Tracker: Updated in-memory stats:', botStats);
-}
+// function updateInMemoryStats(data) { ... }
 
 /**
  * Increments the total helps counter in Firestore.
@@ -110,25 +102,16 @@ function getBotStats() {
 }
 
 /**
- * Updates the bot's Discord status based on current in-memory stats.
- * @param {Client} client The Discord client instance.
+ * [REMOVED] Updates the bot's Discord status based on current in-memory stats.
+ * This function is now handled directly by the /set-status command.
  */
-function updateBotStatus(client) {
-    const stats = getBotStats();
-    const statusText = `Helped ${stats.uniqueActiveUsers} players ${stats.totalHelps} times`;
-    if (client.user) {
-        client.user.setActivity(statusText, { type: 'PLAYING' });
-        console.log(`Bot status updated to: "${statusText}"`);
-    } else {
-        console.warn('Cannot set bot status: client.user is not available.');
-    }
-}
+// function updateBotStatus(client) { ... }
 
 module.exports = {
     initializeStats,
-    updateInMemoryStats,
+    // updateInMemoryStats, // Removed from export
     incrementTotalHelps,
     addActiveUser,
     getBotStats,
-    updateBotStatus
+    // updateBotStatus // Removed from export
 };
