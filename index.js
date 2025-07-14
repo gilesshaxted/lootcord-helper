@@ -1,8 +1,8 @@
 // Import necessary classes from the discord.js library
-const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js'); // Added ModalBuilder, TextInputBuilder, TextInputStyle
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
-const express = require('express'); // Required for Render web service type
+const express = require('express');
 const path = require('path');
 const fs = require('fs');
 
@@ -150,7 +150,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildPresences, // NEW: Required for setting bot status/presence
+        GatewayIntentBits.GuildPresences, // Required for setting bot status/presence
     ]
 });
 
@@ -273,7 +273,6 @@ async function checkAndRenameChannelsOnStartup() {
 
     console.log('Startup Channel Check: Initiating channel status check after bot restart...');
 
-    // Get all guilds the bot is in
     for (const guild of client.guilds.cache.values()) {
         const guildId = guild.id;
         const guildChannelsRef = collection(db, `Guilds/${guildId}/channels`);
@@ -296,12 +295,10 @@ async function checkAndRenameChannelsOnStartup() {
                     continue;
                 }
 
-                // Fetch the last message in the channel
                 const messages = await channel.messages.fetch({ limit: 1 });
                 const lastMessage = messages.first();
 
                 if (!lastMessage || lastMessage.author.id !== '493316754689359874' || lastMessage.embeds.length === 0) {
-                    // If no relevant last message, revert to original name if current name is not original
                     if (channel.name !== originalChannelName) {
                         try {
                             await channel.setName(originalChannelName, 'Automated revert on startup: no relevant last message found.');
@@ -310,14 +307,13 @@ async function checkAndRenameChannelsOnStartup() {
                             console.error(`Startup Channel Check: Failed to revert ${channel.name} to ${originalChannelName} on startup:`, error);
                         }
                     }
-                    continue; // No relevant message to check for renaming
+                    continue;
                 }
 
                 const embedTitle = lastMessage.embeds[0].title;
                 const messageContent = lastMessage.content;
                 let newName = null;
 
-                // Apply renaming logic (similar to MobDetect.js)
                 if (embedTitle) {
                     if (embedTitle.includes('Heavy Scientist')) {
                         newName = '🐻╏heavy';
@@ -332,7 +328,6 @@ async function checkAndRenameChannelsOnStartup() {
                     }
                 }
 
-                // Apply revert logic (similar to MobDetect.js)
                 const embed = lastMessage.embeds[0];
                 const embedTitleRevert = embed && embed.title && embed.title.includes('left...');
                 const embedDescriptionRevert = embed && embed.description && embed.description.includes('killed a mob');
@@ -348,7 +343,7 @@ async function checkAndRenameChannelsOnStartup() {
                             console.error(`Startup Channel Check: Failed to revert ${channel.name} to ${originalChannelName} on startup:`, error);
                         }
                     }
-                } else if (newName && channel.name !== newName) { // Only rename if a newName is determined and current name is different
+                } else if (newName && channel.name !== newName) {
                     try {
                         await channel.setName(newName, 'Automated rename on startup: enemy spawn detected.');
                         console.log(`Startup Channel Check: Renamed ${channel.name} to ${newName} in ${guild.name}.`);
@@ -420,6 +415,129 @@ client.on('interactionCreate', async interaction => {
         return;
     }
 
+    // Handle Button Interactions (for Wordle game start)
+    if (interaction.isButton()) {
+        if (interaction.customId === 'wordle_start_game') {
+            await interaction.deferUpdate(); // Acknowledge the button click
+
+            // Create the modal for the first guess
+            const modal = new ModalBuilder()
+                .setCustomId('wordle_first_guess_modal')
+                .setTitle('Enter Your First Wordle Guess');
+
+            const guessInput = new TextInputBuilder()
+                .setCustomId('wordle_guess_input')
+                .setLabel('Your 5-letter guess')
+                .setStyle(TextInputStyle.Short)
+                .setMinLength(5)
+                .setMaxLength(5)
+                .setPlaceholder('e.g., CRANE');
+
+            const firstActionRow = new ActionRowBuilder().addComponents(guessInput);
+
+            modal.addComponents(firstActionRow);
+
+            await interaction.showModal(modal);
+            console.log(`Wordle Game: Showed modal for first guess to ${interaction.user.tag}`);
+
+            // Optionally, make an LLM call here to get a best starting word,
+            // then set it as a default value in the TextInputBuilder if desired.
+            // For now, we'll just prompt the user.
+        } else if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
+            // Existing pagination button handling
+            await interaction.deferUpdate();
+
+            const parts = interaction.customId.split('_');
+            const action = parts[1];
+            const currentPage = parseInt(parts[2], 10);
+
+            let newPage = currentPage;
+            if (action === 'prev') {
+                newPage--;
+            } else if (action === 'next') {
+                newPage++;
+            }
+
+            const { content, components } = await createChannelPaginationMessage(interaction.guild, newPage);
+            await interaction.editReply({ content, components, ephemeral: false });
+        }
+    }
+
+    // Handle Modal Submissions (for Wordle first guess)
+    if (interaction.isModalSubmit()) {
+        if (interaction.customId === 'wordle_first_guess_modal') {
+            await interaction.deferReply({ ephemeral: false }); // Defer reply for modal submission
+
+            const userGuess = interaction.fields.getTextInputValue('wordle_guess_input').toLowerCase();
+            const channelId = interaction.channel.id;
+
+            // --- LLM Call to get best starting word (e.g., CRANE) ---
+            const promptForBestStart = `Suggest the single best 5-letter English word to start a Wordle game. Only provide the word, no other text or punctuation.`;
+            let bestStartingWord = 'CRANE'; // Default fallback
+
+            try {
+                const chatHistory = [];
+                chatHistory.push({ role: "user", parts: [{ text: promptForBestStart }] });
+                const payload = { contents: chatHistory };
+                const apiKey = process.env.GOOGLE_API_KEY;
+
+                if (apiKey) {
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const result = await response.json();
+                    if (result.candidates && result.candidates.length > 0 && result.candidates[0].content && result.candidates[0].content.parts && result.candidates[0].content.parts.length > 0) {
+                        bestStartingWord = result.candidates[0].content.parts[0].text.trim().toUpperCase();
+                        // Basic validation for 5-letter word
+                        if (bestStartingWord.length !== 5 || !/^[A-Z]+$/.test(bestStartingWord)) {
+                            bestStartingWord = 'CRANE'; // Fallback if LLM gives bad format
+                        }
+                    }
+                } else {
+                    console.warn('Wordle Solver: GOOGLE_API_KEY not set, using default starting word.');
+                }
+            } catch (error) {
+                console.error('Wordle Solver: Error getting best starting word from LLM:', error);
+            }
+
+            // --- Store initial game state in Firestore ---
+            const gameDocRef = doc(collection(db, `WordleGames`), channelId);
+            try {
+                await setDoc(gameDocRef, {
+                    channelId: channelId,
+                    userId: interaction.user.id,
+                    status: 'active',
+                    wordLength: 5,
+                    guessesMade: [], // Store previous guesses and their results
+                    currentGuessNumber: 0,
+                    correctLetters: {}, // {index: letter}
+                    misplacedLetters: {}, // {letter: [indices where it's not]}
+                    wrongLetters: [], // [letters]
+                    gameStartedAt: new Date().toISOString(),
+                    // gameBotMessageId: message.id // Need to store the game bot's initial message ID for context
+                });
+                console.log(`Wordle Game: Initialized game state for channel ${channelId}`);
+            } catch (error) {
+                console.error(`Wordle Game: Failed to save initial game state for channel ${channelId}:`, error);
+                await interaction.editReply({ content: 'An error occurred while starting the Wordle game. Please try again.', ephemeral: false });
+                return;
+            }
+
+            // Reply with the suggested word and prompt the user to make their guess in the game
+            await interaction.editReply({
+                content: `You entered: \`${userGuess}\`\n\nMy suggestion for your next guess is: \`${bestStartingWord}\`\n\nPlease type \`${bestStartingWord}\` into the Wordle game.`,
+                components: [], // Remove components after initial prompt
+                ephemeral: false
+            });
+            statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps for starting Wordle
+            console.log(`Wordle Game: Suggested first word '${bestStartingWord}' to ${interaction.user.tag} in #${interaction.channel.name}`);
+        }
+    }
+
+    // Handle Chat Input Commands (Slash Commands)
     if (interaction.isChatInputCommand()) {
         const command = client.commands.get(interaction.commandName);
 
@@ -449,8 +567,11 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
+    // Handle Button Interactions (for pagination) - other than wordle_start_game
     if (interaction.isButton()) {
+        // wordle_start_game is handled above
         if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
+            // Existing pagination button handling
             await interaction.deferUpdate();
 
             const parts = interaction.customId.split('_');
@@ -469,6 +590,7 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
+    // Handle String Select Menu Interactions (for channel selection)
     if (interaction.isStringSelectMenu()) {
         if (interaction.customId.startsWith('select-channels-to-set_page_')) {
             await interaction.deferUpdate();
@@ -538,8 +660,10 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
+// Log in to Discord with your bot's token.
 client.login(TOKEN);
 
+// --- Web Server for Hosting Platforms (e.g., Render) ---
 const app = express();
 
 app.get('/', (req, res) => {
