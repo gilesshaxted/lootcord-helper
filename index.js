@@ -127,19 +127,20 @@ async function setupFirestoreListeners() {
         console.error("Error writing bot status to Firestore:", e);
     }
 
-    const statsDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/stats`), 'botStats');
-    onSnapshot(statsDocRef, (docSnap) => {
-        if (docSnap.exists()) {
-            statsTracker.updateInMemoryStats(docSnap.data());
-            statsTracker.updateBotStatus(client); // Pass client to updateBotStatus
-        } else {
-            console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
-            statsTracker.initializeStats({});
-            statsTracker.updateBotStatus(client); // Pass client to updateBotStatus
-        }
-    }, (error) => {
-        console.error("Stats Tracker: Error listening to botStats:", error);
-    });
+    // Removed onSnapshot listener for statsDocRef as automatic status updates are disabled.
+    // const statsDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/stats`), 'botStats');
+    // onSnapshot(statsDocRef, (docSnap) => {
+    //     if (docSnap.exists()) {
+    //         statsTracker.updateInMemoryStats(docSnap.data());
+    //         statsTracker.updateBotStatus(client);
+    //     } else {
+    //         console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
+    //         statsTracker.initializeStats({});
+    //         statsTracker.updateBotStatus(client);
+    //     }
+    // }, (error) => {
+    //     console.error("Stats Tracker: Error listening to botStats:", error);
+    // });
 }
 
 
@@ -149,7 +150,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildPresences, // Required for setting bot status/presence
+        GatewayIntentBits.GuildPresences, // Still required for manual status updates
     ]
 });
 
@@ -200,7 +201,7 @@ client.once('ready', async () => {
     }
 
     await initializeFirebase();
-    await setupFirestoreListeners(); // This sets up the onSnapshot for stats, which will trigger updateBotStatus
+    await setupFirestoreListeners(); // This sets up the onSnapshot for botStatus, but not for general stats.
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
@@ -218,8 +219,8 @@ client.once('ready', async () => {
         console.error('Failed to register slash commands:', error);
     }
 
-    // Removed setInterval for updateBotStatus. It is now triggered by onSnapshot.
-    // statsTracker.updateBotStatus(client); // Initial call is handled by onSnapshot's first trigger.
+    // Removed setInterval for updateBotStatus. Status is now only set manually or by specific events.
+    // setInterval(() => statsTracker.updateBotStatus(client), 300000);
 
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
 });
