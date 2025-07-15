@@ -115,7 +115,7 @@ function getBotStats() {
  */
 function updateBotStatus(client) {
     const stats = getBotStats();
-    const statusText = `Helped ${stats.uniqueActiveUsers} players ${stats.totalHelps} times`;
+    const statusText = `Helped ${stats.uniqueActiveUsers} players ${stats.totalHelps} times in ${client.guilds.cache.size} servers`; // Updated format
     if (client.user) {
         client.user.setActivity(statusText, { type: 'PLAYING' });
         console.log(`Bot status updated to: "${statusText}"`);
@@ -130,5 +130,5 @@ module.exports = {
     incrementTotalHelps,
     addActiveUser,
     getBotStats,
-    updateBotStatus // Export updateBotStatus
+    updateBotStatus
 };
