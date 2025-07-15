@@ -42,9 +42,9 @@ module.exports = {
                 const data = docSnap.data();
                 totalHelps = data.totalHelps ?? 0; // Use nullish coalescing for safety
                 uniqueActiveUsers = Object.keys(data.activeUsersMap ?? {}).length; // Use nullish coalescing for safety
-                replyContent = `**Bot Statistics (from Firestore):**\nHelped \`${uniqueActiveUsers}\` players \`${totalHelps}\` times.`;
+                replyContent = `**Bot Statistics:**\nHelped \`${uniqueActiveUsers}\` players \`${totalHelps}\` times.`;
             } else {
-                replyContent = `**Bot Statistics (from Firestore):**\nNo statistics found in the database yet.`;
+                replyContent = `**Bot Statistics:**\nNo statistics found in the database yet.`;
                 console.warn('Bot Stats Command: botStats document not found in Firestore.');
             }
         } catch (error) {
