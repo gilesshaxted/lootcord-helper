@@ -209,29 +209,6 @@ client.once('ready', async () => {
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
-    // --- TEMPORARY: AGGRESSIVE GUILD COMMAND DELETION LOGIC (Run ONCE for specific guild) ---
-    // This block is designed to forcefully delete ALL guild-specific slash commands
-    // from the specified guild. This is to clear lingering duplicates in your test server.
-    // Run this ONCE when you deploy, then REMOVE/COMMENT IT OUT.
-    const TARGET_GUILD_FOR_DELETION = '1192414247196573747'; // Your specific test guild ID
-    try {
-        console.log(`--- AGGRESSIVE TEMPORARY: Attempting to delete ALL guild commands for guild ${TARGET_GUILD_FOR_DELETION} ---`);
-        // This performs a PUT with an empty array to the guild-specific commands route.
-        await rest.put(
-            Routes.applicationGuildCommands(CLIENT_ID, TARGET_GUILD_FOR_DELETION),
-            { body: [] }, // Send an empty array to delete all commands in this guild
-        );
-        console.log(`--- AGGRESSIVE TEMPORARY: Successfully sent request to delete all guild commands for guild ${TARGET_GUILD_FOR_DELETION}. ---`);
-        console.log('--- IMPORTANT: Give Discord a few minutes to process this. Then, REMOVE THIS BLOCK and redeploy. ---');
-        // You might want to exit here to ensure deletion propagates before re-registering
-        // process.exit(0); // Uncomment this line if you want the bot to exit after deletion attempt
-    } catch (error) {
-        console.error('--- AGGRESSIVE TEMPORARY: Error deleting guild commands: ---', error);
-        console.error('This error might be expected if no commands existed or due to rate limits. Proceeding with registration.');
-    }
-    // --- END AGGRESSIVE TEMPORARY: Guild Command Deletion Logic ---
-
-
     try {
         console.log(`Started refreshing ${slashCommandsToRegister.length} application (/) commands.`);
 
