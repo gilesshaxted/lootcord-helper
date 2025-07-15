@@ -1,22 +1,20 @@
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const { doc, collection, getDoc } = require('firebase/firestore'); // Import necessary Firestore functions
-// statsTracker is no longer needed for direct fetch in this command, but kept for consistency if other commands use it.
-// const statsTracker = require('../utils/statsTracker'); 
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js'); // Import PermissionFlagsBits
+const { doc, collection, getDoc } = require('firebase/firestore');
 
 module.exports = {
     // Defines the slash command's name and description.
     data: new SlashCommandBuilder()
         .setName('bot-stats')
-        .setDescription('Displays the current bot usage statistics directly from Firestore.'), // Updated description
+        .setDescription('Displays the current bot usage statistics directly from Firestore.'),
 
     // The execute function now accepts db, client, and APP_ID_FOR_FIRESTORE.
     async execute(interaction, db, client, APP_ID_FOR_FIRESTORE) {
         await interaction.deferReply({ ephemeral: false }); // Non-ephemeral for testing
 
-        // ✅ Permissions Check
-        if (!interaction.member.permissions.has('Administrator')) {
+        // ✅ Permissions Check: Use PermissionFlagsBits for v14
+        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
             return await interaction.editReply({
-                content: '❌ You do not have permission to use this command.',
+                content: '❌ You do not have permission to use this command. This command requires Administrator permissions.',
                 ephemeral: true, // Keep this ephemeral for permission errors
             });
         }
@@ -27,12 +25,12 @@ module.exports = {
         }
 
         // Explicitly define the full path to the botStats document
-        // Using the structure derived from APP_ID_FOR_FIRESTORE
         const STATS_DOC_PATH = `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/stats`;
         const statsDocRef = doc(collection(db, STATS_DOC_PATH), 'botStats');
 
         let totalHelps = 0;
         let uniqueActiveUsers = 0;
+        let totalServers = client.guilds.cache.size; // Get the number of guilds the bot is in
         let replyContent = '';
 
         try {
@@ -40,13 +38,14 @@ module.exports = {
 
             if (docSnap.exists()) {
                 const data = docSnap.data();
-                totalHelps = data.totalHelps ?? 0; // Use nullish coalescing for safety
-                uniqueActiveUsers = Object.keys(data.activeUsersMap ?? {}).length; // Use nullish coalescing for safety
-                replyContent = `**Bot Statistics:**\nHelped \`${uniqueActiveUsers}\` players \`${totalHelps}\` times.`;
+                totalHelps = data.totalHelps ?? 0;
+                uniqueActiveUsers = Object.keys(data.activeUsersMap ?? {}).length;
             } else {
-                replyContent = `**Bot Statistics:**\nNo statistics found in the database yet.`;
                 console.warn('Bot Stats Command: botStats document not found in Firestore.');
             }
+
+            // Updated reply content to include server count
+            replyContent = `**Bot Statistics:**\nHelped \`${uniqueActiveUsers}\` players in \`${totalServers}\` servers \`${totalHelps}\` times.`;
         } catch (error) {
             console.error('Bot Stats Command: Error fetching stats directly from Firestore:', error);
             replyContent = '❌ An error occurred while fetching statistics from Firestore. Please check the logs.';
