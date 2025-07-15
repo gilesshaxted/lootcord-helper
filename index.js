@@ -13,6 +13,7 @@ const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs } = require('
 
 // Import Utilities
 const statsTracker = require('./utils/statsTracker');
+const botStatus = require('./utils/botStatus'); // Corrected import for botStatus
 const paginationHelpers = require('./utils/pagination');
 const startupChecks = require('./utils/startupChecks');
 const wordleHelpers = require('./utils/wordleHelpers');
@@ -127,16 +128,16 @@ async function setupFirestoreListeners() {
         console.error("Error writing bot status to Firestore:", e);
     }
 
-    // Listener for bot statistics - this will trigger updateBotStatus via statsTracker
+    // Listener for bot statistics - this will trigger updateBotPresence via statsTracker
     const statsDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/stats`), 'botStats');
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
             statsTracker.updateInMemoryStats(docSnap.data());
-            statsTracker.updateBotStatus(client); // Update Discord status whenever stats change
+            botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Pass client and current stats
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
             statsTracker.initializeStats({}); // Initialize with empty stats
-            statsTracker.updateBotStatus(client); // Update Discord status
+            botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Update Discord status
         }
     }, (error) => {
         console.error("Stats Tracker: Error listening to botStats:", error);
@@ -219,10 +220,9 @@ client.once('ready', async () => {
     }
 
     // Set initial status and update periodically via statsTracker's listener
-    // The setInterval is handled by statsTracker's onSnapshot listener now.
-    // updateBotStatus() is called inside statsTracker.js when stats change.
+    // The setInterval is moved to updateBotPresence in botStatus.js
     // We only need to ensure the initial status is set.
-    statsTracker.updateBotStatus(client); // Initial call on ready
+    botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Initial call on ready
 
     // Run channel check and rename on startup
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
