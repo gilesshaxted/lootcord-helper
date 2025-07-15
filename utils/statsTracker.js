@@ -1,4 +1,4 @@
-const { doc, setDoc, updateDoc, increment, collection } = require('firebase/firestore'); // Added 'collection' import
+const { doc, setDoc, updateDoc, increment, collection } = require('firebase/firestore');
 
 // In-memory cache for bot statistics
 let botStats = {
@@ -109,26 +109,13 @@ function getBotStats() {
     return botStats;
 }
 
-/**
- * Updates the bot's Discord status based on current in-memory stats.
- * @param {Client} client The Discord client instance.
- */
-function updateBotStatus(client) {
-    const stats = getBotStats();
-    const statusText = `Helped ${stats.uniqueActiveUsers} players ${stats.totalHelps} times in ${client.guilds.cache.size} servers`; // Updated format
-    if (client.user) {
-        client.user.setActivity(statusText, { type: 'PLAYING' });
-        console.log(`Bot status updated to: "${statusText}"`);
-    } else {
-        console.warn('Cannot set bot status: client.user is not available.');
-    }
-}
+// updateBotStatus function is moved to utils/botStatus.js
 
 module.exports = {
     initializeStats,
     updateInMemoryStats,
     incrementTotalHelps,
     addActiveUser,
-    getBotStats,
-    updateBotStatus
+    getBotStats
+    // updateBotStatus is no longer exported from here
 };
