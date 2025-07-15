@@ -1,20 +1,25 @@
-const statsTracker = require('./statsTracker'); // Import statsTracker to get current stats
-
 /**
- * Updates the bot's Discord status based on current in-memory stats.
+ * Updates the bot's Discord status based on provided statistics.
+ * This utility is solely responsible for setting the bot's presence.
  * @param {Client} client The Discord client instance.
+ * @param {object} stats The statistics object (e.g., from statsTracker.getBotStats()).
  */
-function updateBotStatus(client) {
-    const stats = statsTracker.getBotStats();
-    const statusText = `Helped ${stats.uniqueActiveUsers} players ${stats.totalHelps} times in ${client.guilds.cache.size} servers`;
+function updateBotPresence(client, stats) {
+    // Ensure stats object has the necessary properties
+    const totalHelps = stats.totalHelps ?? 0;
+    const uniqueActiveUsers = stats.uniqueActiveUsers ?? 0;
+    const totalServers = client.guilds.cache.size; // Get the number of guilds the bot is in
+
+    const statusText = `Helped ${uniqueActiveUsers} players ${totalHelps} times in ${totalServers} servers`;
+
     if (client.user) {
-        client.user.setActivity(statusText, { type: 'PLAYING' });
-        console.log(`Bot status updated to: "${statusText}"`);
+        client.user.setActivity(statusText, { type: 'PLAYING' }); // 'PLAYING' is a common type
+        console.log(`Bot Status: Updated presence to: "${statusText}"`);
     } else {
-        console.warn('Cannot set bot status: client.user is not available.');
+        console.warn('Bot Status: Cannot set bot presence: client.user is not available.');
     }
 }
 
 module.exports = {
-    updateBotStatus
+    updateBotPresence
 };
