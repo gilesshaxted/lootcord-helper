@@ -15,7 +15,7 @@ const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs } = require('
 const statsTracker = require('./utils/statsTracker');
 const paginationHelpers = require('./utils/pagination');
 const startupChecks = require('./utils/startupChecks');
-const wordleHelpers = require('./utils/wordleHelpers'); // Import Wordle helpers
+const wordleHelpers = require('./utils/wordleHelpers');
 
 // Load environment variables from a .env file (for local testing)
 require('dotenv').config();
@@ -23,7 +23,7 @@ require('dotenv').config();
 // --- Configuration Variables ---
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
-const PREFIX = '!'; // Prefix for traditional message commands
+const PREFIX = '!';
 const PORT = process.env.PORT || 3000;
 
 // Firebase configuration loaded from environment variables for Render hosting
@@ -36,11 +36,6 @@ const firebaseConfig = {
     appId: process.env.FIREBASE_APP_ID,
     // measurementId: process.env.MEASUREMENT_ID // Uncomment if you use Measurement ID
 };
-
-// --- Pagination Specific Configuration (used by paginationHelpers) ---
-// These constants are now defined within paginationHelpers.js
-// const CHANNELS_PER_PAGE = 25;
-// const TARGET_CATEGORY_ID = '1192414248299675663';
 
 // --- Firestore App ID for data paths ---
 const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
@@ -209,12 +204,41 @@ client.once('ready', async () => {
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
+    // --- TEMPORARY: Command Deletion Logic ---
+    // This block should be run ONCE and then removed/commented out.
+    // It deletes all global slash commands to clear duplicates.
+    // Ensure CLIENT_ID and TOKEN are correctly set in Render's environment variables.
+    try {
+        console.log('--- TEMPORARY: Attempting to delete all global application (/) commands ---');
+        const existingCommands = await rest.get(Routes.applicationCommands(CLIENT_ID));
+        
+        if (existingCommands.length > 0) {
+            for (const command of existingCommands) {
+                // Check if the command is NOT a default Discord command (like /help, /settings)
+                // and if it's one of YOUR bot's commands by name if possible.
+                // For simplicity, we're deleting all global commands associated with this CLIENT_ID.
+                await rest.delete(Routes.applicationCommand(CLIENT_ID, command.id));
+                console.log(`TEMPORARY: Deleted global command: ${command.name} (ID: ${command.id})`);
+            }
+            console.log('--- TEMPORARY: Successfully deleted all global application (/) commands. ---');
+            // Give Discord a moment to process deletions before re-registering
+            await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+        } else {
+            console.log('--- TEMPORARY: No global commands found to delete. ---');
+        }
+    } catch (error) {
+        console.error('--- TEMPORARY: Error deleting global commands: ---', error);
+        console.error('This error might be expected if no commands existed or due to rate limits. Proceeding with registration.');
+    }
+    // --- END TEMPORARY: Command Deletion Logic ---
+
+
     try {
         console.log(`Started refreshing ${slashCommandsToRegister.length} application (/) commands.`);
 
-        // --- CHANGED: Register commands globally ---
+        // --- Register commands globally ---
         const data = await rest.put(
-            Routes.applicationCommands(CLIENT_ID), // Changed to global registration
+            Routes.applicationCommands(CLIENT_ID), // This line registers commands GLOBALLY
             { body: slashCommandsToRegister },
         );
         console.log(`Successfully reloaded ${data.length} global (/) commands.`);
@@ -282,6 +306,8 @@ client.on('messageCreate', async message => {
 });
 
 
+// The interactionCreate event listener remains here because it handles
+// both slash commands and component interactions (buttons, select menus).
 client.on('interactionCreate', async interaction => {
     if (!isFirestoreReady) {
         console.error('Firestore is not yet ready to process interactions. Skipping interaction.');
@@ -429,4 +455,3 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
     console.log(`Web server listening on port ${PORT}`);
 });
-	
