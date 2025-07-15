@@ -1,5 +1,5 @@
 // Import necessary classes from the discord.js library
-const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder } = require('discord.js'); // Added AttachmentBuilder
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 const express = require('express');
@@ -127,20 +127,19 @@ async function setupFirestoreListeners() {
         console.error("Error writing bot status to Firestore:", e);
     }
 
-    // Removed onSnapshot listener for statsDocRef as automatic status updates are disabled.
-    // const statsDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/stats`), 'botStats');
-    // onSnapshot(statsDocRef, (docSnap) => {
-    //     if (docSnap.exists()) {
-    //         statsTracker.updateInMemoryStats(docSnap.data());
-    //         statsTracker.updateBotStatus(client);
-    //     } else {
-    //         console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
-    //         statsTracker.initializeStats({});
-    //         statsTracker.updateBotStatus(client);
-    //     }
-    // }, (error) => {
-    //     console.error("Stats Tracker: Error listening to botStats:", error);
-    // });
+    const statsDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/stats`), 'botStats');
+    onSnapshot(statsDocRef, (docSnap) => {
+        if (docSnap.exists()) {
+            statsTracker.updateInMemoryStats(docSnap.data());
+            statsTracker.updateBotStatus(client);
+        } else {
+            console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
+            statsTracker.initializeStats({});
+            statsTracker.updateBotStatus(client);
+        }
+    }, (error) => {
+        console.error("Stats Tracker: Error listening to botStats:", error);
+    });
 }
 
 
@@ -150,7 +149,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildPresences, // Still required for manual status updates
+        GatewayIntentBits.GuildPresences,
     ]
 });
 
@@ -187,6 +186,20 @@ for (const file of eventFiles) {
 }
 
 
+// --- Helper Function for Channel Pagination UI ---
+// This function is now imported from utils/pagination.js
+// async function createChannelPaginationMessage(guild, currentPage) { ... }
+
+
+// --- Bot Status Update Function ---
+// This function is now part of statsTracker.js
+// function updateBotStatus() { ... }
+
+// --- Function to check and rename channels on startup (Downtime Recovery) ---
+// This function is now part of utils/startupChecks.js
+// async function checkAndRenameChannelsOnStartup() { ... }
+
+
 // --- Discord Event Handlers (main ones remaining in index.js) ---
 
 client.once('ready', async () => {
@@ -201,7 +214,7 @@ client.once('ready', async () => {
     }
 
     await initializeFirebase();
-    await setupFirestoreListeners(); // This sets up the onSnapshot for botStatus, but not for general stats.
+    await setupFirestoreListeners();
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
@@ -219,15 +232,15 @@ client.once('ready', async () => {
         console.error('Failed to register slash commands:', error);
     }
 
-    // Removed setInterval for updateBotStatus. Status is now only set manually or by specific events.
-    // setInterval(() => statsTracker.updateBotStatus(client), 300000);
+    statsTracker.updateBotStatus(client);
+    setInterval(() => statsTracker.updateBotStatus(client), 300000);
 
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
 });
 
-// --- Handle !wordlelog command ---
-const WORDLE_LOG_CHANNEL_ID = '1394316724819591318';
-const WORDLE_LOG_REQUESTER_ID = '444211741774184458';
+// --- NEW: Handle !wordlelog command ---
+const WORDLE_LOG_CHANNEL_ID = '1394316724819591318'; // The channel where Wordle games are played
+const WORDLE_LOG_REQUESTER_ID = '444211741774184458'; // User ID of the authorized requester
 
 client.on('messageCreate', async message => {
     // Check for !wordlelog command
@@ -238,10 +251,11 @@ client.on('messageCreate', async message => {
         }
 
         try {
+            // Fetch last 50 messages from the Wordle channel
             const messages = await message.channel.messages.fetch({ limit: 50 });
             let logContent = `--- Wordle Channel Log (${message.channel.name}) ---\n\n`;
 
-            messages.reverse().forEach(msg => {
+            messages.reverse().forEach(msg => { // Reverse to show oldest first
                 logContent += `[${msg.createdAt.toISOString()}] ${msg.author.tag} (${msg.author.id}):\n`;
                 if (msg.content) {
                     logContent += `  Content: "${msg.content}"\n`;
@@ -278,6 +292,8 @@ client.on('messageCreate', async message => {
 });
 
 
+// The interactionCreate event listener remains here because it handles
+// both slash commands and component interactions (buttons, select menus).
 client.on('interactionCreate', async interaction => {
     if (!isFirestoreReady) {
         console.error('Firestore is not yet ready to process interactions. Skipping interaction.');
@@ -289,7 +305,9 @@ client.on('interactionCreate', async interaction => {
 
     // Handle Button Interactions (for pagination)
     if (interaction.isButton()) {
+        // Removed Wordle game start button handling from here
         if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
+            // Existing pagination button handling
             await interaction.deferUpdate();
 
             const parts = interaction.customId.split('_');
@@ -303,10 +321,13 @@ client.on('interactionCreate', async interaction => {
                 newPage++;
             }
 
-            const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage);
+            const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage); // Use helper
             await interaction.editReply({ content, components, ephemeral: false });
         }
     }
+
+    // Handle Modal Submissions (for Wordle first guess) - Removed from here, now handled by wordleSolver.js
+    // if (interaction.isModalSubmit()) { ... }
 
     // Handle Chat Input Commands (Slash Commands)
     if (interaction.isChatInputCommand()) {
