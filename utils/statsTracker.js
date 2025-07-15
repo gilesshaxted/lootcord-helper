@@ -1,5 +1,4 @@
-const { doc, setDoc, updateDoc, increment, collection } = require('firebase/firestore');
-const { ActivityType } = require('discord.js'); // Import ActivityType here
+const { doc, setDoc, updateDoc, increment, collection } = require('firebase/firestore'); // Added 'collection' import
 
 // In-memory cache for bot statistics
 let botStats = {
@@ -8,10 +7,6 @@ let botStats = {
     activeUsersMap: {}, // To track unique user IDs
     lastUpdated: null
 };
-
-// Internal variables to track the last values that were used to set the Discord status
-let _lastTotalHelps = -1; // Initialize with a value that ensures first update
-let _lastUniqueActiveUsers = -1; // Initialize with a value that ensures first update
 
 /**
  * Initializes the in-memory bot stats.
@@ -25,37 +20,20 @@ function initializeStats(initialData) {
         botStats.lastUpdated = initialData.lastUpdated || null;
     }
     console.log('Stats Tracker: Initialized in-memory stats:', botStats);
-    // Initialize _last values to ensure status is set on first data load
-    _lastTotalHelps = -1;
-    _lastUniqueActiveUsers = -1;
 }
 
 /**
  * Updates the in-memory bot stats from a Firestore snapshot.
- * This function now also checks if the relevant stats have changed before calling updateBotStatus.
  * @param {object} data Latest data from Firestore.
- * @param {Client} client The Discord client instance (passed to updateBotStatus if needed).
  */
-function updateInMemoryStats(data, client) {
+function updateInMemoryStats(data) {
     if (data) {
-        const newTotalHelps = data.totalHelps || 0;
-        const newActiveUsersMap = data.activeUsersMap || {};
-        const newUniqueActiveUsers = Object.keys(newActiveUsersMap).length;
-        const newLastUpdated = data.lastUpdated || null;
-
-        // Check if values relevant to the status text have actually changed
-        if (newTotalHelps !== _lastTotalHelps || newUniqueActiveUsers !== _lastUniqueActiveUsers) {
-            botStats.totalHelps = newTotalHelps;
-            botStats.activeUsersMap = newActiveUsersMap;
-            botStats.uniqueActiveUsers = newUniqueActiveUsers;
-            botStats.lastUpdated = newLastUpdated;
-
-            console.log('Stats Tracker: Updated in-memory stats:', botStats);
-            updateBotStatus(client); // Only update Discord status if numbers changed
-        } else {
-            // console.log('Stats Tracker: In-memory stats updated, but status values are unchanged. Skipping Discord status update.'); // Too verbose
-        }
+        botStats.totalHelps = data.totalHelps || 0;
+        botStats.activeUsersMap = data.activeUsersMap || {};
+        botStats.uniqueActiveUsers = Object.keys(botStats.activeUsersMap).length;
+        botStats.lastUpdated = data.lastUpdated || null;
     }
+    console.log('Stats Tracker: Updated in-memory stats:', botStats);
 }
 
 /**
@@ -133,24 +111,16 @@ function getBotStats() {
 
 /**
  * Updates the bot's Discord status based on current in-memory stats.
- * This function is called by updateInMemoryStats when relevant data changes.
  * @param {Client} client The Discord client instance.
  */
 function updateBotStatus(client) {
     const stats = getBotStats();
-    // Corrected format for statusText
     const statusText = `Helped ${stats.uniqueActiveUsers} players ${stats.totalHelps} times`;
-
-    // Update the internal last known values
-    _lastTotalHelps = stats.totalHelps;
-    _lastUniqueActiveUsers = stats.uniqueActiveUsers;
-
     if (client.user) {
-        // Correctly set the activity name and type
-        client.user.setActivity(statusText, { type: ActivityType.Playing }); // Use ActivityType.Playing
-        console.log(`Stats Tracker: Bot status updated to: "${statusText}" [${ActivityType[ActivityType.Playing]}]`);
+        client.user.setActivity(statusText, { type: 'PLAYING' });
+        console.log(`Bot status updated to: "${statusText}"`);
     } else {
-        console.warn('Stats Tracker: Cannot set bot status: client.user is not available.');
+        console.warn('Cannot set bot status: client.user is not available.');
     }
 }
 
@@ -160,5 +130,5 @@ module.exports = {
     incrementTotalHelps,
     addActiveUser,
     getBotStats,
-    updateBotStatus
+    updateBotStatus // Export updateBotStatus
 };
