@@ -1,37 +1,17 @@
-const { SlashCommandBuilder, ActivityType } = require('discord.js');
-const { doc, collection, getDoc } = require('firebase/firestore');
-const statsTracker = require('../utils/statsTracker'); // Import statsTracker utility
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const { doc, collection, getDoc } = require('firebase/firestore'); // Import necessary Firestore functions
+// statsTracker is no longer needed for direct fetch in this command, but kept for consistency if other commands use it.
+// const statsTracker = require('../utils/statsTracker'); 
 
 module.exports = {
-    // Defines the slash command's name, description, and options.
+    // Defines the slash command's name and description.
     data: new SlashCommandBuilder()
-        .setName('set-status')
-        .setDescription('Manually updates the bot\'s Discord status or uses current statistics.')
-        .addStringOption(option =>
-            option.setName('text')
-                .setDescription('Optional: The custom text to set as the bot\'s status.')
-                .setRequired(false) // Make this option optional
-        )
-        .addStringOption(option =>
-            option.setName('activity')
-                .setDescription('Optional: Select the activity type (default is PLAYING).')
-                .setRequired(false)
-                .addChoices(
-                    { name: 'Playing', value: 'PLAYING' },
-                    { name: 'Watching', value: 'WATCHING' },
-                    { name: 'Listening', value: 'LISTENING' },
-                    { name: 'Competing', value: 'COMPETING' }
-                    // Streaming intentionally omitted unless you want to handle URLs
-                )
-        )
-        .addBooleanOption(option =>
-            option.setName('force_dynamic')
-                .setDescription('Set to true to force update with current statistics, ignoring custom text.')
-                .setRequired(false)
-        ),
+        .setName('bot-stats')
+        .setDescription('Displays the current bot usage statistics directly from Firestore.'), // Updated description
 
+    // The execute function now accepts db, client, and APP_ID_FOR_FIRESTORE.
     async execute(interaction, db, client, APP_ID_FOR_FIRESTORE) {
-        await interaction.deferReply({ ephemeral: false });
+        await interaction.deferReply({ ephemeral: false }); // Non-ephemeral for testing
 
         // ✅ Permissions Check
         if (!interaction.member.permissions.has('Administrator')) {
@@ -41,95 +21,38 @@ module.exports = {
             });
         }
 
-        const customStatusText = interaction.options.getString('text');
-        const activityTypeInput = interaction.options.getString('activity');
-        const forceDynamic = interaction.options.getBoolean('force_dynamic') || false;
-
-        const activityType = ActivityType[activityTypeInput] ?? ActivityType.Playing;
-
-        let statusText = '';
-
-        if (forceDynamic) {
-            if (!db || !APP_ID_FOR_FIRESTORE) {
-                return await interaction.editReply({
-                    content: '⚠️ Bot is not fully initialized (Firestore not ready) to fetch statistics. Cannot force dynamic status.',
-                    ephemeral: false
-                });
-            }
-
-            const statsDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/stats`), 'botStats');
-
-            try {
-                const docSnap = await getDoc(statsDocRef);
-                const data = docSnap.exists() ? docSnap.data() : {};
-                const totalHelps = data.totalHelps ?? 0;
-                const uniqueActiveUsers = Object.keys(data.activeUsersMap ?? {}).length;
-                const totalServers = client.guilds.cache.size; // Get number of servers
-
-                statusText = `Helped ${uniqueActiveUsers} players ${totalHelps} times in ${totalServers} servers`; // Updated format
-                console.log(`Set Status Command: Forced dynamic status used: "${statusText}"`);
-            } catch (error) {
-                console.error('Set Status Command: Error fetching stats for forced dynamic status:', error);
-                return await interaction.editReply({
-                    content: '❌ An error occurred while fetching statistics for dynamic status. Please check the logs.',
-                    ephemeral: false
-                });
-            }
-        } else if (customStatusText) {
-            statusText = customStatusText;
-            console.log(`Set Status Command: Custom status used: "${customStatusText}"`);
-        } else {
-            if (!db || !APP_ID_FOR_FIRESTORE) {
-                return await interaction.editReply({
-                    content: '⚠️ Bot is not fully initialized (Firestore not ready) to fetch statistics. Please try again in a moment or provide custom text.',
-                    ephemeral: false
-                });
-            }
-
-            const statsDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/stats`), 'botStats');
-
-            try {
-                const docSnap = await getDoc(statsDocRef);
-                const data = docSnap.exists() ? docSnap.data() : {};
-                const totalHelps = data.totalHelps ?? 0;
-                const uniqueActiveUsers = Object.keys(data.activeUsersMap ?? {}).length;
-                const totalServers = client.guilds.cache.size; // Get number of servers
-
-                statusText = `Helped ${uniqueActiveUsers} players ${totalHelps} times in ${totalServers} servers`; // Updated format
-                console.log(`Set Status Command: Dynamic status used (default): "${statusText}"`);
-            } catch (error) {
-                console.error('Set Status Command: Error fetching stats:', error);
-                return await interaction.editReply({
-                    content: '❌ An error occurred while fetching statistics. Please check the logs.',
-                    ephemeral: false
-                });
-            }
+        // Crucial: Check if Firestore is ready before attempting any DB operations
+        if (!db || !APP_ID_FOR_FIRESTORE) {
+            return await interaction.editReply({ content: 'Bot is not fully initialized (Firestore not ready). Please try again in a moment.', ephemeral: false });
         }
 
-        if (statusText.length > 128) {
-            return await interaction.editReply({
-                content: '⚠️ Status text exceeds the 128 character limit. Please shorten it.',
-                ephemeral: false
-            });
-        }
+        // Explicitly define the full path to the botStats document
+        // Using the structure derived from APP_ID_FOR_FIRESTORE
+        const STATS_DOC_PATH = `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/stats`;
+        const statsDocRef = doc(collection(db, STATS_DOC_PATH), 'botStats');
+
+        let totalHelps = 0;
+        let uniqueActiveUsers = 0;
+        let replyContent = '';
 
         try {
-            if (client.user) {
-                client.user.setActivity(statusText, { type: activityType });
-                await interaction.editReply({
-                    content: `✅ Bot status updated to: \`${statusText}\` (Activity type: \`${ActivityType[activityType]}\`)`,
-                    ephemeral: false
-                });
-                console.log(`Set Status Command: Bot status updated to "${statusText}" [${ActivityType[activityType]}]`);
+            const docSnap = await getDoc(statsDocRef);
+
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                totalHelps = data.totalHelps ?? 0; // Use nullish coalescing for safety
+                uniqueActiveUsers = Object.keys(data.activeUsersMap ?? {}).length; // Use nullish coalescing for safety
+                replyContent = `**Bot Statistics:**\nHelped \`${uniqueActiveUsers}\` players \`${totalHelps}\` times.`;
             } else {
-                throw new Error('client.user is null or undefined');
+                replyContent = `**Bot Statistics:**\nNo statistics found in the database yet.`;
+                console.warn('Bot Stats Command: botStats document not found in Firestore.');
             }
-        } catch (err) {
-            console.error('Set Status Command: Failed to set bot activity:', err);
-            await interaction.editReply({
-                content: '❌ Failed to set bot status due to an internal error.',
-                ephemeral: false
-            });
+        } catch (error) {
+            console.error('Bot Stats Command: Error fetching stats directly from Firestore:', error);
+            replyContent = '❌ An error occurred while fetching statistics from Firestore. Please check the logs.';
         }
+
+        await interaction.editReply({ content: replyContent, ephemeral: false });
+        console.log(`Bot Stats Command: Displayed stats to ${interaction.user.tag}: "${replyContent}"`);
     },
 };
