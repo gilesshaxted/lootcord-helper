@@ -204,29 +204,6 @@ client.once('ready', async () => {
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
-    // --- TEMPORARY: AGGRESSIVE COMMAND DELETION LOGIC ---
-    // This block is designed to forcefully delete ALL global slash commands
-    // associated with your bot's CLIENT_ID.
-    // Run this ONCE when you deploy, then REMOVE/COMMENT IT OUT.
-    // This is necessary to clear any lingering duplicate commands.
-    try {
-        console.log('--- AGGRESSIVE TEMPORARY: Attempting to delete ALL global application (/) commands ---');
-        // This performs a PUT with an empty array, effectively deleting all commands.
-        await rest.put(
-            Routes.applicationCommands(CLIENT_ID),
-            { body: [] }, // Send an empty array to delete all commands
-        );
-        console.log('--- AGGRESSIVE TEMPORARY: Successfully sent request to delete all global application (/) commands. ---');
-        console.log('--- IMPORTANT: Give Discord a few minutes to process this. Then, REMOVE THIS BLOCK and redeploy. ---');
-        // You might want to exit here to ensure deletion propagates before re-registering
-        // process.exit(0); // Uncomment this line if you want the bot to exit after deletion attempt
-    } catch (error) {
-        console.error('--- AGGRESSIVE TEMPORARY: Error deleting global commands: ---', error);
-        console.error('This error might be expected if no commands existed or due to rate limits. Proceeding with registration.');
-    }
-    // --- END AGGRESSIVE TEMPORARY: Command Deletion Logic ---
-
-
     try {
         console.log(`Started refreshing ${slashCommandsToRegister.length} application (/) commands.`);
 
