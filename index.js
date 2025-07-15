@@ -1,5 +1,5 @@
 // Import necessary classes from the discord.js library
-const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder } = require('discord.js'); // Added AttachmentBuilder
+const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 const express = require('express');
@@ -36,6 +36,11 @@ const firebaseConfig = {
     appId: process.env.FIREBASE_APP_ID,
     // measurementId: process.env.MEASUREMENT_ID // Uncomment if you use Measurement ID
 };
+
+// --- Pagination Specific Configuration (used by paginationHelpers) ---
+// These constants are now defined within paginationHelpers.js
+// const CHANNELS_PER_PAGE = 25;
+// const TARGET_CATEGORY_ID = '1192414248299675663';
 
 // --- Firestore App ID for data paths ---
 const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
@@ -186,20 +191,6 @@ for (const file of eventFiles) {
 }
 
 
-// --- Helper Function for Channel Pagination UI ---
-// This function is now imported from utils/pagination.js
-// async function createChannelPaginationMessage(guild, currentPage) { ... }
-
-
-// --- Bot Status Update Function ---
-// This function is now part of statsTracker.js
-// function updateBotStatus() { ... }
-
-// --- Function to check and rename channels on startup (Downtime Recovery) ---
-// This function is now part of utils/startupChecks.js
-// async function checkAndRenameChannelsOnStartup() { ... }
-
-
 // --- Discord Event Handlers (main ones remaining in index.js) ---
 
 client.once('ready', async () => {
@@ -221,12 +212,12 @@ client.once('ready', async () => {
     try {
         console.log(`Started refreshing ${slashCommandsToRegister.length} application (/) commands.`);
 
-        const GUILD_ID_FOR_TESTING = '1192414247196573747';
+        // --- CHANGED: Register commands globally ---
         const data = await rest.put(
-            Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID_FOR_TESTING),
+            Routes.applicationCommands(CLIENT_ID), // Changed to global registration
             { body: slashCommandsToRegister },
         );
-        console.log(`Successfully reloaded ${data.length} guild (/) commands.`);
+        console.log(`Successfully reloaded ${data.length} global (/) commands.`);
 
     } catch (error) {
         console.error('Failed to register slash commands:', error);
@@ -251,11 +242,10 @@ client.on('messageCreate', async message => {
         }
 
         try {
-            // Fetch last 50 messages from the Wordle channel
             const messages = await message.channel.messages.fetch({ limit: 50 });
             let logContent = `--- Wordle Channel Log (${message.channel.name}) ---\n\n`;
 
-            messages.reverse().forEach(msg => { // Reverse to show oldest first
+            messages.reverse().forEach(msg => {
                 logContent += `[${msg.createdAt.toISOString()}] ${msg.author.tag} (${msg.author.id}):\n`;
                 if (msg.content) {
                     logContent += `  Content: "${msg.content}"\n`;
@@ -292,8 +282,6 @@ client.on('messageCreate', async message => {
 });
 
 
-// The interactionCreate event listener remains here because it handles
-// both slash commands and component interactions (buttons, select menus).
 client.on('interactionCreate', async interaction => {
     if (!isFirestoreReady) {
         console.error('Firestore is not yet ready to process interactions. Skipping interaction.');
@@ -307,7 +295,6 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isButton()) {
         // Removed Wordle game start button handling from here
         if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
-            // Existing pagination button handling
             await interaction.deferUpdate();
 
             const parts = interaction.customId.split('_');
@@ -321,7 +308,7 @@ client.on('interactionCreate', async interaction => {
                 newPage++;
             }
 
-            const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage); // Use helper
+            const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage);
             await interaction.editReply({ content, components, ephemeral: false });
         }
     }
