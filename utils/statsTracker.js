@@ -109,13 +109,11 @@ function getBotStats() {
     return botStats;
 }
 
-// updateBotStatus function is moved to utils/botStatus.js
-
 module.exports = {
     initializeStats,
     updateInMemoryStats,
     incrementTotalHelps,
     addActiveUser,
-    getBotStats
-    // updateBotStatus is no longer exported from here
+    getBotStats,
+    // updateBotStatus is removed from here
 };
