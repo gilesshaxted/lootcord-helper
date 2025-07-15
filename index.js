@@ -15,7 +15,7 @@ const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs } = require('
 const statsTracker = require('./utils/statsTracker');
 const paginationHelpers = require('./utils/pagination');
 const startupChecks = require('./utils/startupChecks');
-const wordleHelpers = require('./utils/wordleHelpers');
+const wordleHelpers = require('./utils/wordleHelpers'); // Import Wordle helpers
 
 // Load environment variables from a .env file (for local testing)
 require('dotenv').config();
@@ -23,7 +23,7 @@ require('dotenv').config();
 // --- Configuration Variables ---
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
-const PREFIX = '!';
+const PREFIX = '!'; // Prefix for traditional message commands
 const PORT = process.env.PORT || 3000;
 
 // Firebase configuration loaded from environment variables for Render hosting
@@ -36,6 +36,11 @@ const firebaseConfig = {
     appId: process.env.FIREBASE_APP_ID,
     // measurementId: process.env.MEASUREMENT_ID // Uncomment if you use Measurement ID
 };
+
+// --- Pagination Specific Configuration (used by paginationHelpers) ---
+// These constants are now defined within paginationHelpers.js
+// const CHANNELS_PER_PAGE = 25;
+// const TARGET_CATEGORY_ID = '1192414248299675663';
 
 // --- Firestore App ID for data paths ---
 const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
@@ -204,38 +209,12 @@ client.once('ready', async () => {
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
-    // --- TEMPORARY: Command Deletion Logic ---
-    // This block should be run ONCE and then removed/commented out.
-    // It deletes all global slash commands to clear duplicates.
-    // Ensure CLIENT_ID and TOKEN are correctly set in Render's environment variables.
-    try {
-        console.log('--- TEMPORARY: Attempting to delete all global application (/) commands ---');
-        const existingCommands = await rest.get(Routes.applicationCommands(CLIENT_ID));
-        
-        if (existingCommands.length > 0) {
-            for (const command of existingCommands) {
-                await rest.delete(Routes.applicationCommand(CLIENT_ID, command.id));
-                console.log(`TEMPORARY: Deleted global command: ${command.name} (ID: ${command.id})`);
-            }
-            console.log('--- TEMPORARY: Successfully deleted all global application (/) commands. ---');
-            // Give Discord a moment to process deletions before re-registering
-            await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
-        } else {
-            console.log('--- TEMPORARY: No global commands found to delete. ---');
-        }
-    } catch (error) {
-        console.error('--- TEMPORARY: Error deleting global commands: ---', error);
-        console.error('This error might be expected if no commands existed or due to rate limits. Proceeding with registration.');
-    }
-    // --- END TEMPORARY: Command Deletion Logic ---
-
-
     try {
         console.log(`Started refreshing ${slashCommandsToRegister.length} application (/) commands.`);
 
-        // --- Register commands globally ---
+        // --- CHANGED: Register commands globally ---
         const data = await rest.put(
-            Routes.applicationCommands(CLIENT_ID), // This line registers commands GLOBALLY
+            Routes.applicationCommands(CLIENT_ID), // Changed to global registration
             { body: slashCommandsToRegister },
         );
         console.log(`Successfully reloaded ${data.length} global (/) commands.`);
@@ -250,8 +229,59 @@ client.once('ready', async () => {
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
 });
 
-// The interactionCreate event listener remains here because it handles
-// both slash commands and component interactions (buttons, select menus).
+// --- NEW: Handle !wordlelog command ---
+const WORDLE_LOG_CHANNEL_ID = '1394316724819591318'; // The channel where Wordle games are played
+const WORDLE_LOG_REQUESTER_ID = '444211741774184458'; // User ID of the authorized requester
+
+client.on('messageCreate', async message => {
+    // Check for !wordlelog command
+    if (message.author.id === WORDLE_LOG_REQUESTER_ID && message.content === '!wordlelog') {
+        if (message.channel.id !== WORDLE_LOG_CHANNEL_ID) {
+            await message.reply('This command can only be used in the designated Wordle channel.');
+            return;
+        }
+
+        try {
+            const messages = await message.channel.messages.fetch({ limit: 50 });
+            let logContent = `--- Wordle Channel Log (${message.channel.name}) ---\n\n`;
+
+            messages.reverse().forEach(msg => {
+                logContent += `[${msg.createdAt.toISOString()}] ${msg.author.tag} (${msg.author.id}):\n`;
+                if (msg.content) {
+                    logContent += `  Content: "${msg.content}"\n`;
+                }
+                if (msg.embeds.length > 0) {
+                    logContent += `  Embeds (${msg.embeds.length}):\n`;
+                    msg.embeds.forEach((embed, index) => {
+                        logContent += `    Embed ${index + 1}:\n`;
+                        if (embed.title) logContent += `      Title: "${embed.title}"\n`;
+                        if (embed.description) logContent += `      Description:\n\`\`\`\n${embed.description}\n\`\`\`\n`;
+                        if (embed.fields.length > 0) {
+                            logContent += `      Fields:\n`;
+                            embed.fields.forEach(field => logContent += `        - ${field.name}: ${field.value}\n`);
+                        }
+                    });
+                }
+                logContent += `\n`;
+            });
+
+            const logBuffer = Buffer.from(logContent, 'utf8');
+            const attachment = new AttachmentBuilder(logBuffer, { name: 'wordle_log.txt' });
+
+            await message.channel.send({
+                content: 'Here is the recent Wordle channel log:',
+                files: [attachment]
+            });
+            console.log(`Generated and sent Wordle log to #${message.channel.name}`);
+
+        } catch (error) {
+            console.error('Error generating wordle log:', error);
+            await message.channel.send('Failed to generate Wordle log. Check bot permissions or logs.');
+        }
+    }
+});
+
+
 client.on('interactionCreate', async interaction => {
     if (!isFirestoreReady) {
         console.error('Firestore is not yet ready to process interactions. Skipping interaction.');
@@ -263,6 +293,7 @@ client.on('interactionCreate', async interaction => {
 
     // Handle Button Interactions (for pagination)
     if (interaction.isButton()) {
+        // Removed Wordle game start button handling from here
         if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
             await interaction.deferUpdate();
 
@@ -282,74 +313,8 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // Handle Modal Submissions (for Wordle first guess)
-    if (interaction.isModalSubmit()) {
-        if (interaction.customId === 'wordle_first_guess_modal') {
-            await interaction.deferReply({ ephemeral: false });
-
-            const userGuess = interaction.fields.getTextInputValue('wordle_guess_input').toLowerCase();
-            const channelId = interaction.channel.id;
-
-            const promptForBestStart = `Suggest the single best 5-letter English word to start a Wordle game. Only provide the word, no other text or punctuation.`;
-            let bestStartingWord = 'CRANE';
-
-            try {
-                const chatHistory = [];
-                chatHistory.push({ role: "user", parts: [{ text: promptForBestStart }] });
-                const payload = { contents: chatHistory };
-                const apiKey = process.env.GOOGLE_API_KEY;
-
-                if (apiKey) {
-                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-                    const response = await fetch(apiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                    const result = await response.json();
-                    if (result.candidates && result.candidates.length > 0 && result.candidates[0].content && result.candidates[0].content.parts && result.candidates[0].content.parts.length > 0) {
-                        bestStartingWord = result.candidates[0].content.parts[0].text.trim().toUpperCase();
-                        if (bestStartingWord.length !== 5 || !/^[A-Z]+$/.test(bestStartingWord)) {
-                            bestStartingWord = 'CRANE';
-                        }
-                    }
-                } else {
-                    console.warn('Wordle Solver: GOOGLE_API_KEY not set, using default starting word.');
-                }
-            } catch (error) {
-                console.error('Wordle Solver: Error getting best starting word from LLM:', error);
-            }
-
-            const gameDocRef = doc(collection(db, `WordleGames`), channelId);
-            try {
-                await setDoc(gameDocRef, {
-                    channelId: channelId,
-                    userId: interaction.user.id,
-                    status: 'active',
-                    wordLength: 5,
-                    guessesMade: [],
-                    currentGuessNumber: 0,
-                    correctLetters: {},
-                    misplacedLetters: {},
-                    wrongLetters: [],
-                    gameStartedAt: new Date().toISOString(),
-                });
-                console.log(`Wordle Game: Initialized game state for channel ${channelId}`);
-            } catch (error) {
-                console.error(`Wordle Game: Failed to save initial game state for channel ${channelId}:`, error);
-                await interaction.editReply({ content: 'An error occurred while starting the Wordle game. Please try again.', ephemeral: false });
-                return;
-            }
-
-            await interaction.editReply({
-                content: `You entered: \`${userGuess}\`\n\nMy suggestion for your next guess is: \`${bestStartingWord}\`\n\nPlease type \`${bestStartingWord}\` into the Wordle game.`,
-                components: [],
-                ephemeral: false
-            });
-            statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
-            console.log(`Wordle Game: Suggested first word '${bestStartingWord}' to ${interaction.user.tag} in #${interaction.channel.name}`);
-        }
-    }
+    // Handle Modal Submissions (for Wordle first guess) - Removed from here, now handled by wordleSolver.js
+    // if (interaction.isModalSubmit()) { ... }
 
     // Handle Chat Input Commands (Slash Commands)
     if (interaction.isChatInputCommand()) {
@@ -464,3 +429,4 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
     console.log(`Web server listening on port ${PORT}`);
 });
+	
