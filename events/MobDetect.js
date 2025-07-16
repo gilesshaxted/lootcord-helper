@@ -1,10 +1,10 @@
 // This event listener will listen for messageCreate events
-// It handles mob spawn/death detection and channel renaming/role pings.
+// It handles mob spawn detection and channel renaming/role pings.
 
 const { collection, getDocs, doc, setDoc } = require('firebase/firestore');
 const statsTracker = require('../utils/statsTracker'); // Import Stats Tracker
 
-// Configuration specific to this event listener
+// Configuration specific to this listener
 const TARGET_BOT_ID = '493316754689359874'; // User ID of the other bot to listen to
 
 // Role IDs for specific enemy spawns
@@ -62,7 +62,7 @@ module.exports = {
             console.log(`Embed Title: \`${message.embeds[0].title || 'N/A'}\``);
             console.log(`Embed Description: \n\`\`\`\n${message.embeds[0].description || 'N/A'}\n\`\`\``);
         }
-        // End of new debug logging
+        console.log(`--- End MobDetect Message Debug ---\n`);
 
         // --- Role Pinging Logic (ONLY if 'An enemy has spawned...' is in content) ---
         if (message.content.includes('An enemy has spawned...') && message.embeds.length > 0) {
@@ -92,15 +92,15 @@ module.exports = {
 
 
         // --- Channel Renaming Logic (triggered by embed title alone for any message from target bot) ---
-        let renamedThisTurn = false; // Flag to prevent immediate revert if renamed
+        // This block will execute for any message from the target bot with an embed.
         if (message.embeds.length > 0) {
             const embedTitle = message.embeds[0].title;
             let newName = null;
 
-            if (embedTitle) {
+            if (embedTitle) { // Ensure embedTitle exists
                 if (embedTitle.includes('Heavy Scientist')) {
                     newName = '🐻╏heavy';
-                } else if (embedTitle.includes('Scientist')) {
+                } else if (embedTitle.includes('Scientist')) { // Check Scientist after Heavy Scientist
                     newName = '🥼╏scientist';
                 } else if (embedTitle.includes('Tunnel Dweller')) {
                     newName = '🧟╏dweller';
@@ -116,7 +116,6 @@ module.exports = {
                     await message.channel.setName(newName, 'Automated rename due to enemy embed title.');
                     console.log(`MobDetect: Renamed channel ${message.channel.name} to ${newName} in guild ${message.guild.name}`);
                     statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
-                    renamedThisTurn = true;
                 } catch (error) {
                     console.error(`MobDetect: Failed to rename channel ${message.channel.name}:`, error);
                     if (error.code === 50013) { // Missing Permissions
@@ -125,45 +124,6 @@ module.exports = {
                 }
             }
         }
-
-        // --- Logic for Reverting to original name (updated conditions) ---
-        // This block will only execute if the channel was NOT renamed in the current message.
-        if (!renamedThisTurn && (message.embeds.length > 0 || message.content)) {
-            const embed = message.embeds.length > 0 ? message.embeds[0] : null;
-
-            // Condition 1: Embed title includes 'left...'
-            const embedTitleRevert = embed && embed.title && embed.title.includes('left...');
-            
-            // Condition 2: Embed description includes 'killed a mob'
-            const embedDescriptionRevert = embed && embed.description && embed.description.includes('killed a mob');
-
-            // Condition 3: Message content contains ":deth: The **[Enemy Name] DIED!**"
-            // This regex is more robust for the "DIED!" message
-            const contentDiedRevert = message.content.includes(':deth: The **') && message.content.includes('DIED!**');
-
-            const revertCondition = embedTitleRevert || embedDescriptionRevert || contentDiedRevert;
-
-            console.log(`[MobDetect - Debug] Revert Conditions: embedTitleRevert=${embedTitleRevert}, embedDescriptionRevert=${embedDescriptionRevert}, contentDiedRevert=${contentDiedRevert}`);
-            
-            if (revertCondition) {
-                if (originalChannelName && message.channel.name !== originalChannelName) {
-                    try {
-                        await message.channel.setName(originalChannelName, 'Automated revert to original name.');
-                        console.log(`MobDetect: Reverted channel ${message.channel.name} to ${originalChannelName} in guild ${message.guild.name}`);
-                        statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
-                    } catch (error) {
-                        console.error(`MobDetect: Failed to revert channel ${message.channel.name} to original name:`, error);
-                        if (error.code === 50013) { // Missing Permissions
-                            console.error(`MobDetect: Bot lacks 'Manage Channels' permission in #${message.channel.name}.`);
-                        }
-                    }
-                } else {
-                    console.log(`[MobDetect - Debug] Revert condition met, but channel name is already original or original name is missing.`);
-                }
-            } else {
-                console.log(`[MobDetect - Debug] No revert condition met for this message.`);
-            }
-        }
-        console.log(`--- End MobDetect Message Processing ---\n`);
+        // --- Logic for Reverting to original name has been removed ---
     },
 };
