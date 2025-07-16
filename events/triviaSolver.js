@@ -128,11 +128,11 @@ ${options}`;
                 const row = new ActionRowBuilder().addComponents(buttons);
 
                 if (mostLikelyAnswerLetter) {
-                    replyContent += `Most Likely: \`${mostLikelyAnswerLetter}\`\n`;
+                    // Removed: replyContent += `Most Likely: \`${mostLikelyAnswerLetter}\`\n`;
                     // No "Possible Alternative" line needed as per new format
                     
                     if (explanations.A || explanations.B || explanations.C || explanations.D) {
-                        replyContent += `\n**Explanation:**\n\`\`\`\n`;
+                        replyContent += `-# **Explanation:**\n-# \`\n`;
                         optionLetters.forEach(letter => {
                             if (explanations[letter]) {
                                 replyContent += `${letter}: ${explanations[letter]}\n`;
