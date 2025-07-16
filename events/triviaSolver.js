@@ -48,6 +48,7 @@ ${options}`;
                 let mostLikelyAnswer = null;
                 let possibleAlternative = null;
                 let explanation = null;
+                let llmParsingError = false; // Flag to indicate parsing issue
 
                 try {
                     // Call the LLM (Gemini API)
@@ -79,11 +80,14 @@ ${options}`;
                         // Parse the LLM's response based on the new format
                         const mostLikelyMatch = llmAnswerRaw.match(/Most Likely:\s*([A-D])/i);
                         const alternativeMatch = llmAnswerRaw.match(/Possible Alternative:\s*([A-D])/i);
-                        const explanationMatch = llmAnswerRaw.match(/Explanation:\s*([\s\S]*)/i); // Capture everything after "Explanation:"
+                        const explanationMatch = llmAnswerRaw.match(/Explanation:\s*([\s\S]*)/i);
 
                         if (mostLikelyMatch && mostLikelyMatch[1]) {
                             mostLikelyAnswer = mostLikelyMatch[1].toUpperCase();
+                        } else {
+                            llmParsingError = true; // Mark as parsing error if most likely answer not found
                         }
+
                         if (alternativeMatch && alternativeMatch[1]) {
                             possibleAlternative = alternativeMatch[1].toUpperCase();
                         }
@@ -93,10 +97,12 @@ ${options}`;
 
                     } else {
                         console.warn('Trivia Solver: LLM response structure unexpected or empty for question:', question);
+                        llmParsingError = true;
                     }
 
                 } catch (error) {
                     console.error('Trivia Solver: Error calling LLM API for question:', question, error);
+                    llmParsingError = true;
                 }
 
                 let replyContent = `**Trivia Answer for:** \`${question}\`\n`;
@@ -106,12 +112,17 @@ ${options}`;
                         replyContent += `Possible Alternative: \`${possibleAlternative}\`\n`;
                     }
                     if (explanation) {
-                        // Corrected syntax for explanation block to preserve markdown
-                        replyContent += `\n-# **Explanation :**\n-# \`${explanation}\`\n`;
+                        replyContent += `\n**Explanation :**\n\`\`\`\n${explanation}\n\`\`\``;
                     }
                     statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps for answering trivia
                 } else {
-                    replyContent += `Could not determine the answer using LLM.`;
+                    // Apology and explanation if no definitive answer could be parsed
+                    replyContent += `I apologize, but I couldn't determine a definitive answer based on the LLM's response.`;
+                    if (llmParsingError) {
+                        replyContent += ` This might be because the LLM's output format was unexpected or an API error occurred.`;
+                    } else {
+                        replyContent += ` The LLM did not provide a clear answer in the expected format.`;
+                    }
                     if (llmAnswerRaw) {
                          replyContent += `\nRaw LLM Output: \n\`\`\`\n${llmAnswerRaw.substring(0, 500)}...\n\`\`\``; // Truncate raw output
                     }
@@ -121,15 +132,16 @@ ${options}`;
                     replyContent = replyContent.substring(0, 1990) + '...\n(Output truncated due to character limit)';
                 }
 
-                if (mostLikelyAnswer) { // Only send if we got a primary answer
-                    try {
-                        await message.channel.send({ content: replyContent });
+                // Send the reply regardless of whether a definitive answer was found
+                try {
+                    await message.channel.send({ content: replyContent });
+                    if (mostLikelyAnswer) {
                         console.log(`Trivia Solver: Answered '${question}' with '${mostLikelyAnswer}' in #${message.channel.name}`);
-                    } catch (error) {
-                        console.error(`Trivia Solver: Failed to post answer in #${message.channel.name}:`, error);
+                    } else {
+                        console.log(`Trivia Solver: Posted apology for '${question}' in #${message.channel.name}.`);
                     }
-                } else {
-                    console.log(`Trivia Solver: Could not determine primary answer for '${question}'.`);
+                } catch (error) {
+                    console.error(`Trivia Solver: Failed to post reply in #${message.channel.name}:`, error);
                 }
             }
         }
