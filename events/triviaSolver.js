@@ -110,7 +110,7 @@ ${options}`;
                     console.error('Trivia Solver: Error calling LLM API or parsing JSON for question:', question, error);
                 }
 
-                let replyContent = `**Trivia Answer for:** \`${question}\`\n`;
+                let replyContent = `**Trivia Answer for:** \`${question}\``;
                 const buttons = [];
                 const optionLetters = ['A', 'B', 'C', 'D'];
 
