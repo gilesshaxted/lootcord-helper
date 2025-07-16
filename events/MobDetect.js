@@ -92,7 +92,7 @@ module.exports = {
 
 
         // --- Channel Renaming Logic (triggered by embed title alone for any message from target bot) ---
-        // This block will execute for any message from the target bot with an embed.
+        let renamedThisTurn = false; // Flag to prevent immediate revert if renamed
         if (message.embeds.length > 0) {
             const embedTitle = message.embeds[0].title;
             let newName = null;
@@ -116,6 +116,7 @@ module.exports = {
                     await message.channel.setName(newName, 'Automated rename due to enemy embed title.');
                     console.log(`MobDetect: Renamed channel ${message.channel.name} to ${newName} in guild ${message.guild.name}`);
                     statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
+                    renamedThisTurn = true;
                 } catch (error) {
                     console.error(`MobDetect: Failed to rename channel ${message.channel.name}:`, error);
                     if (error.code === 50013) { // Missing Permissions
@@ -124,6 +125,50 @@ module.exports = {
                 }
             }
         }
-        // --- Logic for Reverting to original name has been removed ---
+
+        // --- Logic for Reverting to original name (updated conditions) ---
+        // This block will only execute if the channel was NOT renamed in the current message.
+        if (!renamedThisTurn && (message.embeds.length > 0 || message.content)) {
+            const embed = message.embeds.length > 0 ? message.embeds[0] : null;
+
+            // Condition 1: Embed title includes 'left...'
+            const embedTitleRevert = embed && embed.title && embed.title.includes('left...');
+            
+            // Condition 2: Embed description includes 'killed a mob'
+            const embedDescriptionKilledMobRevert = embed && embed.description && embed.description.includes('killed a mob');
+
+            // Condition 3: Message content contains ":deth: The **[Enemy Name] DIED!**"
+            // This regex is more robust for the "DIED!" message
+            const contentDiedRevert = message.content.includes(':deth: The **') && message.content.includes('DIED!**');
+
+            // NEW: Added checks for DIED! and :deth: in embed description
+            const embedDescriptionDiedRevert = embed && embed.description && embed.description.includes('DIED!');
+            const embedDescriptionDethRevert = embed && embed.description && embed.description.includes(':deth:');
+
+
+            const revertCondition = embedTitleRevert || embedDescriptionKilledMobRevert || contentDiedRevert || embedDescriptionDiedRevert || embedDescriptionDethRevert;
+
+            console.log(`[MobDetect - Debug] Revert Conditions: embedTitleRevert=${embedTitleRevert}, embedDescriptionKilledMobRevert=${embedDescriptionKilledMobRevert}, contentDiedRevert=${contentDiedRevert}, embedDescriptionDiedRevert=${embedDescriptionDiedRevert}, embedDescriptionDethRevert=${embedDescriptionDethRevert}`);
+            
+            if (revertCondition) {
+                if (originalChannelName && message.channel.name !== originalChannelName) {
+                    try {
+                        await message.channel.setName(originalChannelName, 'Automated revert to original name.');
+                        console.log(`MobDetect: Reverted channel ${message.channel.name} to ${originalChannelName} in guild ${message.guild.name}`);
+                        statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
+                    } catch (error) {
+                        console.error(`MobDetect: Failed to revert channel ${message.channel.name} to original name:`, error);
+                        if (error.code === 50013) { // Missing Permissions
+                            console.error(`MobDetect: Bot lacks 'Manage Channels' permission in #${message.channel.name}.`);
+                        }
+                    }
+                } else {
+                    console.log(`[MobDetect - Debug] Revert condition met, but channel name is already original or original name is missing.`);
+                }
+            } else {
+                console.log(`[MobDetect - Debug] No revert condition met for this message.`);
+            }
+        }
+        console.log(`--- End MobDetect Message Processing ---\n`);
     },
 };
