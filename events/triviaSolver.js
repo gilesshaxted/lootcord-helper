@@ -128,17 +128,16 @@ ${options}`;
                 const row = new ActionRowBuilder().addComponents(buttons);
 
                 if (mostLikelyAnswerLetter) {
-                    // Removed: replyContent += `Most Likely: \`${mostLikelyAnswerLetter}\`\n`;
+                    // No "Most Likely" text here, as the green button indicates it.
                     // No "Possible Alternative" line needed as per new format
                     
                     if (explanations.A || explanations.B || explanations.C || explanations.D) {
-                        replyContent += `-# **Explanation:**\n-# \`\n`;
+                        replyContent += `\n-# **Explanation:**\n`; // Updated format for heading
                         optionLetters.forEach(letter => {
                             if (explanations[letter]) {
-                                replyContent += `${letter}: ${explanations[letter]}\n`;
+                                replyContent += `-# ${letter}: \`${explanations[letter]}\`\n`; // Updated format for each explanation line
                             }
                         });
-                        replyContent += `\``;
                     }
                     statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps
                 } else {
