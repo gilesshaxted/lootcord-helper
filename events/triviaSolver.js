@@ -1,7 +1,5 @@
-// This event listener will listen for messageCreate events
-// It will detect trivia questions from a specific bot, use an LLM to find the answer, and post it.
-
 const statsTracker = require('../utils/statsTracker'); // Import Stats Tracker
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js'); // Import ActionRowBuilder, ButtonBuilder, ButtonStyle
 
 // Configuration specific to this listener
 const TARGET_BOT_ID = '493316754689359874'; // User ID of the other bot posting trivia
@@ -33,29 +31,46 @@ module.exports = {
                 const options = embed.description; // e.g., "**A**: 17\n**B**: 18\n**C**: 15\n**D**: 16"
 
                 // Construct the prompt for the LLM
-                // Updated prompt to ask for most likely, alternative, and explanation
-                const prompt = `Answer the following multiple-choice question. Provide the single most likely correct answer (A, B, C, or D). If there is a plausible alternative answer, provide one. Also, provide a brief explanation for the choices. Format your response strictly as:
-Most Likely: [Letter]
-Possible Alternative: [Letter] (if applicable, otherwise omit this line)
-Explanation:
-[Brief explanation of why the choices are correct/incorrect]
+                // Updated prompt to ask for correct answer and explanations for each option.
+                const prompt = `Given the following multiple-choice question and options, identify the single correct answer and provide a brief explanation for each option (A, B, C, D) indicating why it is correct or incorrect. Format your response strictly as a JSON object with the following structure:
+{
+  "correct_answer": "A",
+  "explanation_A": "Explanation for option A",
+  "explanation_B": "Explanation for option B",
+  "explanation_C": "Explanation for option C",
+  "explanation_D": "Explanation for option D"
+}
 
 Question: ${question}
 Options:
 ${options}`;
 
-                let llmAnswerRaw = null;
-                let mostLikelyAnswer = null;
-                let possibleAlternative = null;
-                let explanation = null;
-                let llmParsingError = false; // Flag to indicate parsing issue
+                let llmResponseJson = null;
+                let mostLikelyAnswerLetter = null;
+                let explanations = {}; // Store explanations for A, B, C, D
 
                 try {
                     // Call the LLM (Gemini API)
                     const chatHistory = [];
                     chatHistory.push({ role: "user", parts: [{ text: prompt }] });
-                    const payload = { contents: chatHistory };
-                    const apiKey = process.env.GOOGLE_API_KEY; // Get API key from environment variable
+                    const payload = { 
+                        contents: chatHistory,
+                        generationConfig: {
+                            responseMimeType: "application/json", // Request JSON output
+                            responseSchema: { // Define expected JSON schema
+                                type: "OBJECT",
+                                properties: {
+                                    "correct_answer": { "type": "STRING" },
+                                    "explanation_A": { "type": "STRING" },
+                                    "explanation_B": { "type": "STRING" },
+                                    "explanation_C": { "type": "STRING" },
+                                    "explanation_D": { "type": "STRING" }
+                                },
+                                "propertyOrdering": ["correct_answer", "explanation_A", "explanation_B", "explanation_C", "explanation_D"]
+                            }
+                        }
+                    };
+                    const apiKey = process.env.GOOGLE_API_KEY;
 
                     if (!apiKey) {
                         console.error('Trivia Solver: GOOGLE_API_KEY environment variable not set. Cannot solve trivia.');
@@ -75,56 +90,61 @@ ${options}`;
                     if (result.candidates && result.candidates.length > 0 &&
                         result.candidates[0].content && result.candidates[0].content.parts &&
                         result.candidates[0].content.parts.length > 0) {
-                        llmAnswerRaw = result.candidates[0].content.parts[0].text.trim();
+                        
+                        const rawJsonText = result.candidates[0].content.parts[0].text;
+                        llmResponseJson = JSON.parse(rawJsonText); // Parse the JSON string
 
-                        // Parse the LLM's response based on the new format
-                        const mostLikelyMatch = llmAnswerRaw.match(/Most Likely:\s*([A-D])/i);
-                        const alternativeMatch = llmAnswerRaw.match(/Possible Alternative:\s*([A-D])/i);
-                        const explanationMatch = llmAnswerRaw.match(/Explanation:\s*([\s\S]*)/i);
-
-                        if (mostLikelyMatch && mostLikelyMatch[1]) {
-                            mostLikelyAnswer = mostLikelyMatch[1].toUpperCase();
-                        } else {
-                            llmParsingError = true; // Mark as parsing error if most likely answer not found
+                        if (llmResponseJson.correct_answer) {
+                            mostLikelyAnswerLetter = llmResponseJson.correct_answer.toUpperCase();
                         }
-
-                        if (alternativeMatch && alternativeMatch[1]) {
-                            possibleAlternative = alternativeMatch[1].toUpperCase();
-                        }
-                        if (explanationMatch && explanationMatch[1]) {
-                            explanation = explanationMatch[1].trim();
-                        }
+                        explanations.A = llmResponseJson.explanation_A || 'No explanation provided.';
+                        explanations.B = llmResponseJson.explanation_B || 'No explanation provided.';
+                        explanations.C = llmResponseJson.explanation_C || 'No explanation provided.';
+                        explanations.D = llmResponseJson.explanation_D || 'No explanation provided.';
 
                     } else {
                         console.warn('Trivia Solver: LLM response structure unexpected or empty for question:', question);
-                        llmParsingError = true;
                     }
 
                 } catch (error) {
-                    console.error('Trivia Solver: Error calling LLM API for question:', question, error);
-                    llmParsingError = true;
+                    console.error('Trivia Solver: Error calling LLM API or parsing JSON for question:', question, error);
                 }
 
                 let replyContent = `**Trivia Answer for:** \`${question}\`\n`;
-                if (mostLikelyAnswer) {
-                    replyContent += `Most Likely: \`${mostLikelyAnswer}\`\n`;
-                    if (possibleAlternative) {
-                        replyContent += `Possible Alternative: \`${possibleAlternative}\`\n`;
+                const buttons = [];
+                const optionLetters = ['A', 'B', 'C', 'D'];
+
+                optionLetters.forEach(letter => {
+                    const isCorrect = mostLikelyAnswerLetter === letter;
+                    buttons.push(
+                        new ButtonBuilder()
+                            .setCustomId(`trivia_answer_${letter}`) // Custom ID for button interaction
+                            .setLabel(letter)
+                            .setStyle(isCorrect ? ButtonStyle.Success : ButtonStyle.Secondary) // Green for correct, gray for others
+                            .setDisabled(true) // Disable buttons after sending
+                    );
+                });
+
+                const row = new ActionRowBuilder().addComponents(buttons);
+
+                if (mostLikelyAnswerLetter) {
+                    replyContent += `Most Likely: \`${mostLikelyAnswerLetter}\`\n`;
+                    // No "Possible Alternative" line needed as per new format
+                    
+                    if (explanations.A || explanations.B || explanations.C || explanations.D) {
+                        replyContent += `\n**Explanation:**\n\`\`\`\n`;
+                        optionLetters.forEach(letter => {
+                            if (explanations[letter]) {
+                                replyContent += `${letter}: ${explanations[letter]}\n`;
+                            }
+                        });
+                        replyContent += `\`\`\``;
                     }
-                    if (explanation) {
-                        replyContent += `\n**Explanation :**\n\`\`\`\n${explanation}\n\`\`\``;
-                    }
-                    statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps for answering trivia
+                    statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps
                 } else {
-                    // Apology and explanation if no definitive answer could be parsed
-                    replyContent += `I apologize, but I couldn't determine a definitive answer based on the LLM's response.`;
-                    if (llmParsingError) {
-                        replyContent += ` This might be because the LLM's output format was unexpected or an API error occurred.`;
-                    } else {
-                        replyContent += ` The LLM did not provide a clear answer in the expected format.`;
-                    }
-                    if (llmAnswerRaw) {
-                         replyContent += `\nRaw LLM Output: \n\`\`\`\n${llmAnswerRaw.substring(0, 500)}...\n\`\`\``; // Truncate raw output
+                    replyContent += `I apologize, but I couldn't determine a definitive answer from the LLM.`;
+                    if (llmResponseJson) {
+                         replyContent += `\nRaw LLM Output (JSON): \n\`\`\`json\n${JSON.stringify(llmResponseJson, null, 2).substring(0, 500)}...\n\`\`\``;
                     }
                 }
 
@@ -132,16 +152,15 @@ ${options}`;
                     replyContent = replyContent.substring(0, 1990) + '...\n(Output truncated due to character limit)';
                 }
 
-                // Send the reply regardless of whether a definitive answer was found
                 try {
-                    await message.channel.send({ content: replyContent });
-                    if (mostLikelyAnswer) {
-                        console.log(`Trivia Solver: Answered '${question}' with '${mostLikelyAnswer}' in #${message.channel.name}`);
+                    await message.channel.send({ content: replyContent, components: [row] }); // Send with buttons
+                    if (mostLikelyAnswerLetter) {
+                        console.log(`Trivia Solver: Answered '${question}' with '${mostLikelyAnswerLetter}' in #${message.channel.name}`);
                     } else {
                         console.log(`Trivia Solver: Posted apology for '${question}' in #${message.channel.name}.`);
                     }
                 } catch (error) {
-                    console.error(`Trivia Solver: Failed to post reply in #${message.channel.name}:`, error);
+                    console.error(`Trivia Solver: Failed to post reply with buttons in #${message.channel.name}:`, error);
                 }
             }
         }
