@@ -154,10 +154,10 @@ ${options}`;
                     // No "Possible Alternative" line needed as per new format, LLM provides explanations for all
 
                     if (explanations.A || explanations.B || explanations.C || explanations.D) {
-                        replyContent += `\n**Explanation:**\n`;
+                        replyContent += `\n-# **Explanation:**\n`;
                         optionLetters.forEach(letter => {
                             if (explanations[letter]) {
-                                replyContent += `- ${letter}: ${explanations[letter]}\n`;
+                                replyContent += `-# `${letter}: ${explanations[letter]}\n\``;
                             }
                         });
                 }
