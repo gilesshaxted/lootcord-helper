@@ -157,7 +157,7 @@ ${options}`;
                         replyContent += `\n-# **Explanation:**\n`;
                         optionLetters.forEach(letter => {
                             if (explanations[letter]) {
-                                replyContent += `-# `${letter}: ${explanations[letter]}\n\``;
+                                replyContent += `-# \`${letter}: ${explanations[letter]}\`\n`;
                             }
                         });
                 }
