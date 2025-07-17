@@ -140,8 +140,8 @@ ${options}`;
                 optionLetters.forEach(letter => {
                     buttons.push(
                         new ButtonBuilder()
-                            // Custom ID now includes the original message ID to retrieve explanations later
-                            .setCustomId(`show_trivia_explanation_${message.id}_${letter}`)
+                            // Custom ID now includes the *original game bot's message ID* for retrieval
+                            .setCustomId(`show_trivia_explanation_${message.id}_${letter}`) // Use message.id here
                             .setLabel(letter)
                             .setStyle(letter === mostLikelyAnswerLetter ? buttonColor : ButtonStyle.Secondary)
                             // Buttons are NOT disabled initially, so users can click for explanations
@@ -169,9 +169,9 @@ ${options}`;
                     const sentMessage = await message.channel.send({ content: replyContent, components: [row] });
                     console.log(`Trivia Solver: Answered '${question}' with '${mostLikelyAnswerLetter}' (Confidence: ${confidencePercentage}%) in #${message.channel.name}`);
 
-                    // Store explanations in Firestore, linked to the bot's *own* message ID
+                    // Store explanations in Firestore, linked to the *original game bot's message ID*
                     // This allows retrieval when a button is clicked.
-                    const triviaExplanationRef = doc(collection(db, `TriviaExplanations`), sentMessage.id);
+                    const triviaExplanationRef = doc(collection(db, `TriviaExplanations`), message.id); // Use message.id here
                     await setDoc(triviaExplanationRef, {
                         question: question,
                         options: options,
@@ -180,9 +180,10 @@ ${options}`;
                         explanations: explanations, // Store all explanations
                         timestamp: new Date().toISOString(),
                         channelId: message.channel.id,
-                        guildId: message.guild.id
+                        guildId: message.guild.id,
+                        botReplyMessageId: sentMessage.id // Store bot's reply ID for potential future edits
                     });
-                    console.log(`Trivia Solver: Stored explanations for message ID ${sentMessage.id} in Firestore.`);
+                    console.log(`Trivia Solver: Stored explanations for original message ID ${message.id} in Firestore.`);
 
                 } catch (error) {
                     console.error(`Trivia Solver: Failed to post reply or store explanations in #${message.channel.name}:`, error);
