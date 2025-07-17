@@ -206,15 +206,16 @@ client.once('ready', async () => {
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
-    // --- Slash Command Registration ---
-    // This block registers commands globally.
     try {
         console.log(`Started refreshing ${slashCommandsToRegister.length} application (/) commands.`);
+
+        // --- Register commands globally ---
         const data = await rest.put(
             Routes.applicationCommands(CLIENT_ID), // This line registers commands GLOBALLY
             { body: slashCommandsToRegister },
         );
         console.log(`Successfully reloaded ${data.length} global (/) commands.`);
+
     } catch (error) {
         console.error('Failed to register slash commands:', error);
     }
@@ -305,6 +306,41 @@ client.on('interactionCreate', async interaction => {
 
             const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage);
             await interaction.editReply({ content, components, ephemeral: false });
+        } else if (interaction.customId.startsWith('show_trivia_explanation_')) { // Handle trivia explanation button
+            await interaction.deferUpdate(); // Acknowledge button click
+
+            const parts = interaction.customId.split('_');
+            const originalMessageId = parts[3]; // Extract original message ID
+
+            const triviaExplanationRef = doc(collection(db, `TriviaExplanations`), originalMessageId);
+
+            try {
+                const docSnap = await getDoc(triviaExplanationRef);
+
+                if (docSnap.exists()) {
+                    const explanationData = docSnap.data();
+                    const explanations = explanationData.explanations;
+                    const optionLetters = ['A', 'B', 'C', 'D'];
+
+                    let explanationContent = `**Explanation for Trivia Question:** \`${explanationData.question}\`\n\n`;
+                    explanationContent += `\`\`\`\n`;
+                    optionLetters.forEach(letter => {
+                        if (explanations[letter]) {
+                            explanationContent += `${letter}: ${explanations[letter]}\n`;
+                        }
+                    });
+                    explanationContent += `\`\`\``;
+
+                    await interaction.followUp({ content: explanationContent, ephemeral: false }); // Send publicly
+                    console.log(`Trivia Solver: Posted explanation for message ID ${originalMessageId} in #${interaction.channel.name}.`);
+                } else {
+                    await interaction.followUp({ content: 'Could not find explanation for this trivia question.', ephemeral: false });
+                    console.warn(`Trivia Solver: Explanation not found for message ID ${originalMessageId}.`);
+                }
+            } catch (error) {
+                console.error(`Trivia Solver: Error fetching explanation for message ID ${originalMessageId}:`, error);
+                await interaction.followUp({ content: 'An error occurred while fetching the explanation. Please check logs.', ephemeral: false });
+            }
         }
     }
 
