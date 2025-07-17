@@ -9,11 +9,11 @@ const fs = require('fs');
 // Import Firebase modules
 const { initializeApp } = require('firebase/app');
 const { getAuth, signInAnonymously, onAuthStateChanged } = require('firebase/auth');
-const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs } = require('firebase/firestore');
+const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, getDoc } = require('firebase/firestore'); // Added getDoc
 
 // Import Utilities
 const statsTracker = require('./utils/statsTracker');
-const botStatus = require('./utils/botStatus'); // Corrected import for botStatus
+const botStatus = require('./utils/botStatus');
 const paginationHelpers = require('./utils/pagination');
 const startupChecks = require('./utils/startupChecks');
 const wordleHelpers = require('./utils/wordleHelpers');
@@ -219,12 +219,9 @@ client.once('ready', async () => {
         console.error('Failed to register slash commands:', error);
     }
 
-    // Set initial status and update periodically via statsTracker's listener
-    // The setInterval is moved to updateBotPresence in botStatus.js
-    // We only need to ensure the initial status is set.
     botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Initial call on ready
+    setInterval(() => botStatus.updateBotPresence(client, statsTracker.getBotStats()), 300000); // Regular updates
 
-    // Run channel check and rename on startup
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
 });
 
