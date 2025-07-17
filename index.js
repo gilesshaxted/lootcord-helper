@@ -9,7 +9,7 @@ const fs = require('fs');
 // Import Firebase modules
 const { initializeApp } = require('firebase/app');
 const { getAuth, signInAnonymously, onAuthStateChanged } = require('firebase/auth');
-const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, getDoc } = require('firebase/firestore');
+const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, getDoc } = require('firebase/firestore'); // Added getDoc
 
 // Import Utilities
 const statsTracker = require('./utils/statsTracker');
