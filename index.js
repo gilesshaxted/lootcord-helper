@@ -128,16 +128,15 @@ async function setupFirestoreListeners() {
         console.error("Error writing bot status to Firestore:", e);
     }
 
-    // Listener for bot statistics - this will trigger updateBotPresence via statsTracker
     const statsDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/stats`), 'botStats');
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
             statsTracker.updateInMemoryStats(docSnap.data());
-            botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Pass client and current stats
+            botStatus.updateBotPresence(client, statsTracker.getBotStats());
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
-            statsTracker.initializeStats({}); // Initialize with empty stats
-            botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Update Discord status
+            statsTracker.initializeStats({});
+            botStatus.updateBotPresence(client, statsTracker.getBotStats());
         }
     }, (error) => {
         console.error("Stats Tracker: Error listening to botStats:", error);
@@ -151,7 +150,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildPresences, // REQUIRED for setting bot status/presence
+        GatewayIntentBits.GuildPresences,
     ]
 });
 
