@@ -106,6 +106,13 @@ ${options}`;
                         explanations.C = llmResponseParsed.explanation_C || 'No explanation provided.';
                         explanations.D = llmResponseParsed.explanation_D || 'No explanation provided.';
 
+                        // ✅ Add this validation block here
+                        const validAnswers = ['A', 'B', 'C', 'D'];
+                        if (!validAnswers.includes(mostLikelyAnswerLetter)) {
+                             console.warn(`Trivia Solver: Invalid answer received from LLM: ${mostLikelyAnswerLetter}`);
+                             mostLikelyAnswerLetter = null;
+                        }
+
                     } else {
                         console.warn('Trivia Solver: LLM response structure unexpected or empty for question:', question);
                     }
@@ -125,7 +132,7 @@ ${options}`;
                     } else if (confidencePercentage >= 50) {
                         buttonColor = ButtonStyle.Primary; // Blue
                     } else if (confidencePercentage >= 10) { // Below 50% but still a guess
-                        buttonColor = ButtonStyle.Secondary; // Yellow
+                        buttonColor = ButtonStyle.Secondary; // Gray (low confidence)
                     }
                 }
 
