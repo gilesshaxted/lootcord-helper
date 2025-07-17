@@ -25,16 +25,19 @@ module.exports = {
         // Check if the message has an embed and if it's a trivia message
         if (message.embeds.length > 0) {
             const embed = message.embeds[0];
-            // Updated trigger: if the embed title exists, ends with '?', and there's a description
+            // Trigger: if the embed title exists, ends with '?', and there's a description
             if (embed.title && embed.title.endsWith('?') && embed.description) {
                 const question = embed.title;
                 const options = embed.description; // e.g., "**A**: 17\n**B**: 18\n**C**: 15\n**D**: 16"
 
                 // Construct the prompt for the LLM
-                // Updated prompt to ask for correct answer and explanations for each option.
-                const prompt = `Given the following multiple-choice question and options, identify the single correct answer and provide a brief explanation for each option (A, B, C, D) indicating why it is correct or incorrect. Format your response strictly as a JSON object with the following structure:
+                const prompt = `You are an expert trivia solver. Given the following multiple-choice question and options, identify the single best answer.
+Provide the letter of the most likely correct option (A, B, C, or D), a confidence score for your chosen answer as a percentage (0-100), and a brief explanation for each option (A, B, C, D) indicating why it is correct or incorrect.
+
+Format your response strictly as a JSON object with the following structure:
 {
-  "correct_answer": "A",
+  "most_likely_answer": "A",
+  "confidence_percentage": 95,
   "explanation_A": "Explanation for option A",
   "explanation_B": "Explanation for option B",
   "explanation_C": "Explanation for option C",
@@ -45,9 +48,10 @@ Question: ${question}
 Options:
 ${options}`;
 
-                let llmResponseJson = null;
+                let llmResponseParsed = null;
                 let mostLikelyAnswerLetter = null;
-                let explanations = {}; // Store explanations for A, B, C, D
+                let confidencePercentage = 0;
+                let explanations = {};
 
                 try {
                     // Call the LLM (Gemini API)
@@ -60,13 +64,14 @@ ${options}`;
                             responseSchema: { // Define expected JSON schema
                                 type: "OBJECT",
                                 properties: {
-                                    "correct_answer": { "type": "STRING" },
+                                    "most_likely_answer": { "type": "STRING" },
+                                    "confidence_percentage": { "type": "NUMBER" },
                                     "explanation_A": { "type": "STRING" },
                                     "explanation_B": { "type": "STRING" },
                                     "explanation_C": { "type": "STRING" },
                                     "explanation_D": { "type": "STRING" }
                                 },
-                                "propertyOrdering": ["correct_answer", "explanation_A", "explanation_B", "explanation_C", "explanation_D"]
+                                "propertyOrdering": ["most_likely_answer", "confidence_percentage", "explanation_A", "explanation_B", "explanation_C", "explanation_D"]
                             }
                         }
                     };
@@ -92,15 +97,14 @@ ${options}`;
                         result.candidates[0].content.parts.length > 0) {
                         
                         const rawJsonText = result.candidates[0].content.parts[0].text;
-                        llmResponseJson = JSON.parse(rawJsonText); // Parse the JSON string
+                        llmResponseParsed = JSON.parse(rawJsonText); // Parse the JSON string
 
-                        if (llmResponseJson.correct_answer) {
-                            mostLikelyAnswerLetter = llmResponseJson.correct_answer.toUpperCase();
-                        }
-                        explanations.A = llmResponseJson.explanation_A || 'No explanation provided.';
-                        explanations.B = llmResponseJson.explanation_B || 'No explanation provided.';
-                        explanations.C = llmResponseJson.explanation_C || 'No explanation provided.';
-                        explanations.D = llmResponseJson.explanation_D || 'No explanation provided.';
+                        mostLikelyAnswerLetter = (llmResponseParsed.most_likely_answer || '').toUpperCase();
+                        confidencePercentage = llmResponseParsed.confidence_percentage ?? 0;
+                        explanations.A = llmResponseParsed.explanation_A || 'No explanation provided.';
+                        explanations.B = llmResponseParsed.explanation_B || 'No explanation provided.';
+                        explanations.C = llmResponseParsed.explanation_C || 'No explanation provided.';
+                        explanations.D = llmResponseParsed.explanation_D || 'No explanation provided.';
 
                     } else {
                         console.warn('Trivia Solver: LLM response structure unexpected or empty for question:', question);
@@ -110,17 +114,28 @@ ${options}`;
                     console.error('Trivia Solver: Error calling LLM API or parsing JSON for question:', question, error);
                 }
 
-                let replyContent = `**Trivia Answer for:** \`${question}\``;
+                let replyContent = `**Trivia Answer for:** \`${question}\`\n`;
                 const buttons = [];
                 const optionLetters = ['A', 'B', 'C', 'D'];
 
+                let buttonColor = ButtonStyle.Danger; // Default to Red (no definitive answer)
+                if (mostLikelyAnswerLetter) {
+                    if (confidencePercentage >= 90) {
+                        buttonColor = ButtonStyle.Success; // Green
+                    } else if (confidencePercentage >= 50) {
+                        buttonColor = ButtonStyle.Primary; // Blue
+                    } else if (confidencePercentage >= 10) { // Below 50% but still a guess
+                        buttonColor = ButtonStyle.Secondary; // Yellow
+                    }
+                }
+
+                // Create buttons with dynamic colors based on confidence
                 optionLetters.forEach(letter => {
-                    const isCorrect = mostLikelyAnswerLetter === letter;
                     buttons.push(
                         new ButtonBuilder()
                             .setCustomId(`trivia_answer_${letter}`) // Custom ID for button interaction
                             .setLabel(letter)
-                            .setStyle(isCorrect ? ButtonStyle.Success : ButtonStyle.Secondary) // Green for correct, gray for others
+                            .setStyle(letter === mostLikelyAnswerLetter ? buttonColor : ButtonStyle.Secondary) // Color the chosen one
                             .setDisabled(true) // Disable buttons after sending
                     );
                 });
@@ -128,22 +143,23 @@ ${options}`;
                 const row = new ActionRowBuilder().addComponents(buttons);
 
                 if (mostLikelyAnswerLetter) {
-                    // No "Most Likely" text here, as the green button indicates it.
-                    // No "Possible Alternative" line needed as per new format
-                    
+                    replyContent += `Most Likely: \`${mostLikelyAnswerLetter}\` (Confidence: ${confidencePercentage}%)\n`;
+                    // No "Possible Alternative" line needed as per new format, LLM provides explanations for all
+
                     if (explanations.A || explanations.B || explanations.C || explanations.D) {
-                        replyContent += `\n-# **Explanation:**\n`; // Updated format for heading
+                        replyContent += `\n**Explanation:**\n\`\`\`\n`;
                         optionLetters.forEach(letter => {
                             if (explanations[letter]) {
-                                replyContent += `-# ${letter}: \`${explanations[letter]}\`\n`; // Updated format for each explanation line
+                                replyContent += `${letter}: ${explanations[letter]}\n`;
                             }
                         });
+                        replyContent += `\`\`\``;
                     }
                     statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps
                 } else {
                     replyContent += `I apologize, but I couldn't determine a definitive answer from the LLM.`;
-                    if (llmResponseJson) {
-                         replyContent += `\nRaw LLM Output (JSON): \n\`\`\`json\n${JSON.stringify(llmResponseJson, null, 2).substring(0, 500)}...\n\`\`\``;
+                    if (llmResponseParsed) {
+                         replyContent += `\nRaw LLM Output (JSON): \n\`\`\`json\n${JSON.stringify(llmResponseParsed, null, 2).substring(0, 500)}...\n\`\`\``; // Truncate raw output
                     }
                 }
 
@@ -154,7 +170,7 @@ ${options}`;
                 try {
                     await message.channel.send({ content: replyContent, components: [row] }); // Send with buttons
                     if (mostLikelyAnswerLetter) {
-                        console.log(`Trivia Solver: Answered '${question}' with '${mostLikelyAnswerLetter}' in #${message.channel.name}`);
+                        console.log(`Trivia Solver: Answered '${question}' with '${mostLikelyAnswerLetter}' (Confidence: ${confidencePercentage}%) in #${message.channel.name}`);
                     } else {
                         console.log(`Trivia Solver: Posted apology for '${question}' in #${message.channel.name}.`);
                     }
