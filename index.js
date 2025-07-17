@@ -9,7 +9,7 @@ const fs = require('fs');
 // Import Firebase modules
 const { initializeApp } = require('firebase/app');
 const { getAuth, signInAnonymously, onAuthStateChanged } = require('firebase/auth');
-const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, getDoc } = require('firebase/firestore'); // Added getDoc
+const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, getDoc } = require('firebase/firestore');
 
 // Import Utilities
 const statsTracker = require('./utils/statsTracker');
@@ -206,16 +206,15 @@ client.once('ready', async () => {
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
+    // --- Slash Command Registration ---
+    // This block registers commands globally.
     try {
         console.log(`Started refreshing ${slashCommandsToRegister.length} application (/) commands.`);
-
-        // --- Register commands globally ---
         const data = await rest.put(
             Routes.applicationCommands(CLIENT_ID), // This line registers commands GLOBALLY
             { body: slashCommandsToRegister },
         );
         console.log(`Successfully reloaded ${data.length} global (/) commands.`);
-
     } catch (error) {
         console.error('Failed to register slash commands:', error);
     }
@@ -288,7 +287,7 @@ client.on('interactionCreate', async interaction => {
         return;
     }
 
-    // Handle Button Interactions (for pagination)
+    // Handle Button Interactions (for pagination and trivia explanation)
     if (interaction.isButton()) {
         if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
             await interaction.deferUpdate();
@@ -330,6 +329,19 @@ client.on('interactionCreate', async interaction => {
                         }
                     });
                     explanationContent += `\`\`\``;
+
+                    // Fetch the original message to edit its components
+                    const originalMessage = interaction.message;
+                    if (originalMessage) {
+                        const newComponents = originalMessage.components.map(row => {
+                            return new ActionRowBuilder().addComponents(
+                                row.components.map(button => {
+                                    return ButtonBuilder.from(button).setDisabled(true); // Disable all buttons
+                                })
+                            );
+                        });
+                        await originalMessage.edit({ components: newComponents });
+                    }
 
                     await interaction.followUp({ content: explanationContent, ephemeral: false }); // Send publicly
                     console.log(`Trivia Solver: Posted explanation for message ID ${originalMessageId} in #${interaction.channel.name}.`);
