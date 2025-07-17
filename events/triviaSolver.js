@@ -1,5 +1,6 @@
 const statsTracker = require('../utils/statsTracker'); // Import Stats Tracker
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js'); // Import ActionRowBuilder, ButtonBuilder, ButtonStyle
+const { doc, collection, setDoc } = require('firebase/firestore'); // Import Firestore functions
 
 // Configuration specific to this listener
 const TARGET_BOT_ID = '493316754689359874'; // User ID of the other bot posting trivia
@@ -51,13 +52,13 @@ ${options}`;
                 let llmResponseParsed = null;
                 let mostLikelyAnswerLetter = null;
                 let confidencePercentage = 0;
-                let explanations = {};
+                let explanations = {}; // Store all explanations here
 
                 try {
                     // Call the LLM (Gemini API)
                     const chatHistory = [];
                     chatHistory.push({ role: "user", parts: [{ text: prompt }] });
-                    const payload = { 
+                    const payload = {
                         contents: chatHistory,
                         generationConfig: {
                             responseMimeType: "application/json", // Request JSON output
@@ -106,11 +107,10 @@ ${options}`;
                         explanations.C = llmResponseParsed.explanation_C || 'No explanation provided.';
                         explanations.D = llmResponseParsed.explanation_D || 'No explanation provided.';
 
-                        // ✅ Add this validation block here
                         const validAnswers = ['A', 'B', 'C', 'D'];
                         if (!validAnswers.includes(mostLikelyAnswerLetter)) {
-                             console.warn(`Trivia Solver: Invalid answer received from LLM: ${mostLikelyAnswerLetter}`);
-                             mostLikelyAnswerLetter = null;
+                            console.warn(`Trivia Solver: Invalid answer received from LLM: ${mostLikelyAnswerLetter}`);
+                            mostLikelyAnswerLetter = null; // Invalidate if not A,B,C,D
                         }
 
                     } else {
@@ -132,18 +132,19 @@ ${options}`;
                     } else if (confidencePercentage >= 50) {
                         buttonColor = ButtonStyle.Primary; // Blue
                     } else if (confidencePercentage >= 10) { // Below 50% but still a guess
-                        buttonColor = ButtonStyle.Secondary; // Gray (low confidence)
+                        buttonColor = ButtonStyle.Secondary; // Gray (low confidence, was yellow)
                     }
                 }
 
-                // Create buttons with dynamic colors based on confidence
+                // Create buttons with dynamic colors for the most likely answer, others secondary
                 optionLetters.forEach(letter => {
                     buttons.push(
                         new ButtonBuilder()
-                            .setCustomId(`trivia_answer_${letter}`) // Custom ID for button interaction
+                            // Custom ID now includes the original message ID to retrieve explanations later
+                            .setCustomId(`show_trivia_explanation_${message.id}_${letter}`)
                             .setLabel(letter)
-                            .setStyle(letter === mostLikelyAnswerLetter ? buttonColor : ButtonStyle.Secondary) // Color the chosen one
-                            .setDisabled(true) // Disable buttons after sending
+                            .setStyle(letter === mostLikelyAnswerLetter ? buttonColor : ButtonStyle.Secondary)
+                            // Buttons are NOT disabled initially, so users can click for explanations
                     );
                 });
 
@@ -151,21 +152,11 @@ ${options}`;
 
                 if (mostLikelyAnswerLetter) {
                     replyContent += `Most Likely: \`${mostLikelyAnswerLetter}\` (Confidence: ${confidencePercentage}%)\n`;
-                    // No "Possible Alternative" line needed as per new format, LLM provides explanations for all
-
-                    if (explanations.A || explanations.B || explanations.C || explanations.D) {
-                        replyContent += `\n-# **Explanation:**\n`;
-                        optionLetters.forEach(letter => {
-                            if (explanations[letter]) {
-                                replyContent += `-# \`${letter}: ${explanations[letter]}\`\n`;
-                            }
-                        });
-                }
                     statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps
                 } else {
                     replyContent += `I apologize, but I couldn't determine a definitive answer from the LLM.`;
                     if (llmResponseParsed) {
-                         replyContent += `\nRaw LLM Output (JSON): \n\`\`\`json\n${JSON.stringify(llmResponseParsed, null, 2).substring(0, 500)}...\n\`\`\``; // Truncate raw output
+                         replyContent += `\nRaw LLM Output (JSON): \n\`\`\`json\n${JSON.stringify(llmResponseParsed, null, 2).substring(0, 500)}...\n\`\`\``;
                     }
                 }
 
@@ -174,14 +165,27 @@ ${options}`;
                 }
 
                 try {
-                    await message.channel.send({ content: replyContent, components: [row] }); // Send with buttons
-                    if (mostLikelyAnswerLetter) {
-                        console.log(`Trivia Solver: Answered '${question}' with '${mostLikelyAnswerLetter}' (Confidence: ${confidencePercentage}%) in #${message.channel.name}`);
-                    } else {
-                        console.log(`Trivia Solver: Posted apology for '${question}' in #${message.channel.name}.`);
-                    }
+                    // Send the initial response with buttons
+                    const sentMessage = await message.channel.send({ content: replyContent, components: [row] });
+                    console.log(`Trivia Solver: Answered '${question}' with '${mostLikelyAnswerLetter}' (Confidence: ${confidencePercentage}%) in #${message.channel.name}`);
+
+                    // Store explanations in Firestore, linked to the bot's *own* message ID
+                    // This allows retrieval when a button is clicked.
+                    const triviaExplanationRef = doc(collection(db, `TriviaExplanations`), sentMessage.id);
+                    await setDoc(triviaExplanationRef, {
+                        question: question,
+                        options: options,
+                        mostLikelyAnswer: mostLikelyAnswerLetter,
+                        confidence: confidencePercentage,
+                        explanations: explanations, // Store all explanations
+                        timestamp: new Date().toISOString(),
+                        channelId: message.channel.id,
+                        guildId: message.guild.id
+                    });
+                    console.log(`Trivia Solver: Stored explanations for message ID ${sentMessage.id} in Firestore.`);
+
                 } catch (error) {
-                    console.error(`Trivia Solver: Failed to post reply with buttons in #${message.channel.name}:`, error);
+                    console.error(`Trivia Solver: Failed to post reply or store explanations in #${message.channel.name}:`, error);
                 }
             }
         }
