@@ -153,7 +153,7 @@ ${options}`;
                                 replyContent += `-# ${letter}: ${explanations[letter]}\n`;
                             }
                         });
-                        replyContent += `\``;
+                        replyContent += `\`;
                     }
                     statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps
                 } else {
