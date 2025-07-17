@@ -140,8 +140,8 @@ ${options}`;
                 optionLetters.forEach(letter => {
                     buttons.push(
                         new ButtonBuilder()
-                            // Custom ID now includes the *original game bot's message ID* for retrieval
-                            .setCustomId(`show_trivia_explanation_${message.id}_${letter}`) // Use message.id here
+                            // Custom ID now includes the original message ID to retrieve explanations later
+                            .setCustomId(`show_trivia_explanation_${message.id}_${letter}`)
                             .setLabel(letter)
                             .setStyle(letter === mostLikelyAnswerLetter ? buttonColor : ButtonStyle.Secondary)
                             // Buttons are NOT disabled initially, so users can click for explanations
@@ -152,6 +152,8 @@ ${options}`;
 
                 if (mostLikelyAnswerLetter) {
                     replyContent += `Most Likely: \`${mostLikelyAnswerLetter}\` (Confidence: ${confidencePercentage}%)\n`;
+                    // NEW: Add line to prompt for explanation click
+                    replyContent += `-# Click a button for an explanation.\n`;
                     statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps
                 } else {
                     replyContent += `I apologize, but I couldn't determine a definitive answer from the LLM.`;
