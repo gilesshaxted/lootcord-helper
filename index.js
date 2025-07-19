@@ -13,11 +13,11 @@ const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, getDoc } = r
 
 // Import Utilities
 const statsTracker = require('./utils/statsTracker');
-const botStatus = require('./utils/botStatus');
+const botStatus = require('./utils/botStatus'); // Corrected import for botStatus
 const paginationHelpers = require('./utils/pagination');
 const startupChecks = require('./utils/startupChecks');
 const wordleHelpers = require('./utils/wordleHelpers');
-const botPresenceListener = require('./utils/botPresenceListener'); // NEW: Import botPresenceListener
+// const botPresenceListener = require('./utils/botPresenceListener'); // Removed as its logic is now integrated directly
 
 // Load environment variables from a .env file (for local testing)
 require('dotenv').config();
@@ -134,7 +134,7 @@ async function setupFirestoreListeners() {
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
             statsTracker.updateInMemoryStats(docSnap.data());
-            // This listener now explicitly calls botStatus.updateBotPresence
+            // Call updateBotPresence directly from botStatus, passing necessary data
             botStatus.updateBotPresence(client, statsTracker.getBotStats());
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
@@ -148,7 +148,6 @@ async function setupFirestoreListeners() {
 
 
 // --- Discord Client Setup ---
-// Moved client declaration to here so it's defined before .once('ready')
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -222,10 +221,10 @@ client.once('ready', async () => {
         console.error('Failed to register slash commands:', error);
     }
 
-    // Initialize bot presence listener
-    botPresenceListener.startBotPresenceListener(client, db, isFirestoreReady, APP_ID_FOR_FIRESTORE); // Pass all necessary args
+    // Initial call to set bot presence
+    botStatus.updateBotPresence(client, statsTracker.getBotStats());
 
-    // The setInterval for status updates is now handled internally by botPresenceListener.js
+    // The setInterval for status updates is now managed directly by botStatus.js
     // No need for setInterval here.
     // setInterval(() => botStatus.updateBotPresence(client, statsTracker.getBotStats()), 300000);
 
