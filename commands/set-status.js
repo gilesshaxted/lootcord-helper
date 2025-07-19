@@ -1,5 +1,7 @@
-const { SlashCommandBuilder, ActivityType } = require('discord.js');
+const { SlashCommandBuilder, ActivityType, PermissionFlagsBits } = require('discord.js');
 const { doc, collection, getDoc } = require('firebase/firestore');
+const statsTracker = require('../utils/statsTracker');
+const botStatus = require('../utils/botStatus'); // Import botStatus utility
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -7,11 +9,11 @@ module.exports = {
         .setDescription('Manually updates the bot\'s Discord status or uses current statistics.')
         .addStringOption(option =>
             option.setName('text')
-                .setDescription('Optional: The custom text to set as the bot\'s status.')
+                .setDescription('Optional: The custom text to set as the bot\'s status. Leave blank to revert to dynamic stats.')
                 .setRequired(false)
         )
         .addStringOption(option =>
-            option.setName('activity')
+            option.setName('activity_type') // Renamed from 'activity' to avoid conflict with ActivityType enum
                 .setDescription('Optional: Select the activity type (default is PLAYING).')
                 .setRequired(false)
                 .addChoices(
@@ -19,15 +21,19 @@ module.exports = {
                     { name: 'Watching', value: 'WATCHING' },
                     { name: 'Listening', value: 'LISTENING' },
                     { name: 'Competing', value: 'COMPETING' }
-                    // Streaming intentionally omitted unless you want to handle URLs
                 )
+        )
+        .addBooleanOption(option =>
+            option.setName('clear_custom')
+                .setDescription('Set to true to clear any custom status and revert to dynamic stats.')
+                .setRequired(false)
         ),
 
     async execute(interaction, db, client, APP_ID_FOR_FIRESTORE) {
         await interaction.deferReply({ ephemeral: false });
 
         // ✅ Permissions Check
-        if (!interaction.member.permissions.has('Administrator')) {
+        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
             return await interaction.editReply({
                 content: '❌ You do not have permission to use this command.',
                 ephemeral: true,
@@ -35,65 +41,44 @@ module.exports = {
         }
 
         const customStatusText = interaction.options.getString('text');
-        const activityTypeInput = interaction.options.getString('activity');
+        const activityTypeInput = interaction.options.getString('activity_type');
+        const clearCustom = interaction.options.getBoolean('clear_custom') || false;
+
         const activityType = ActivityType[activityTypeInput] ?? ActivityType.Playing;
 
-        let statusText = '';
+        if (clearCustom) {
+            botStatus.clearCustomBotStatus(client, statsTracker.getBotStats());
+            return await interaction.editReply({ content: '✅ Custom status cleared. Bot status reverted to dynamic statistics.', ephemeral: false });
+        }
 
         if (customStatusText) {
-            statusText = customStatusText;
-            console.log(`Set Status Command: Custom status used: "${customStatusText}"`);
+            if (customStatusText.length > 128) {
+                return await interaction.editReply({
+                    content: '⚠️ Status text exceeds the 128 character limit. Please shorten it.',
+                    ephemeral: false
+                });
+            }
+            botStatus.setCustomBotStatus(client, customStatusText, activityType);
+            return await interaction.editReply({ content: `✅ Bot status set to custom: \`${customStatusText}\` (Type: \`${activityType}\`).`, ephemeral: false });
         } else {
+            // If no custom text and not clearing, force a dynamic update
             if (!db || !APP_ID_FOR_FIRESTORE) {
                 return await interaction.editReply({
-                    content: '⚠️ Bot is not fully initialized (Firestore not ready) to fetch statistics. Please try again in a moment or provide custom text.',
+                    content: '⚠️ Bot is not fully initialized (Firestore not ready) to fetch statistics. Cannot update dynamic status.',
                     ephemeral: false
                 });
             }
 
+            // Trigger a dynamic update via statsTracker's listener (which then calls botStatus)
+            // We can force a write to the stats document to trigger the onSnapshot listener.
             const statsDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/stats`), 'botStats');
-
             try {
-                const docSnap = await getDoc(statsDocRef);
-                const data = docSnap.exists() ? docSnap.data() : {};
-                const totalHelps = data.totalHelps ?? 0;
-                const uniqueActiveUsers = Object.keys(data.activeUsersMap ?? {}).length;
-
-                statusText = `Helped ${uniqueActiveUsers} players ${totalHelps} times`;
-                console.log(`Set Status Command: Dynamic status used: "${statusText}"`);
+                await setDoc(statsDocRef, { lastUpdated: new Date().toISOString() }, { merge: true });
+                await interaction.editReply({ content: '✅ Triggered dynamic status update based on current statistics.', ephemeral: false });
             } catch (error) {
-                console.error('Set Status Command: Error fetching stats:', error);
-                return await interaction.editReply({
-                    content: '❌ An error occurred while fetching statistics. Please check the logs.',
-                    ephemeral: false
-                });
+                console.error('Set Status Command: Error triggering dynamic status update:', error);
+                await interaction.editReply({ content: '❌ An error occurred while trying to trigger dynamic status update. Please check logs.', ephemeral: false });
             }
-        }
-
-        if (statusText.length > 128) {
-            return await interaction.editReply({
-                content: '⚠️ Status text exceeds the 128 character limit. Please shorten it.',
-                ephemeral: false
-            });
-        }
-
-        try {
-            if (client.user) {
-                client.user.setActivity(statusText, { type: activityType });
-                await interaction.editReply({
-                    content: `✅ Bot status updated to: \`${statusText}\` (Activity type: \`${ActivityType[activityType]}\`)`,
-                    ephemeral: false
-                });
-                console.log(`Set Status Command: Bot status updated to "${statusText}" [${ActivityType[activityType]}]`);
-            } else {
-                throw new Error('client.user is null or undefined');
-            }
-        } catch (err) {
-            console.error('Set Status Command: Failed to set bot activity:', err);
-            await interaction.editReply({
-                content: '❌ Failed to set bot status due to an internal error.',
-                ephemeral: false
-            });
         }
     },
 };
