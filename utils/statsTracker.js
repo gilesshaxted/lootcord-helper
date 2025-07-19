@@ -24,9 +24,13 @@ function initializeStats(initialData) {
 
 /**
  * Updates the in-memory bot stats from a Firestore snapshot.
+ * This function also triggers an update to the bot's presence text in Firestore.
  * @param {object} data Latest data from Firestore.
+ * @param {object} db The Firestore database instance.
+ * @param {string} appId The application ID for Firestore path.
+ * @param {Client} client The Discord client instance (needed for guild count).
  */
-function updateInMemoryStats(data) {
+async function updateInMemoryStats(data, db, appId, client) {
     if (data) {
         botStats.totalHelps = data.totalHelps || 0;
         botStats.activeUsersMap = data.activeUsersMap || {};
@@ -34,14 +38,31 @@ function updateInMemoryStats(data) {
         botStats.lastUpdated = data.lastUpdated || null;
     }
     console.log('Stats Tracker: Updated in-memory stats:', botStats);
+
+    // NEW: Calculate and store the desired bot presence text in Firestore
+    if (db && appId && client && client.isReady()) {
+        const presenceDocRef = doc(collection(db, `artifacts/${appId}/public/data/botPresence`), 'currentStatus');
+        const totalServers = client.guilds.cache.size;
+        const statusText = `Helped ${botStats.uniqueActiveUsers} players ${botStats.totalHelps} times in ${totalServers} servers`;
+
+        try {
+            await setDoc(presenceDocRef, { statusText: statusText, lastUpdated: new Date().toISOString() }, { merge: true });
+            console.log(`Stats Tracker: Stored desired presence in Firestore: "${statusText}"`);
+        } catch (error) {
+            console.error('Stats Tracker: Error storing desired presence in Firestore:', error);
+        }
+    } else {
+        console.warn('Stats Tracker: Cannot store desired presence in Firestore: DB, App ID, or Client not ready.');
+    }
 }
 
 /**
  * Increments the total helps counter in Firestore.
  * @param {object} db The Firestore database instance.
  * @param {string} appId The application ID for Firestore path.
+ * @param {Client} client The Discord client instance (needed for updateInMemoryStats).
  */
-async function incrementTotalHelps(db, appId) {
+async function incrementTotalHelps(db, appId, client) {
     if (!db) {
         console.warn('Stats Tracker: Firestore DB not available for incrementTotalHelps.');
         return;
@@ -53,13 +74,13 @@ async function incrementTotalHelps(db, appId) {
             lastUpdated: new Date().toISOString()
         });
         console.log('Stats Tracker: Incremented total helps in Firestore.');
+        // The onSnapshot listener will handle updateInMemoryStats and presence update
     } catch (error) {
         console.error('Stats Tracker: Error incrementing total helps:', error);
-        // If document doesn't exist, create it.
         if (error.code === 'not-found') {
             await setDoc(statsDocRef, {
                 totalHelps: 1,
-                activeUsersMap: botStats.activeUsersMap, // Initialize with current active users
+                activeUsersMap: botStats.activeUsersMap,
                 lastUpdated: new Date().toISOString()
             }, { merge: true });
             console.log('Stats Tracker: Created botStats document and set initial helps.');
@@ -72,27 +93,28 @@ async function incrementTotalHelps(db, appId) {
  * @param {object} db The Firestore database instance.
  * @param {string} appId The application ID for Firestore path.
  * @param {string} userId The ID of the active user.
+ * @param {Client} client The Discord client instance (needed for updateInMemoryStats).
  */
-async function addActiveUser(db, appId, userId) {
+async function addActiveUser(db, appId, userId, client) {
     if (!db) {
         console.warn('Stats Tracker: Firestore DB not available for addActiveUser.');
         return;
     }
     const statsDocRef = doc(collection(db, `artifacts/${appId}/public/data/stats`), 'botStats');
-    const userKey = `activeUsersMap.${userId}`; // Dot notation to update map field
+    const userKey = `activeUsersMap.${userId}`;
 
     try {
         await updateDoc(statsDocRef, {
-            [userKey]: true, // Set user ID as a key in the map
+            [userKey]: true,
             lastUpdated: new Date().toISOString()
         });
         console.log(`Stats Tracker: Added active user ${userId} to Firestore.`);
+        // The onSnapshot listener will handle updateInMemoryStats and presence update
     } catch (error) {
         console.error(`Stats Tracker: Error adding active user ${userId}:`, error);
-        // If document doesn't exist, create it with this user
         if (error.code === 'not-found') {
             await setDoc(statsDocRef, {
-                totalHelps: botStats.totalHelps, // Initialize with current helps
+                totalHelps: botStats.totalHelps,
                 activeUsersMap: { [userId]: true },
                 lastUpdated: new Date().toISOString()
             }, { merge: true });
@@ -115,5 +137,4 @@ module.exports = {
     incrementTotalHelps,
     addActiveUser,
     getBotStats,
-    // updateBotStatus is removed from here
 };
