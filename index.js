@@ -132,12 +132,12 @@ async function setupFirestoreListeners() {
     const statsDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/stats`), 'botStats');
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
-            statsTracker.updateInMemoryStats(docSnap.data());
-            botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Pass client and current stats
+            statsTracker.updateInMemoryStats(docSnap.data(), db, APP_ID_FOR_FIRESTORE, client); // Pass db, appId, client
+            // botStatus.updateBotPresence is now called by statsTracker's updateInMemoryStats
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
             statsTracker.initializeStats({}); // Initialize with empty stats
-            botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Update Discord status
+            statsTracker.updateInMemoryStats({}, db, APP_ID_FOR_FIRESTORE, client); // Initialize and trigger presence update
         }
     }, (error) => {
         console.error("Stats Tracker: Error listening to botStats:", error);
