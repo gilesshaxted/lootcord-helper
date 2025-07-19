@@ -13,11 +13,11 @@ const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, getDoc } = r
 
 // Import Utilities
 const statsTracker = require('./utils/statsTracker');
-const botStatus = require('./utils/botStatus'); // Corrected import for botStatus
+const botStatus = require('./utils/botStatus');
 const paginationHelpers = require('./utils/pagination');
 const startupChecks = require('./utils/startupChecks');
 const wordleHelpers = require('./utils/wordleHelpers');
-// const botPresenceListener = require('./utils/botPresenceListener'); // Removed as its logic is now integrated directly
+const voiceChannelUpdater = require('./utils/voiceChannelUpdater'); // NEW: Import voiceChannelUpdater
 
 // Load environment variables from a .env file (for local testing)
 require('dotenv').config();
@@ -134,12 +134,11 @@ async function setupFirestoreListeners() {
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
             statsTracker.updateInMemoryStats(docSnap.data());
-            // Call updateBotPresence directly from botStatus, passing necessary data
-            botStatus.updateBotPresence(client, statsTracker.getBotStats());
+            botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Pass client and current stats
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
-            statsTracker.initializeStats({});
-            botStatus.updateBotPresence(client, statsTracker.getBotStats());
+            statsTracker.initializeStats({}); // Initialize with empty stats
+            botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Update Discord status
         }
     }, (error) => {
         console.error("Stats Tracker: Error listening to botStats:", error);
@@ -153,7 +152,8 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildPresences, // REQUIRED for setting bot status/presence
+        GatewayIntentBits.GuildPresences, // Required for setting bot status/presence
+        GatewayIntentBits.GuildMembers, // NEW: Required for guildMemberUpdate, guildMemberAdd/Remove
     ]
 });
 
@@ -222,11 +222,14 @@ client.once('ready', async () => {
     }
 
     // Initial call to set bot presence
-    botStatus.updateBotPresence(client, statsTracker.getBotStats());
+    botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Initial call on ready
+    setInterval(() => botStatus.updateBotPresence(client, statsTracker.getBotStats()), 300000); // Regular updates (moved from botStatus.js)
 
-    // The setInterval for status updates is now managed directly by botStatus.js
-    // No need for setInterval here.
-    // setInterval(() => botStatus.updateBotPresence(client, statsTracker.getBotStats()), 300000);
+    // NEW: Register guildMemberAdd and guildMemberRemove events
+    client.on('guildMemberAdd', (member) => voiceChannelUpdater.guildMemberAdd(member, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE));
+    client.on('guildMemberRemove', (member) => voiceChannelUpdater.guildMemberRemove(member, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE));
+    // Initial voice channel update on startup
+    await voiceChannelUpdater.updateVoiceChannelNameOnDemand(client);
 
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
 });
