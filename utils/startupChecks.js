@@ -1,5 +1,6 @@
-const { collection, getDocs, doc } = require('firebase/firestore'); // Import doc
-const { ChannelType } = require('discord.js'); // Import ChannelType
+const { collection, getDocs, doc } = require('firebase/firestore');
+const { ChannelType } = require('discord.js');
+const { updateVoiceChannelNameOnDemand } = require('./voiceChannelUpdater'); // Import the function
 
 // Configuration for the game bot ID (consistent with MobDetect)
 const TARGET_GAME_BOT_ID = '493316754689359874';
@@ -17,6 +18,11 @@ async function checkAndRenameChannelsOnStartup(db, isFirestoreReady, client) {
     }
 
     console.log('Startup Channel Check: Initiating channel status check after bot restart...');
+
+    // --- NEW: Perform initial voice channel update ---
+    console.log('Startup Channel Check: Performing initial voice channel name update.');
+    await updateVoiceChannelNameOnDemand(client);
+
 
     // Get all guilds the bot is in
     for (const guild of client.guilds.cache.values()) {
@@ -41,12 +47,10 @@ async function checkAndRenameChannelsOnStartup(db, isFirestoreReady, client) {
                     continue;
                 }
 
-                // Fetch the last message in the channel
                 const messages = await channel.messages.fetch({ limit: 1 });
                 const lastMessage = messages.first();
 
                 if (!lastMessage || lastMessage.author.id !== TARGET_GAME_BOT_ID || lastMessage.embeds.length === 0) {
-                    // If no relevant last message, revert to original name if current name is not original
                     if (channel.name !== originalChannelName) {
                         try {
                             await channel.setName(originalChannelName, 'Automated revert on startup: no relevant last message found.');
@@ -55,14 +59,13 @@ async function checkAndRenameChannelsOnStartup(db, isFirestoreReady, client) {
                             console.error(`Startup Channel Check: Failed to revert ${channel.name} to ${originalChannelName} on startup:`, error);
                         }
                     }
-                    continue; // No relevant message to check for renaming
+                    continue;
                 }
 
                 const embedTitle = lastMessage.embeds[0].title;
                 const messageContent = lastMessage.content;
                 let newName = null;
 
-                // Apply renaming logic (similar to MobDetect.js)
                 if (embedTitle) {
                     if (embedTitle.includes('Heavy Scientist')) {
                         newName = '🐻╏heavy';
@@ -77,7 +80,6 @@ async function checkAndRenameChannelsOnStartup(db, isFirestoreReady, client) {
                     }
                 }
 
-                // Apply revert logic (similar to MobDetect.js)
                 const embed = lastMessage.embeds[0];
                 const embedTitleRevert = embed && embed.title && embed.title.includes('left...');
                 const embedDescriptionRevert = embed && embed.description && embed.description.includes('killed a mob');
@@ -93,7 +95,7 @@ async function checkAndRenameChannelsOnStartup(db, isFirestoreReady, client) {
                             console.error(`Startup Channel Check: Failed to revert ${channel.name} to ${originalChannelName} on startup:`, error);
                         }
                     }
-                } else if (newName && channel.name !== newName) { // Only rename if a newName is determined and current name is different
+                } else if (newName && channel.name !== newName) {
                     try {
                         await channel.setName(newName, 'Automated rename on startup: enemy spawn detected.');
                         console.log(`Startup Channel Check: Renamed ${channel.name} to ${newName} in ${guild.name}.`);
