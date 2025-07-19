@@ -3,20 +3,29 @@
  * This utility is solely responsible for setting the bot's presence.
  * @param {Client} client The Discord client instance.
  * @param {object} stats The statistics object (e.g., from statsTracker.getBotStats()).
+ * @param {string} [activityType='PLAYING'] Optional activity type ('PLAYING', 'WATCHING', etc.)
  */
-function updateBotPresence(client, stats) {
-    // Ensure stats object has the necessary properties
+function updateBotPresence(client, stats, activityType = 'PLAYING') {
     const totalHelps = stats.totalHelps ?? 0;
     const uniqueActiveUsers = stats.uniqueActiveUsers ?? 0;
-    const totalServers = client.guilds.cache.size; // Get the number of guilds the bot is in
+    const totalServers = client.guilds.cache.size;
 
-    const statusText = `Helped ${uniqueActiveUsers} players ${totalHelps} times in ${totalServers} servers`;
+    let statusText = `Helped ${uniqueActiveUsers} players ${totalHelps} times in ${totalServers} servers`;
 
-    if (client.user) {
-        client.user.setActivity(statusText, { type: 'PLAYING' }); // 'PLAYING' is a common type
-        console.log(`Bot Status: Updated presence to: "${statusText}"`);
-    } else {
-        console.warn('Bot Status: Cannot set bot presence: client.user is not available.');
+    if (statusText.length > 128) {
+        console.warn('Bot Status: Status text is too long. Trimming to 128 characters.');
+        statusText = statusText.slice(0, 128);
+    }
+
+    try {
+        if (client.user) {
+            client.user.setActivity(statusText, { type: activityType });
+            console.log(`Bot Status: Updated presence to: "${statusText}"`);
+        } else {
+            console.warn('Bot Status: Cannot set bot presence: client.user is not available.');
+        }
+    } catch (err) {
+        console.error('Bot Status: Error setting activity:', err);
     }
 }
 
