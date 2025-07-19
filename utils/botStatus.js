@@ -1,71 +1,57 @@
+const { doc, collection, onSnapshot } = require('firebase/firestore'); // Import Firestore functions
 const { ActivityType } = require('discord.js'); // Import ActivityType
 
-// In-memory variable to hold the currently set custom status
-let currentCustomStatus = null;
-let currentCustomActivityType = ActivityType.Playing; // Default activity type for custom status
+// In-memory cache for the desired status text from Firestore
+let desiredStatusText = null;
 
 /**
- * Updates the bot's Discord status based on provided statistics or a custom status.
- * This utility is solely responsible for setting the bot's presence.
+ * Updates the bot's Discord presence based on a Firestore entry.
+ * This function is solely responsible for setting the bot's presence.
  * @param {Client} client The Discord client instance.
- * @param {object} stats The statistics object (e.g., from statsTracker.getBotStats()).
+ * @param {object} db The Firestore database instance.
+ * @param {string} appId The application ID for Firestore path.
  */
-function updateBotPresence(client, stats) {
-    // If a custom status is set, use it.
-    if (currentCustomStatus !== null) {
-        if (client.user) {
-            client.user.setActivity(currentCustomStatus, { type: currentCustomActivityType });
-            console.log(`Bot Status: Updated presence to custom: "${currentCustomStatus}" (Type: ${ActivityType[currentCustomActivityType]})`);
+function updateBotPresence(client, db, appId) {
+    if (!client.user) {
+        console.warn('Bot Status: Cannot set bot presence: client.user is not available yet.');
+        return;
+    }
+    if (!db || !appId) {
+        console.warn('Bot Status: Firestore DB or App ID not available for presence update. Skipping.');
+        return;
+    }
+
+    const presenceDocRef = doc(collection(db, `artifacts/${appId}/public/data/botPresence`), 'currentStatus');
+
+    // Use onSnapshot to listen for real-time updates to the presence document
+    // This listener will be set up once and keep the desiredStatusText updated.
+    // The actual presence update will happen if desiredStatusText changes.
+    onSnapshot(presenceDocRef, (docSnap) => {
+        let newStatus = null;
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            newStatus = data.statusText || null;
+            console.log(`Bot Status: Desired status from Firestore: "${newStatus}"`);
         } else {
-            console.warn('Bot Status: Cannot set bot presence: client.user is not available.');
+            console.log('Bot Status: No botPresence/currentStatus document found in Firestore.');
         }
-        return; // Don't proceed with dynamic status if custom is set
-    }
 
-    // If no custom status, use dynamic stats-based status
-    const totalHelps = stats.totalHelps ?? 0;
-    const uniqueActiveUsers = stats.uniqueActiveUsers ?? 0;
-    const totalServers = client.guilds.cache.size;
-
-    const statusText = `Helped ${uniqueActiveUsers} players ${totalHelps} times in ${totalServers} servers`;
-
-    if (client.user) {
-        client.user.setActivity(statusText, { type: 'PLAYING' }); // 'PLAYING' is a common type
-        console.log(`Bot Status: Updated presence to dynamic: "${statusText}"`);
-    } else {
-        console.warn('Bot Status: Cannot set bot presence: client.user is not available.');
-    }
-}
-
-/**
- * Sets a custom status for the bot. This will override the dynamic stats-based status.
- * @param {Client} client The Discord client instance.
- * @param {string} text The custom status text.
- * @param {string} type The activity type (e.g., 'PLAYING', 'WATCHING').
- */
-function setCustomBotStatus(client, text, type = 'PLAYING') {
-    currentCustomStatus = text;
-    currentCustomActivityType = ActivityType[type] ?? ActivityType.Playing; // Ensure valid ActivityType
-
-    // Immediately update presence with the new custom status
-    updateBotPresence(client, {}); // Pass empty stats as they are not relevant for custom status
-    console.log(`Bot Status: Custom status set to: "${text}" (Type: ${type})`);
-}
-
-/**
- * Clears any custom status, reverting to the dynamic stats-based status.
- * @param {Client} client The Discord client instance.
- * @param {object} stats The current statistics object.
- */
-function clearCustomBotStatus(client, stats) {
-    currentCustomStatus = null;
-    currentCustomActivityType = ActivityType.Playing;
-    updateBotPresence(client, stats); // Revert to dynamic status
-    console.log('Bot Status: Custom status cleared, reverting to dynamic status.');
+        // Only update Discord presence if the desired status has changed
+        if (newStatus && client.user.presence.activities[0]?.name !== newStatus) {
+            client.user.setActivity(newStatus, { type: ActivityType.Playing }); // Default to PLAYING
+            console.log(`Bot Status: Discord presence updated to: "${newStatus}"`);
+        } else if (!newStatus && client.user.presence.activities[0]?.name) {
+            // If Firestore says no status, but bot has one, clear it (set to default empty)
+            client.user.setActivity(null);
+            console.log('Bot Status: Discord presence cleared as no desired status found in Firestore.');
+        } else {
+            console.log('Bot Status: Discord presence is already up-to-date or no new status to set.');
+        }
+    }, (error) => {
+        console.error('Bot Status: Error listening to botPresence/currentStatus:', error);
+    });
 }
 
 module.exports = {
-    updateBotPresence,
-    setCustomBotStatus,
-    clearCustomBotStatus
+    updateBotPresence
 };
