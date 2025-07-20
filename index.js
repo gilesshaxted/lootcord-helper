@@ -9,7 +9,7 @@ const fs = require('fs');
 // Import Firebase modules
 const { initializeApp } = require('firebase/app');
 const { getAuth, signInAnonymously, onAuthStateChanged } = require('firebase/auth');
-const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, getDoc } = require('firebase/firestore'); // Added getDoc
+const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, getDoc } = require('firebase/firestore');
 
 // Import Utilities
 const statsTracker = require('./utils/statsTracker');
@@ -133,11 +133,11 @@ async function setupFirestoreListeners() {
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
             statsTracker.updateInMemoryStats(docSnap.data());
-            // Removed: botStatus.updateBotPresence(client, statsTracker.getBotStats()); // This call is now removed
+            // No direct call to botStatus.updateBotPresence here anymore
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
             statsTracker.initializeStats({});
-            // Removed: botStatus.updateBotPresence(client, statsTracker.getBotStats()); // This call is now removed
+            // No direct call to botStatus.updateBotPresence here anymore
         }
     }, (error) => {
         console.error("Stats Tracker: Error listening to botStats:", error);
@@ -219,12 +219,11 @@ client.once('ready', async () => {
         console.error('Failed to register slash commands:', error);
     }
 
-    // Set initial status on ready
-    // This will be handled by the periodic update shortly after ready
-    // botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Removed direct call
+    // Set initial status on ready (will be the first update)
+    botStatus.updateBotPresence(client, statsTracker.getBotStats());
 
     // Set interval for regular status updates (every 5 minutes)
-    setInterval(async () => { // Made async
+    setInterval(async () => { // Made async to allow await for Firestore fetch
         if (!db || !APP_ID_FOR_FIRESTORE || !client.isReady()) {
             console.warn('Interval Status Update: DB, App ID, or Client not ready. Skipping interval update.');
             return;
@@ -240,9 +239,9 @@ client.once('ready', async () => {
             const statsForPresence = {
                 totalHelps: totalHelps,
                 uniqueActiveUsers: uniqueActiveUsers,
-                totalServers: totalServers // Pass totalServers here
+                totalServers: totalServers
             };
-            botStatus.updateBotPresence(client, statsForPresence); // Use the new stats object
+            botStatus.updateBotPresence(client, statsForPresence);
         } catch (error) {
             console.error('Interval Status Update: Error fetching stats for presence update:', error);
         }
