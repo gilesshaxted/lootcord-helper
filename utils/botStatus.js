@@ -1,4 +1,4 @@
-const { doc, collection, getDoc } = require('firebase/firestore');
+const { doc, collection, getDoc } = require('firebase/firestore'); // Import Firestore functions
 const { ActivityType } = require('discord.js'); // Import ActivityType for clarity
 
 let presenceUpdateTimeout = null; // To store the timeout ID
@@ -24,17 +24,18 @@ function debounceUpdateActivity(client, statusText, activityType, source) {
                 client.user.setActivity(statusText, { type: activityType });
                 console.log(`Bot Status: Discord presence updated to: "${statusText}" (Type: ${ActivityType[activityType]}) [Source: ${source}]`);
 
-                const NOTIFICATION_CHANNEL_ID = '1329235188907114506'; // Your designated channel ID
-                const notificationChannel = client.channels.cache.get(NOTIFICATION_CHANNEL_ID);
+                // --- Removed: Channel notification logic ---
+                // const NOTIFICATION_CHANNEL_ID = '1329235188907114506';
+                // const notificationChannel = client.channels.cache.get(NOTIFICATION_CHANNEL_ID);
+                // if (notificationChannel && notificationChannel.isTextBased()) {
+                //     await notificationChannel.send(`Bot Status: I have just updated my status to: \`${statusText}\``);
+                //     console.log(`Bot Status: Sent status update notification to #${notificationChannel.name}.`);
+                // } else {
+                //     console.warn(`Bot Status: Notification channel with ID ${NOTIFICATION_CHANNEL_ID} not found or not a text channel.`);
+                // }
 
-                if (notificationChannel && notificationChannel.isTextBased()) {
-                    await notificationChannel.send(`Bot Status: I have just updated my status to: \`${statusText}\``);
-                    console.log(`Bot Status: Sent status update notification to #${notificationChannel.name}.`);
-                } else {
-                    console.warn(`Bot Status: Notification channel with ID ${NOTIFICATION_CHANNEL_ID} not found or not a text channel.`);
-                }
             } catch (error) {
-                console.error(`Bot Status: Failed to set presence or send notification (Source: ${source}):`, error);
+                console.error(`Bot Status: Failed to set presence (Source: ${source}):`, error);
             }
         } else {
             console.warn('Bot Status: Cannot set bot presence: client.user is not available or not ready (debounced call).');
@@ -66,6 +67,7 @@ async function updateBotPresence(client, options = {}) {
 
     let statusText = '';
     let chosenActivityType = ActivityType[activityType] ?? ActivityType.Playing; // Ensure ActivityType enum value
+    const totalServers = client.guilds.cache.size; // Get total servers directly here, always available
 
     if (customText) {
         statusText = customText;
@@ -82,10 +84,10 @@ async function updateBotPresence(client, options = {}) {
                 const data = docSnap.exists() ? docSnap.data() : {};
                 const totalHelps = data.totalHelps ?? 0;
                 const uniqueActiveUsers = Object.keys(data.activeUsersMap ?? {}).length;
-                const totalServers = client.guilds.cache.size;
+                // totalServers is already determined above
 
-                statusText = `Help ${uniqueActiveUsers} players ${totalHelps} times in ${totalServers} servers`;
-                console.log(`Bot Status: Preparing dynamic stats: "${statusText}" [Source: ${source}]`);
+                statusText = `Helped ${uniqueActiveUsers} players ${totalHelps} times in ${totalServers} servers`;
+                console.log(`Bot Status: Using dynamic stats: "${statusText}"`);
             } catch (error) {
                 console.error(`Bot Status: Error fetching stats from Firestore for dynamic status (Source: ${source}):`, error);
                 statusText = 'Error fetching stats';
