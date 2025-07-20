@@ -128,16 +128,16 @@ async function setupFirestoreListeners() {
         console.error("Error writing bot status to Firestore:", e);
     }
 
-    // Listener for bot statistics - this will trigger updateBotPresence via statsTracker
+    // Listener for bot statistics - this will update in-memory stats
     const statsDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/stats`), 'botStats');
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
             statsTracker.updateInMemoryStats(docSnap.data());
-            botStatus.updateBotPresence(client, statsTracker.getBotStats(), 'Firestore Snapshot'); // Pass client and current stats, and source
+            // Removed: botStatus.updateBotPresence(client, statsTracker.getBotStats()); // This call is now removed
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
             statsTracker.initializeStats({});
-            botStatus.updateBotPresence(client, statsTracker.getBotStats(), 'Firestore Snapshot (Initial)'); // Pass client and current stats, and source
+            // Removed: botStatus.updateBotPresence(client, statsTracker.getBotStats()); // This call is now removed
         }
     }, (error) => {
         console.error("Stats Tracker: Error listening to botStats:", error);
@@ -151,7 +151,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildPresences, // Required for setting bot status/presence
+        GatewayIntentBits.GuildPresences, // REQUIRED for setting bot status/presence
     ]
 });
 
@@ -219,11 +219,11 @@ client.once('ready', async () => {
         console.error('Failed to register slash commands:', error);
     }
 
-    // --- TEMPORARILY DISABLED: Regular status updates via setInterval ---
-    // setInterval(() => botStatus.updateBotPresence(client, statsTracker.getBotStats(), 'Interval'), 300000);
+    // Set initial status on ready
+    botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Initial call on ready
 
-    // Initial status update (will be triggered by Firestore listener anyway)
-    // botStatus.updateBotPresence(client, statsTracker.getBotStats(), 'Initial Ready');
+    // Set interval for regular status updates (every 5 minutes)
+    setInterval(() => botStatus.updateBotPresence(client, statsTracker.getBotStats()), 300000);
 
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
 });
