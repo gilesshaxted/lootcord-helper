@@ -9,7 +9,7 @@ const fs = require('fs');
 // Import Firebase modules
 const { initializeApp } = require('firebase/app');
 const { getAuth, signInAnonymously, onAuthStateChanged } = require('firebase/auth');
-const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, getDoc } = require('firebase/firestore'); // Added getDoc
+const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, getDoc } = require('firebase/firestore');
 
 // Import Utilities
 const statsTracker = require('./utils/statsTracker');
@@ -221,6 +221,7 @@ client.once('ready', async () => {
 
     // Set interval for regular status updates (every 5 minutes)
     setInterval(async () => { // Made async to allow await for Firestore fetch
+        // Ensure db and APP_ID_FOR_FIRESTORE are available before attempting to fetch stats
         if (!db || !APP_ID_FOR_FIRESTORE || !client.isReady()) {
             console.warn('Interval Status Update: DB, App ID, or Client not ready. Skipping interval update.');
             return;
@@ -231,14 +232,13 @@ client.once('ready', async () => {
             const data = docSnap.exists() ? docSnap.data() : {};
             const totalHelps = data.totalHelps ?? 0;
             const uniqueActiveUsers = Object.keys(data.activeUsersMap ?? {}).length;
-            // totalServers is determined inside updateBotPresence
             
             // Call updateBotPresence with necessary arguments
             botStatus.updateBotPresence(client, {
                 customText: null, // Not a custom text update
                 activityType: 'PLAYING', // Default type for interval
-                db: db,
-                appId: APP_ID_FOR_FIRESTORE,
+                db: db, // Pass db
+                appId: APP_ID_FOR_FIRESTORE, // Pass appId
                 totalHelps: totalHelps, // Pass fetched stats
                 uniqueActiveUsers: uniqueActiveUsers // Pass fetched stats
             });
