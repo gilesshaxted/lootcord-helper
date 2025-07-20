@@ -128,15 +128,16 @@ async function setupFirestoreListeners() {
         console.error("Error writing bot status to Firestore:", e);
     }
 
+    // Listener for bot statistics - this will trigger updateBotPresence via statsTracker
     const statsDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/stats`), 'botStats');
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
             statsTracker.updateInMemoryStats(docSnap.data());
-            botStatus.updateBotPresence(client, statsTracker.getBotStats());
+            botStatus.updateBotPresence(client, statsTracker.getBotStats(), 'Firestore Snapshot'); // Pass client and current stats, and source
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
             statsTracker.initializeStats({});
-            botStatus.updateBotPresence(client, statsTracker.getBotStats());
+            botStatus.updateBotPresence(client, statsTracker.getBotStats(), 'Firestore Snapshot (Initial)'); // Pass client and current stats, and source
         }
     }, (error) => {
         console.error("Stats Tracker: Error listening to botStats:", error);
@@ -150,7 +151,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.GuildPresences, // Required for setting bot status/presence
     ]
 });
 
@@ -205,22 +206,24 @@ client.once('ready', async () => {
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
+    // --- Slash Command Registration ---
+    // This block registers commands globally.
     try {
         console.log(`Started refreshing ${slashCommandsToRegister.length} application (/) commands.`);
-
-        // --- Register commands globally ---
         const data = await rest.put(
             Routes.applicationCommands(CLIENT_ID), // This line registers commands GLOBALLY
             { body: slashCommandsToRegister },
         );
         console.log(`Successfully reloaded ${data.length} global (/) commands.`);
-
     } catch (error) {
         console.error('Failed to register slash commands:', error);
     }
 
-    botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Initial call on ready
-    setInterval(() => botStatus.updateBotPresence(client, statsTracker.getBotStats()), 300000); // Regular updates
+    // --- TEMPORARILY DISABLED: Regular status updates via setInterval ---
+    // setInterval(() => botStatus.updateBotPresence(client, statsTracker.getBotStats(), 'Interval'), 300000);
+
+    // Initial status update (will be triggered by Firestore listener anyway)
+    // botStatus.updateBotPresence(client, statsTracker.getBotStats(), 'Initial Ready');
 
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
 });
