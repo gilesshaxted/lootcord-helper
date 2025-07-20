@@ -15,6 +15,7 @@ async function updateBotPresence(client, options = {}) {
     const { customText, activityType = 'PLAYING', db, appId } = options;
 
     // Ensure client.user is available before proceeding
+    // client.user.id ensures it's fully logged in and user object is populated
     if (!client.user || !client.user.id) {
         console.warn('Bot Status: Cannot set bot presence: client.user is not available or not ready.');
         return;
@@ -29,6 +30,7 @@ async function updateBotPresence(client, options = {}) {
         console.log(`Bot Status: Using custom status: "${statusText}"`);
     } else {
         // Fetch dynamic stats from Firestore
+        // These checks are crucial if this function is called directly without db/appId context
         if (!db || !appId) {
             console.error('Bot Status: Cannot fetch dynamic stats: Firestore DB or App ID not provided to updateBotPresence.');
             statusText = 'Error fetching stats'; // Fallback status
