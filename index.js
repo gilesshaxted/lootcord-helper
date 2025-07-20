@@ -133,11 +133,11 @@ async function setupFirestoreListeners() {
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
             statsTracker.updateInMemoryStats(docSnap.data());
-            // Removed: botStatus.updateBotPresence(client, statsTracker.getBotStats()); // This call is now removed
+            // Removed: botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Removed this call
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
             statsTracker.initializeStats({});
-            // Removed: botStatus.updateBotPresence(client, statsTracker.getBotStats()); // This call is now removed
+            // Removed: botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Removed this call
         }
     }, (error) => {
         console.error("Stats Tracker: Error listening to botStats:", error);
