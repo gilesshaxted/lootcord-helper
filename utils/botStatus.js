@@ -84,7 +84,7 @@ async function updateBotPresence(client, options = {}) {
                 const uniqueActiveUsers = Object.keys(data.activeUsersMap ?? {}).length;
                 const totalServers = client.guilds.cache.size;
 
-                statusText = `Helped ${uniqueActiveUsers} players ${totalHelps} times in ${totalServers} servers`;
+                statusText = `Help ${uniqueActiveUsers} players ${totalHelps} times in ${totalServers} servers`;
                 console.log(`Bot Status: Preparing dynamic stats: "${statusText}" [Source: ${source}]`);
             } catch (error) {
                 console.error(`Bot Status: Error fetching stats from Firestore for dynamic status (Source: ${source}):`, error);
