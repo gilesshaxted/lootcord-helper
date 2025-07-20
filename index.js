@@ -17,7 +17,6 @@ const botStatus = require('./utils/botStatus');
 const paginationHelpers = require('./utils/pagination');
 const startupChecks = require('./utils/startupChecks');
 const wordleHelpers = require('./utils/wordleHelpers');
-const voiceChannelUpdater = require('./utils/voiceChannelUpdater'); // NEW: Import voiceChannelUpdater
 
 // Load environment variables from a .env file (for local testing)
 require('dotenv').config();
@@ -129,16 +128,15 @@ async function setupFirestoreListeners() {
         console.error("Error writing bot status to Firestore:", e);
     }
 
-    // Listener for bot statistics - this will trigger updateBotPresence via statsTracker
     const statsDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/stats`), 'botStats');
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
             statsTracker.updateInMemoryStats(docSnap.data());
-            botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Pass client and current stats
+            botStatus.updateBotPresence(client, statsTracker.getBotStats());
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
-            statsTracker.initializeStats({}); // Initialize with empty stats
-            botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Update Discord status
+            statsTracker.initializeStats({});
+            botStatus.updateBotPresence(client, statsTracker.getBotStats());
         }
     }, (error) => {
         console.error("Stats Tracker: Error listening to botStats:", error);
@@ -152,8 +150,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildPresences, // Required for setting bot status/presence
-        GatewayIntentBits.GuildMembers, // NEW: Required for guildMemberUpdate, guildMemberAdd/Remove
+        GatewayIntentBits.GuildPresences,
     ]
 });
 
@@ -208,28 +205,45 @@ client.once('ready', async () => {
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
-    // --- Slash Command Registration ---
-    // This block registers commands globally.
+    // --- TEMPORARY: AGGRESSIVE GLOBAL COMMAND DELETION LOGIC ---
+    // This block is designed to forcefully delete ALL global slash commands
+    // associated with your bot's CLIENT_ID.
+    // Run this ONCE when you deploy, then REMOVE/COMMENT IT OUT.
+    // This is necessary to clear any lingering duplicate commands.
+    try {
+        console.log('--- AGGRESSIVE TEMPORARY: Attempting to delete ALL global application (/) commands ---');
+        // This performs a PUT with an empty array, effectively deleting all commands.
+        await rest.put(
+            Routes.applicationCommands(CLIENT_ID), // Deletes global commands
+            { body: [] }, // Send an empty array to delete all commands
+        );
+        console.log('--- AGGRESSIVE TEMPORARY: Successfully sent request to delete all global application (/) commands. ---');
+        console.log('--- IMPORTANT: Give Discord a few minutes to process this. Then, REMOVE THIS BLOCK and redeploy. ---');
+        // Uncomment the line below if you want the bot to exit after deletion attempt
+        process.exit(0); // This line will make the bot exit after attempting deletion
+    } catch (error) {
+        console.error('--- AGGRESSIVE TEMPORARY: Error deleting global commands: ---', error);
+        console.error('This error might be expected if no commands existed or due to rate limits. Proceeding with registration.');
+    }
+    // --- END AGGRESSIVE TEMPORARY: Command Deletion Logic ---
+
+
     try {
         console.log(`Started refreshing ${slashCommandsToRegister.length} application (/) commands.`);
+
+        // --- Register commands globally ---
         const data = await rest.put(
             Routes.applicationCommands(CLIENT_ID), // This line registers commands GLOBALLY
             { body: slashCommandsToRegister },
         );
         console.log(`Successfully reloaded ${data.length} global (/) commands.`);
+
     } catch (error) {
         console.error('Failed to register slash commands:', error);
     }
 
-    // Initial call to set bot presence
     botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Initial call on ready
-    setInterval(() => botStatus.updateBotPresence(client, statsTracker.getBotStats()), 300000); // Regular updates (moved from botStatus.js)
-
-    // NEW: Register guildMemberAdd and guildMemberRemove events
-    client.on('guildMemberAdd', (member) => voiceChannelUpdater.guildMemberAdd(member, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE));
-    client.on('guildMemberRemove', (member) => voiceChannelUpdater.guildMemberRemove(member, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE));
-    // Initial voice channel update on startup
-    await voiceChannelUpdater.updateVoiceChannelNameOnDemand(client);
+    setInterval(() => botStatus.updateBotPresence(client, statsTracker.getBotStats()), 300000); // Regular updates
 
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
 });
