@@ -25,7 +25,7 @@ module.exports = {
         )
         .addBooleanOption(option =>
             option.setName('use_dynamic_stats') // Renamed from 'force_dynamic' for clarity
-                .setDescription('Set to true to use dynamic stats (Helped X Players Y Times in Z Servers). Overrides custom text.')
+                .setDescription('Set to true to use dynamic stats (Help X Players Y Times in Z Servers). Overrides custom text.')
                 .setRequired(false)
         )
         .addBooleanOption(option =>
@@ -74,7 +74,7 @@ module.exports = {
                 const uniqueActiveUsers = Object.keys(data.activeUsersMap ?? {}).length;
                 const totalServers = client.guilds.cache.size;
 
-                statusText = `Helped ${uniqueActiveUsers} players ${totalHelps} times in ${totalServers} servers`;
+                statusText = `Help ${uniqueActiveUsers} players ${totalHelps} times in ${totalServers} servers`;
                 activityType = ActivityType[activityTypeInput] ?? ActivityType.Playing; // Use provided activity type or default
                 console.log(`Set Status Command: Dynamic stats status used: "${statusText}"`);
             } catch (error) {
@@ -105,7 +105,7 @@ module.exports = {
                 const uniqueActiveUsers = Object.keys(data.activeUsersMap ?? {}).length;
                 const totalServers = client.guilds.cache.size;
 
-                statusText = `Helped ${uniqueActiveUsers} players ${totalHelps} times in ${totalServers} servers`;
+                statusText = `Help ${uniqueActiveUsers} players ${totalHelps} times in ${totalServers} servers`;
                 activityType = ActivityType.Playing; // Default for no options
                 console.log(`Set Status Command: Default dynamic status used: "${statusText}"`);
             } catch (error) {
