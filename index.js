@@ -9,7 +9,7 @@ const fs = require('fs');
 // Import Firebase modules
 const { initializeApp } = require('firebase/app');
 const { getAuth, signInAnonymously, onAuthStateChanged } = require('firebase/auth');
-const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, getDoc } = require('firebase/firestore');
+const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, getDoc } = require('firebase/firestore'); // Added getDoc
 
 // Import Utilities
 const statsTracker = require('./utils/statsTracker');
@@ -133,11 +133,11 @@ async function setupFirestoreListeners() {
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
             statsTracker.updateInMemoryStats(docSnap.data());
-            // No direct call to botStatus.updateBotPresence here anymore
+            // Removed: botStatus.updateBotPresence(client, statsTracker.getBotStats()); // This call is now removed
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
             statsTracker.initializeStats({});
-            // No direct call to botStatus.updateBotPresence here anymore
+            // Removed: botStatus.updateBotPresence(client, statsTracker.getBotStats()); // This call is now removed
         }
     }, (error) => {
         console.error("Stats Tracker: Error listening to botStats:", error);
@@ -218,9 +218,6 @@ client.once('ready', async () => {
     } catch (error) {
         console.error('Failed to register slash commands:', error);
     }
-
-    // Set initial status on ready (will be the first update)
-    botStatus.updateBotPresence(client, statsTracker.getBotStats());
 
     // Set interval for regular status updates (every 5 minutes)
     setInterval(async () => { // Made async to allow await for Firestore fetch
