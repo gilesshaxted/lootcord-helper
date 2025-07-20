@@ -12,27 +12,26 @@ async function updateBotPresence(client, stats) { // Made async to use await for
 
     const statusText = `Helped ${uniqueActiveUsers} players ${totalHelps} times in ${totalServers} servers`;
 
-    if (client.user) {
-        client.user.setActivity(statusText, { type: 'PLAYING' }); // 'PLAYING' is a common type
-        console.log(`Bot Status: Updated presence to: "${statusText}"`);
+    // --- NEW: Check if client.user is ready before setting activity ---
+    if (client.user && client.user.id) { // client.user.id ensures it's fully logged in
+        try {
+            client.user.setActivity(statusText, { type: 'PLAYING' }); // 'PLAYING' is a common type
+            console.log(`Bot Status: Discord presence updated to: "${statusText}"`);
 
-        // --- NEW: Post status update to specific channel ---
-        const NOTIFICATION_CHANNEL_ID = '1329235188907114506'; // Your designated channel ID
-        const notificationChannel = client.channels.cache.get(NOTIFICATION_CHANNEL_ID);
+            const NOTIFICATION_CHANNEL_ID = '1329235188907114506'; // Your designated channel ID
+            const notificationChannel = client.channels.cache.get(NOTIFICATION_CHANNEL_ID);
 
-        if (notificationChannel && notificationChannel.isTextBased()) { // Check if channel exists and is a text channel
-            try {
+            if (notificationChannel && notificationChannel.isTextBased()) {
                 await notificationChannel.send(`Bot Status: I have just updated my status to: \`${statusText}\``);
                 console.log(`Bot Status: Sent status update notification to #${notificationChannel.name}.`);
-            } catch (error) {
-                console.error(`Bot Status: Failed to send status update notification to #${notificationChannel.name}:`, error);
+            } else {
+                console.warn(`Bot Status: Notification channel with ID ${NOTIFICATION_CHANNEL_ID} not found or not a text channel.`);
             }
-        } else {
-            console.warn(`Bot Status: Notification channel with ID ${NOTIFICATION_CHANNEL_ID} not found or not a text channel.`);
+        } catch (error) {
+            console.error(`Bot Status: Failed to set presence or send notification:`, error);
         }
-
     } else {
-        console.warn('Bot Status: Cannot set bot presence: client.user is not available.');
+        console.warn('Bot Status: Cannot set bot presence: client.user is not available or not ready.');
     }
 }
 
