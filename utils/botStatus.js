@@ -10,7 +10,7 @@ async function updateBotPresence(client, stats) { // Made async to use await for
     const uniqueActiveUsers = stats.uniqueActiveUsers ?? 0;
     const totalServers = client.guilds.cache.size; // Get the number of guilds the bot is in
 
-    const statusText = `Helped ${uniqueActiveUsers} players ${totalHelps} times in ${totalServers} servers`;
+    const statusText = `Help ${uniqueActiveUsers} players ${totalHelps} times in ${totalServers} servers`;
 
     // --- NEW: Check if client.user is ready before setting activity ---
     if (client.user && client.user.id) { // client.user.id ensures it's fully logged in
