@@ -38,8 +38,8 @@ module.exports = {
 
             if (docSnap.exists()) {
                 const data = docSnap.data();
-                totalHelps = data.totalHelps ?? 0;
-                uniqueActiveUsers = Object.keys(data.activeUsersMap ?? {}).length;
+                totalHelps = data.totalHelps ?? 0; // Use nullish coalescing for safety
+                uniqueActiveUsers = Object.keys(data.activeUsersMap ?? {}).length; // Use nullish coalescing for safety
             } else {
                 console.warn('Bot Stats Command: botStats document not found in Firestore.');
             }
