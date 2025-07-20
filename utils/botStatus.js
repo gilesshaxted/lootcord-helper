@@ -15,7 +15,7 @@ async function updateBotPresence(client, stats) {
     const uniqueActiveUsers = stats.uniqueActiveUsers ?? 0;
     const totalServers = client.guilds.cache.size;
 
-    const statusText = `Helped ${uniqueActiveUsers} players ${totalHelps} times in ${totalServers} servers`;
+    const statusText = `help ${uniqueActiveUsers} players ${totalHelps} times in ${totalServers} servers`;
 
     try {
         // Introduce a small delay before setting presence to avoid rapid updates/throttling
