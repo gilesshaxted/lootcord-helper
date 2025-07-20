@@ -22,6 +22,7 @@ async function updateBotPresence(client, options = {}) {
 
     let statusText = '';
     let chosenActivityType = activityType; // Use provided activityType or default to PLAYING
+    const totalServers = client.guilds.cache.size; // Get total servers directly here, always available
 
     if (customText) {
         statusText = customText;
@@ -29,7 +30,7 @@ async function updateBotPresence(client, options = {}) {
     } else {
         // Fetch dynamic stats from Firestore
         if (!db || !appId) {
-            console.error('Bot Status: Cannot fetch dynamic stats: Firestore DB or App ID not provided.');
+            console.error('Bot Status: Cannot fetch dynamic stats: Firestore DB or App ID not provided to updateBotPresence.');
             statusText = 'Error fetching stats'; // Fallback status
             chosenActivityType = 'PLAYING';
         } else {
@@ -39,7 +40,7 @@ async function updateBotPresence(client, options = {}) {
                 const data = docSnap.exists() ? docSnap.data() : {};
                 const totalHelps = data.totalHelps ?? 0;
                 const uniqueActiveUsers = Object.keys(data.activeUsersMap ?? {}).length;
-                const totalServers = client.guilds.cache.size;
+                // totalServers is already determined above
 
                 statusText = `Helped ${uniqueActiveUsers} players ${totalHelps} times in ${totalServers} servers`;
                 console.log(`Bot Status: Using dynamic stats: "${statusText}"`);
