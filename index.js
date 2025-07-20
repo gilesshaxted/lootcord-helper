@@ -133,7 +133,7 @@ async function setupFirestoreListeners() {
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
             statsTracker.updateInMemoryStats(docSnap.data());
-            // Removed: botStatus.updateBotPresence(client, statsTracker.getBotStats()); // This call is now removed
+            // Removed: botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Removed this call
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
             statsTracker.initializeStats({});
@@ -231,18 +231,25 @@ client.once('ready', async () => {
             const data = docSnap.exists() ? docSnap.data() : {};
             const totalHelps = data.totalHelps ?? 0;
             const uniqueActiveUsers = Object.keys(data.activeUsersMap ?? {}).length;
-            const totalServers = client.guilds.cache.size;
-
-            const statsForPresence = {
-                totalHelps: totalHelps,
-                uniqueActiveUsers: uniqueActiveUsers,
-                totalServers: totalServers
-            };
-            botStatus.updateBotPresence(client, statsForPresence);
+            // totalServers is determined inside updateBotPresence
+            
+            // Call updateBotPresence with necessary arguments
+            botStatus.updateBotPresence(client, {
+                customText: null, // Not a custom text update
+                activityType: 'PLAYING', // Default type for interval
+                db: db,
+                appId: APP_ID_FOR_FIRESTORE,
+                totalHelps: totalHelps, // Pass fetched stats
+                uniqueActiveUsers: uniqueActiveUsers // Pass fetched stats
+            });
         } catch (error) {
             console.error('Interval Status Update: Error fetching stats for presence update:', error);
         }
     }, 300000); // Every 5 minutes
+
+    // Initial status update (will be handled by the first interval or manual command)
+    // Removed direct call here as setInterval will handle the first update soon after ready.
+    // botStatus.updateBotPresence(client, statsTracker.getBotStats()); 
 
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
 });
