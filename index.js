@@ -9,13 +9,14 @@ const fs = require('fs');
 // Import Firebase modules
 const { initializeApp } = require('firebase/app');
 const { getAuth, signInAnonymously, onAuthStateChanged } = require('firebase/auth');
-const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs } = require('firebase/firestore');
+const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, getDoc } = require('firebase/firestore');
 
 // Import Utilities
 const statsTracker = require('./utils/statsTracker');
+const botStatus = require('./utils/botStatus');
 const paginationHelpers = require('./utils/pagination');
 const startupChecks = require('./utils/startupChecks');
-const wordleHelpers = require('./utils/wordleHelpers'); // Import Wordle helpers
+const wordleHelpers = require('./utils/wordleHelpers');
 
 // Load environment variables from a .env file (for local testing)
 require('dotenv').config();
@@ -23,7 +24,7 @@ require('dotenv').config();
 // --- Configuration Variables ---
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
-const PREFIX = '!'; // Prefix for traditional message commands
+const PREFIX = '!';
 const PORT = process.env.PORT || 3000;
 
 // Firebase configuration loaded from environment variables for Render hosting
@@ -36,11 +37,6 @@ const firebaseConfig = {
     appId: process.env.FIREBASE_APP_ID,
     // measurementId: process.env.MEASUREMENT_ID // Uncomment if you use Measurement ID
 };
-
-// --- Pagination Specific Configuration (used by paginationHelpers) ---
-// These constants are now defined within paginationHelpers.js
-// const CHANNELS_PER_PAGE = 25;
-// const TARGET_CATEGORY_ID = '1192414248299675663';
 
 // --- Firestore App ID for data paths ---
 const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
@@ -132,15 +128,16 @@ async function setupFirestoreListeners() {
         console.error("Error writing bot status to Firestore:", e);
     }
 
+    // Listener for bot statistics - this will update in-memory stats
     const statsDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/stats`), 'botStats');
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
             statsTracker.updateInMemoryStats(docSnap.data());
-            statsTracker.updateBotStatus(client);
+            // Removed: botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Removed this call
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
             statsTracker.initializeStats({});
-            statsTracker.updateBotStatus(client);
+            // Removed: botStatus.updateBotPresence(client, statsTracker.getBotStats()); // This call is now removed
         }
     }, (error) => {
         console.error("Stats Tracker: Error listening to botStats:", error);
@@ -154,7 +151,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.GuildPresences, // REQUIRED for setting bot status/presence
     ]
 });
 
@@ -209,27 +206,55 @@ client.once('ready', async () => {
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
+    // --- Slash Command Registration ---
+    // This block registers commands globally.
     try {
         console.log(`Started refreshing ${slashCommandsToRegister.length} application (/) commands.`);
-
-        // --- CHANGED: Register commands globally ---
         const data = await rest.put(
-            Routes.applicationCommands(CLIENT_ID), // Changed to global registration
+            Routes.applicationCommands(CLIENT_ID), // This line registers commands GLOBALLY
             { body: slashCommandsToRegister },
         );
         console.log(`Successfully reloaded ${data.length} global (/) commands.`);
-
     } catch (error) {
         console.error('Failed to register slash commands:', error);
     }
 
-    statsTracker.updateBotStatus(client);
-    setInterval(() => statsTracker.updateBotStatus(client), 300000);
+    // Set interval for regular status updates (every 5 minutes)
+    setInterval(async () => { // Made async to allow await for Firestore fetch
+        // Ensure db and APP_ID_FOR_FIRESTORE are available before attempting to fetch stats
+        if (!db || !APP_ID_FOR_FIRESTORE || !client.isReady()) {
+            console.warn('Interval Status Update: DB, App ID, or Client not ready. Skipping interval update.');
+            return;
+        }
+        const statsDocRef = doc(collection(db, `artifacts/${APP_ID_FOR_FIRESTORE}/public/data/stats`), 'botStats');
+        try {
+            const docSnap = await getDoc(statsDocRef);
+            const data = docSnap.exists() ? docSnap.data() : {};
+            const totalHelps = data.totalHelps ?? 0;
+            const uniqueActiveUsers = Object.keys(data.activeUsersMap ?? {}).length;
+            
+            // Call updateBotPresence with necessary arguments
+            botStatus.updateBotPresence(client, {
+                customText: null, // Not a custom text update
+                activityType: 'PLAYING', // Default type for interval
+                db: db, // Pass db
+                appId: APP_ID_FOR_FIRESTORE, // Pass appId
+                totalHelps: totalHelps, // Pass fetched stats
+                uniqueActiveUsers: uniqueActiveUsers // Pass fetched stats
+            });
+        } catch (error) {
+            console.error('Interval Status Update: Error fetching stats for presence update:', error);
+        }
+    }, 300000); // Every 5 minutes
+
+    // Initial status update (will be handled by the first interval or manual command)
+    // Removed direct call here as setInterval will handle the first update soon after ready.
+    // botStatus.updateBotPresence(client, statsTracker.getBotStats()); 
 
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
 });
 
-// --- NEW: Handle !wordlelog command ---
+// --- Handle !wordlelog command ---
 const WORDLE_LOG_CHANNEL_ID = '1394316724819591318'; // The channel where Wordle games are played
 const WORDLE_LOG_REQUESTER_ID = '444211741774184458'; // User ID of the authorized requester
 
@@ -291,9 +316,8 @@ client.on('interactionCreate', async interaction => {
         return;
     }
 
-    // Handle Button Interactions (for pagination)
+    // Handle Button Interactions (for pagination and trivia explanation)
     if (interaction.isButton()) {
-        // Removed Wordle game start button handling from here
         if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
             await interaction.deferUpdate();
 
@@ -310,11 +334,56 @@ client.on('interactionCreate', async interaction => {
 
             const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage);
             await interaction.editReply({ content, components, ephemeral: false });
+        } else if (interaction.customId.startsWith('show_trivia_explanation_')) { // Handle trivia explanation button
+            await interaction.deferUpdate(); // Acknowledge button click
+
+            const parts = interaction.customId.split('_');
+            const originalMessageId = parts[3]; // Extract original message ID
+
+            const triviaExplanationRef = doc(collection(db, `TriviaExplanations`), originalMessageId);
+
+            try {
+                const docSnap = await getDoc(triviaExplanationRef);
+
+                if (docSnap.exists()) {
+                    const explanationData = docSnap.data();
+                    const explanations = explanationData.explanations;
+                    const optionLetters = ['A', 'B', 'C', 'D'];
+
+                    let explanationContent = `**Explanation for Trivia Question:** \`${explanationData.question}\`\n\n`;
+                    explanationContent += `\`\`\`\n`;
+                    optionLetters.forEach(letter => {
+                        if (explanations[letter]) {
+                            explanationContent += `${letter}: ${explanations[letter]}\n`;
+                        }
+                    });
+                    explanationContent += `\`\`\``;
+
+                    // Fetch the original message to edit its components
+                    const originalMessage = interaction.message;
+                    if (originalMessage) {
+                        const newComponents = originalMessage.components.map(row => {
+                            return new ActionRowBuilder().addComponents(
+                                row.components.map(button => {
+                                    return ButtonBuilder.from(button).setDisabled(true); // Disable all buttons
+                                })
+                            );
+                        });
+                        await originalMessage.edit({ components: newComponents });
+                    }
+
+                    await interaction.followUp({ content: explanationContent, ephemeral: false }); // Send publicly
+                    console.log(`Trivia Solver: Posted explanation for message ID ${originalMessageId} in #${interaction.channel.name}.`);
+                } else {
+                    await interaction.followUp({ content: 'Could not find explanation for this trivia question.', ephemeral: false });
+                    console.warn(`Trivia Solver: Explanation not found for message ID ${originalMessageId}.`);
+                }
+            } catch (error) {
+                console.error(`Trivia Solver: Error fetching explanation for message ID ${originalMessageId}:`, error);
+                await interaction.followUp({ content: 'An error occurred while fetching the explanation. Please check logs.', ephemeral: false });
+            }
         }
     }
-
-    // Handle Modal Submissions (for Wordle first guess) - Removed from here, now handled by wordleSolver.js
-    // if (interaction.isModalSubmit()) { ... }
 
     // Handle Chat Input Commands (Slash Commands)
     if (interaction.isChatInputCommand()) {
@@ -429,4 +498,3 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
     console.log(`Web server listening on port ${PORT}`);
 });
-	

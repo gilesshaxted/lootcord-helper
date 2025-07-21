@@ -1,4 +1,4 @@
-const { doc, setDoc, updateDoc, increment, collection } = require('firebase/firestore'); // Added 'collection' import
+const { doc, setDoc, updateDoc, increment, collection } = require('firebase/firestore');
 
 // In-memory cache for bot statistics
 let botStats = {
@@ -42,8 +42,9 @@ function updateInMemoryStats(data) {
  * @param {string} appId The application ID for Firestore path.
  */
 async function incrementTotalHelps(db, appId) {
-    if (!db) {
-        console.warn('Stats Tracker: Firestore DB not available for incrementTotalHelps.');
+    // --- NEW: Add check for db and appId readiness ---
+    if (!db || !appId) {
+        console.warn('Stats Tracker: Cannot increment total helps: Firestore DB or App ID not ready.');
         return;
     }
     const statsDocRef = doc(collection(db, `artifacts/${appId}/public/data/stats`), 'botStats');
@@ -74,8 +75,9 @@ async function incrementTotalHelps(db, appId) {
  * @param {string} userId The ID of the active user.
  */
 async function addActiveUser(db, appId, userId) {
-    if (!db) {
-        console.warn('Stats Tracker: Firestore DB not available for addActiveUser.');
+    // --- NEW: Add check for db and appId readiness ---
+    if (!db || !appId) {
+        console.warn('Stats Tracker: Cannot add active user: Firestore DB or App ID not ready.');
         return;
     }
     const statsDocRef = doc(collection(db, `artifacts/${appId}/public/data/stats`), 'botStats');
@@ -109,26 +111,10 @@ function getBotStats() {
     return botStats;
 }
 
-/**
- * Updates the bot's Discord status based on current in-memory stats.
- * @param {Client} client The Discord client instance.
- */
-function updateBotStatus(client) {
-    const stats = getBotStats();
-    const statusText = `Helped ${stats.uniqueActiveUsers} players ${stats.totalHelps} times`;
-    if (client.user) {
-        client.user.setActivity(statusText, { type: 'PLAYING' });
-        console.log(`Bot status updated to: "${statusText}"`);
-    } else {
-        console.warn('Cannot set bot status: client.user is not available.');
-    }
-}
-
 module.exports = {
     initializeStats,
     updateInMemoryStats,
     incrementTotalHelps,
     addActiveUser,
     getBotStats,
-    updateBotStatus // Export updateBotStatus
 };
