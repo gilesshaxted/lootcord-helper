@@ -325,13 +325,13 @@ const sendModAlert = async (guild, message, reason, flaggedBy, messageLink, ping
 
     const embed = new EmbedBuilder()
         .setTitle('Message Flagged')
-        .setDescription(`**Channel:** <#${message.channel.id}>\n**Author:** <@${message.author.id}>\n**Flag Reason:** ${reason}\n\n[Jump to Message](${messageLink})\n\n**Message Content:**\n\`\`\`\n${message.content || 'No content'}\n\`\`\``)
+        .setDescription(`**Channel:** <#${message.channel?.id || 'Unknown Channel ID'}>\n**Author:** <@${message.author?.id || 'Unknown ID'}>\n**Flag Reason:** ${reason}\n\n[Jump to Message](${messageLink})\n\n**Message Content:**\n\`\`\`\n${message.content || 'No content'}\n\`\`\``)
         .setColor(0xFFFF00) // Yellow for alert
         .setTimestamp();
 
     // Set footer based on who flagged
-    const flaggedById = flaggedBy.id;
-    const flaggedByName = flaggedBy.tag || flaggedBy.username; // Use tag for users, username for bot
+    const flaggedById = flaggedBy?.id || 'Unknown ID';
+    const flaggedByName = flaggedBy?.tag || flaggedBy?.username || 'Unknown User'; // Use tag for users, username for bot
     embed.setFooter({ text: `Who Flagged ID: ${flaggedByName} (${flaggedById})` });
 
     let pingMessage = '';
@@ -547,12 +547,13 @@ const logMessage = async (guild, message, flaggedBy, actionType) => { // Renamed
 
     const authorId = resolvedAuthor?.id || 'Unknown ID';
     const authorTag = resolvedAuthor?.tag || 'Unknown User';
+    const channelId = message.channel?.id || 'Unknown Channel ID'; // Safely get channel ID
 
     const embed = new EmbedBuilder()
         .setTitle('Message Moderated')
         .setDescription(
             `**Author:** <@${authorId}>\n` +
-            `**Channel:** <#${message.channel?.id || 'Unknown Channel ID'}>\n` + // Added optional chaining for message.channel
+            `**Channel:** <#${channelId}>\n` + // Use safely obtained channelId
             `**Message:**\n\`\`\`\n${message.content || 'No content'}\n\`\`\``
         )
         .setFooter({ text: `Author ID: ${authorId}` })
@@ -959,7 +960,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
     // but actual moderation actions should not.
     const isTargetExempt = isExempt(targetMember, guildConfig);
 
-    const reasonContent = `"${message.content || 'No message content'}" from channel <#${message.channel.id}>\n[Original Message](${message.url})`; // Added message.url here
+    const reasonContent = `"${message.content || 'No message content'}" from channel <#${message.channel?.id || 'Unknown Channel ID'}>\n[Original Message](${message.url})`; // Added message.url here
     const messageLink = message.url; // Use message.url directly
     let actionTaken = false;
 
