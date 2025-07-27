@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js'); // Added ChannelType import
 const { doc, collection, setDoc, getDoc } = require('firebase/firestore');
 
 module.exports = {
