@@ -9,7 +9,7 @@ const ITEM_CATEGORIES = {
     RESOURCES: ['gunpowder', 'cloth', 'low grade fuel', 'high quality metal', 'metal spring'],
     LOOT: ['elite crate', 'locked crate', 'large present', 'medium present', 'gold egg', 'egg basket', 'bronze egg', 'military crate', 'silver egg', 'supply drop', 'supply signal', 'small present', 'small loot bag', 'medium loot bag', 'large loot bag'],
     WEAPONS: ['c4', 'blt rifle', 'f1 grenade', 'grenade launcher', 'l96', 'm249', 'mp5', 'spas-12', 'rocket launcher'],
-    AMMO: ['12g slug', '40mm he grenade', 'rocket', 'explosive bullet', 'hv rifle bullet', 'hv rocket', 'rifle bullet', 'rocket'],
+    AMMO: ['12g slug', `hv pistol bullet`, '40mm he grenade', 'rocket', 'explosive bullet', 'hv rifle bullet', 'hv rocket', 'rifle bullet', 'rocket'],
     MEDS: ['medical syringe', 'large med kit']
 };
 
