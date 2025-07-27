@@ -144,10 +144,15 @@ module.exports = {
         }
 
         if (scrambledLetters) {
-            // Updated prompt to be more specific about anagrams and word types
+            // Updated prompt to be more specific about anagrams and word types, with examples
             const prompt = `Unscramble the following jumbled letters to form a single, most likely English word.
 The unscrambled word MUST use ALL of the provided letters exactly once, and therefore MUST be the same length as the provided jumbled letters.
-The word can be a common English word, a proper noun (like a name, place, or location), a language, or common slang.
+Prioritize common English words. However, the word can also be a proper noun (like a name, place, or location), a language, or common slang.
+
+Examples:
+- Jumbled: "tesnea" -> Word: "senate"
+- Jumbled: "nairt" -> Word: "train"
+- Jumbled: "tihsrib" -> Word: "british"
 
 Only provide the unscrambled word. Do not include any other text, explanations, or punctuation.
 
@@ -155,6 +160,9 @@ Jumbled letters: ${scrambledLetters}`;
             let llmAnswer = null;
 
             try {
+                // --- Debugging: Log the prompt being sent ---
+                console.log(`Unscrambler: Sending prompt to LLM for '${scrambledLetters}':\n\`\`\`\n${prompt}\n\`\`\``);
+
                 // Call the LLM (Gemini API)
                 const chatHistory = [];
                 chatHistory.push({ role: "user", parts: [{ text: prompt }] });
