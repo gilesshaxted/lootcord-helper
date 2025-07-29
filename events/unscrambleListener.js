@@ -144,14 +144,15 @@ module.exports = {
         }
 
         if (scrambledLetters) {
-            // Updated prompt to be more specific about anagrams and word types, with more examples
+            // Refined prompt to emphasize word types and strict anagram rules
             const prompt = `Unscramble the following jumbled letters to form a single, most likely English word.
 The unscrambled word MUST use ALL of the provided letters exactly once, and therefore MUST be the same length as the provided jumbled letters.
-Prioritize common English words. However, the word can also be a proper noun (like a name, place, or location), a demonym (e.g., British, French), a language, or common slang.
+Prioritize common English words. If no common English word is found, then consider proper nouns (like a person's name, country, or city), demonyms (e.g., British, French, American), languages, or common slang.
 
 Examples of desired output:
 - Jumbled: "tesnea" -> Word: "senate"
 - Jumbled: "nairt" -> Word: "train"
+- Jumbled: "sraeh" -> Word: "share"
 - Jumbled: "tihsrib" -> Word: "british"
 - Jumbled: "tworrak" -> Word: "artwork"
 - Jumbled: "nadole" -> Word: "london"
@@ -160,6 +161,9 @@ Examples of desired output:
 - Jumbled: "yertuk" -> Word: "turkey"
 - Jumbled: "anacda" -> Word: "canada"
 - Jumbled: "sihnaps" -> Word: "spanish"
+- Jumbled: "olleh" -> Word: "hello"
+- Jumbled: "namreg" -> Word: "german"
+- Jumbled: "aind" -> Word: "india"
 
 Only provide the unscrambled word. Do not include any other text, explanations, or punctuation.
 
