@@ -3,7 +3,7 @@ const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 const express = require('express');
-const path = require('path');
+const path = require('path'); // Import path module
 const fs = require('fs');
 
 // Import Firebase modules
@@ -18,8 +18,10 @@ const paginationHelpers = require('./utils/pagination');
 const startupChecks = require('./utils/startupChecks');
 const wordleHelpers = require('./utils/wordleHelpers');
 
-// Load environment variables from a .env file (for local testing)
-require('dotenv').config();
+// Load environment variables from a custom .env file
+// Assumes lootcord-helper.env is in the same directory as index.js
+require('dotenv').config({ path: path.resolve(__dirname, 'lootcord-helper.env') });
+
 
 // --- Configuration Variables ---
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -133,7 +135,7 @@ async function setupFirestoreListeners() {
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
             statsTracker.updateInMemoryStats(docSnap.data());
-            // Removed: botStatus.updateBotPresence(client, statsTracker.getBotStats()); // Removed this call
+            // Removed: botStatus.updateBotPresence(client, statsTracker.getBotStats()); // This call is now removed
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
             statsTracker.initializeStats({});
