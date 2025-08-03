@@ -90,7 +90,6 @@ module.exports = {
             }
         }
 
-
         // --- Channel Renaming Logic (triggered by embed title alone for any message from target bot) ---
         let renamedThisTurn = false; // Flag to prevent immediate revert if renamed
         if (message.embeds.length > 0) {
@@ -128,29 +127,30 @@ module.exports = {
 
         // --- Logic for Reverting to original name (updated conditions) ---
         // This block will only execute if the channel was NOT renamed in the current message.
-        if (!renamedThisTurn && (message.embeds.length > 0 || message.content)) {
+        if (!renamedThisTurn) {
             const embed = message.embeds.length > 0 ? message.embeds[0] : null;
 
-            // Condition 1: Embed title includes 'left...'
+            // Define all possible revert conditions based on your new information
             const embedTitleRevert = embed && embed.title && embed.title.includes('left...');
-
-            // Condition 2: Embed description includes 'killed a mob'
             const embedDescriptionKilledMobRevert = embed && embed.description && embed.description.includes('killed a mob');
+            const embedDescriptionDiedRevert = embed && embed.description && (embed.description.includes('DIED!') || embed.description.includes(':deth:'));
 
-            // Condition 3: Message content contains ":deth: The **[Enemy Name] DIED!**"
-            // This regex is more robust for the "DIED!" message
-            const contentDiedRevert = message.content.includes(':deth: The **') && message.content.includes('DIED!**');
+            // Check for 'DIED!' or ':deth:' in the message content
+            const contentDiedRevert = message.content && (message.content.includes('DIED!') || message.content.includes(':deth:'));
 
-            // NEW: Added checks for DIED! and :deth: in embed description
-            const embedDescriptionDiedRevert = embed && embed.description && embed.description.includes('DIED!');
-            const embedDescriptionDethRevert = embed && embed.description && embed.description.includes(':deth:');
-            
-            // NEW: Check for the raw custom emoji in the embed description
-            const embedDescriptionRawDethRevert = embed && embed.description && embed.description.includes('<:deth:601324554199236618>');
+            // Check for the loot message in either content or embed description
+            const lootMessageRevert = (message.content && message.content.includes('received the following loot for this kill:')) ||
+                                      (embed && embed.description && embed.description.includes('received the following loot for this kill:'));
 
-            const revertCondition = embedTitleRevert || embedDescriptionKilledMobRevert || contentDiedRevert || embedDescriptionDiedRevert || embedDescriptionDethRevert || embedDescriptionRawDethRevert;
+            // Combine all revert conditions with a logical OR
+            const revertCondition = embedTitleRevert || embedDescriptionKilledMobRevert || embedDescriptionDiedRevert || contentDiedRevert || lootMessageRevert;
 
-            console.log(`[MobDetect - Debug] Revert Conditions: embedTitleRevert=${embedTitleRevert}, embedDescriptionKilledMobRevert=${embedDescriptionKilledMobRevert}, contentDiedRevert=${contentDiedRevert}, embedDescriptionDiedRevert=${embedDescriptionDiedRevert}, embedDescriptionDethRevert=${embedDescriptionDethRevert}, embedDescriptionRawDethRevert=${embedDescriptionRawDethRevert}`);
+            console.log(`[MobDetect - Debug] Revert Conditions: `);
+            console.log(`- embedTitleRevert: ${embedTitleRevert}`);
+            console.log(`- embedDescriptionKilledMobRevert: ${embedDescriptionKilledMobRevert}`);
+            console.log(`- embedDescriptionDiedRevert: ${embedDescriptionDiedRevert}`);
+            console.log(`- contentDiedRevert: ${contentDiedRevert}`);
+            console.log(`- lootMessageRevert: ${lootMessageRevert}`);
 
             if (revertCondition) {
                 if (originalChannelName && message.channel.name !== originalChannelName) {
