@@ -123,3 +123,50 @@ module.exports = {
                     }
                 }
             }
+        }
+
+        // --- Logic for Reverting to original name (based on message content OR embed title) ---
+        // This block will only execute if the channel was NOT renamed in the current message.
+        if (!renamedThisTurn) {
+            const embed = message.embeds.length > 0 ? message.embeds[0] : null;
+
+            // Define revert conditions based on your feedback
+            const revertCondition = (
+                // Revert conditions from message content
+                (message.content && (
+                    message.content.includes('DIED!') ||
+                    message.content.includes(':deth:') ||
+                    message.content.includes('received the following loot for this kill:')
+                )) ||
+                // Revert condition from embed title
+                (embed && embed.title && embed.title.includes('left...'))
+            );
+
+            console.log(`[MobDetect - Debug] Revert Conditions Check: `);
+            console.log(`- Message contains 'DIED!': ${message.content && message.content.includes('DIED!')}`);
+            console.log(`- Message contains ':deth:': ${message.content && message.content.includes(':deth:')}`);
+            console.log(`- Message contains 'received the following loot for this kill:': ${message.content && message.content.includes('received the following loot for this kill:')}`);
+            console.log(`- Embed title contains 'left...': ${embed && embed.title && embed.title.includes('left...')}`);
+
+            if (revertCondition) {
+                if (originalChannelName && message.channel.name !== originalChannelName) {
+                    try {
+                        await message.channel.setName(originalChannelName, 'Automated revert to original name.');
+                        console.log(`MobDetect: Reverted channel ${message.channel.name} to ${originalChannelName} in guild ${message.guild.name}`);
+                        statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
+                    } catch (error) {
+                        console.error(`MobDetect: Failed to revert channel ${message.channel.name} to original name:`, error);
+                        if (error.code === 50013) { // Missing Permissions
+                            console.error(`MobDetect: Bot lacks 'Manage Channels' permission in #${message.channel.name}.`);
+                        }
+                    }
+                } else {
+                    console.log(`[MobDetect - Debug] Revert condition met, but channel name is already original or original name is missing.`);
+                }
+            } else {
+                console.log(`[MobDetect - Debug] No revert condition met for this message.`);
+            }
+        }
+        console.log(`--- End MobDetect Message Processing ---\n`);
+    },
+};
