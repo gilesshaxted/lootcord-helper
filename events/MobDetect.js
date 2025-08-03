@@ -133,7 +133,7 @@ module.exports = {
 
             // Condition 1: Embed title includes 'left...'
             const embedTitleRevert = embed && embed.title && embed.title.includes('left...');
-            
+
             // Condition 2: Embed description includes 'killed a mob'
             const embedDescriptionKilledMobRevert = embed && embed.description && embed.description.includes('killed a mob');
 
@@ -144,12 +144,14 @@ module.exports = {
             // NEW: Added checks for DIED! and :deth: in embed description
             const embedDescriptionDiedRevert = embed && embed.description && embed.description.includes('DIED!');
             const embedDescriptionDethRevert = embed && embed.description && embed.description.includes(':deth:');
-
-
-            const revertCondition = embedTitleRevert || embedDescriptionKilledMobRevert || contentDiedRevert || embedDescriptionDiedRevert || embedDescriptionDethRevert;
-
-            console.log(`[MobDetect - Debug] Revert Conditions: embedTitleRevert=${embedTitleRevert}, embedDescriptionKilledMobRevert=${embedDescriptionKilledMobRevert}, contentDiedRevert=${contentDiedRevert}, embedDescriptionDiedRevert=${embedDescriptionDiedRevert}, embedDescriptionDethRevert=${embedDescriptionDethRevert}`);
             
+            // NEW: Check for the raw custom emoji in the embed description
+            const embedDescriptionRawDethRevert = embed && embed.description && embed.description.includes('<:deth:601324554199236618>');
+
+            const revertCondition = embedTitleRevert || embedDescriptionKilledMobRevert || contentDiedRevert || embedDescriptionDiedRevert || embedDescriptionDethRevert || embedDescriptionRawDethRevert;
+
+            console.log(`[MobDetect - Debug] Revert Conditions: embedTitleRevert=${embedTitleRevert}, embedDescriptionKilledMobRevert=${embedDescriptionKilledMobRevert}, contentDiedRevert=${contentDiedRevert}, embedDescriptionDiedRevert=${embedDescriptionDiedRevert}, embedDescriptionDethRevert=${embedDescriptionDethRevert}, embedDescriptionRawDethRevert=${embedDescriptionRawDethRevert}`);
+
             if (revertCondition) {
                 if (originalChannelName && message.channel.name !== originalChannelName) {
                     try {
