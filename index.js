@@ -3,7 +3,7 @@ const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 const express = require('express');
-const path = require('path'); // Import path module
+const path = require('path');
 const fs = require('fs');
 
 // Import Firebase modules
@@ -17,6 +17,7 @@ const botStatus = require('./utils/botStatus');
 const paginationHelpers = require('./utils/pagination');
 const startupChecks = require('./utils/startupChecks');
 const wordleHelpers = require('./utils/wordleHelpers');
+const stickyMessageManager = require('./utils/stickyMessageManager'); // NEW: Import stickyMessageManager
 
 // Load environment variables from a custom .env file
 // Assumes lootcord-helper.env is in the same directory as index.js
@@ -135,11 +136,9 @@ async function setupFirestoreListeners() {
     onSnapshot(statsDocRef, (docSnap) => {
         if (docSnap.exists()) {
             statsTracker.updateInMemoryStats(docSnap.data());
-            // Removed: botStatus.updateBotPresence(client, statsTracker.getBotStats()); // This call is now removed
         } else {
             console.log("Stats Tracker: No botStats document found in Firestore. Initializing with defaults.");
             statsTracker.initializeStats({});
-            // Removed: botStatus.updateBotPresence(client, statsTracker.getBotStats()); // This call is now removed
         }
     }, (error) => {
         console.error("Stats Tracker: Error listening to botStats:", error);
@@ -153,7 +152,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildPresences, // REQUIRED for setting bot status/presence
+        GatewayIntentBits.GuildPresences,
     ]
 });
 
@@ -222,8 +221,7 @@ client.once('ready', async () => {
     }
 
     // Set interval for regular status updates (every 5 minutes)
-    setInterval(async () => { // Made async to allow await for Firestore fetch
-        // Ensure db and APP_ID_FOR_FIRESTORE are available before attempting to fetch stats
+    setInterval(async () => {
         if (!db || !APP_ID_FOR_FIRESTORE || !client.isReady()) {
             console.warn('Interval Status Update: DB, App ID, or Client not ready. Skipping interval update.');
             return;
@@ -235,7 +233,6 @@ client.once('ready', async () => {
             const totalHelps = data.totalHelps ?? 0;
             const uniqueActiveUsers = Object.keys(data.activeUsersMap ?? {}).length;
             
-            // Call updateBotPresence with necessary arguments
             botStatus.updateBotPresence(client, {
                 customText: null, // Not a custom text update
                 activityType: 'PLAYING', // Default type for interval
@@ -249,11 +246,10 @@ client.once('ready', async () => {
         }
     }, 300000); // Every 5 minutes
 
-    // Initial status update (will be handled by the first interval or manual command)
-    // Removed direct call here as setInterval will handle the first update soon after ready.
-    // botStatus.updateBotPresence(client, statsTracker.getBotStats()); 
-
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
+
+    // Start cleanup for expired sticky messages every 10 minutes
+    setInterval(() => stickyMessageManager.cleanupExpiredStickyMessages(db, client), 10 * 60 * 1000); // Every 10 minutes
 });
 
 // --- Handle !wordlelog command ---
