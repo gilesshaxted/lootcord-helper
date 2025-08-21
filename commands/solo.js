@@ -12,11 +12,13 @@ module.exports = {
         .setDescription('Activates a sticky "mob solo" message in the current channel.'),
 
     async execute(interaction, db, client, APP_ID_FOR_FIRESTORE) {
-        // --- NEW: Initial log to confirm command execution start ---
-        console.log(`[Solo Command - Debug] Command /solo received by ${interaction.user.tag} in #${interaction.channel.name}.`);
+        // --- NEW: Very early log to confirm command execution start ---
+        console.log(`[Solo Command - Debug] START: Command /solo received by ${interaction.user.tag} in #${interaction.channel.name} (Guild: ${interaction.guild.name}).`);
 
         try {
-            await interaction.deferReply({ ephemeral: false }); // Reply publicly
+            // Acknowledge the interaction immediately to prevent "Interaction Failed"
+            await interaction.deferReply({ ephemeral: false }); 
+            console.log(`[Solo Command - Debug] Interaction deferred.`);
 
             // Permissions Check
             if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
@@ -26,11 +28,15 @@ module.exports = {
                     ephemeral: true,
                 });
             }
+            console.log(`[Solo Command - Debug] User has required permissions.`);
+
 
             if (!db) {
                 console.error('[Solo Command] Firestore DB not initialized.');
                 return await interaction.editReply({ content: 'Bot is not fully initialized (Firestore not ready). Please try again in a moment.', ephemeral: false });
             }
+            console.log(`[Solo Command - Debug] Firestore DB is ready.`);
+
 
             const userId = interaction.user.id;
             const channelId = interaction.channel.id;
@@ -61,6 +67,8 @@ module.exports = {
                     });
                 }
             }
+            console.log(`[Solo Command - Debug] Channel is available for solo.`);
+
 
             // --- Check User Cooldown ---
             const userCooldownSnap = await getDoc(userCooldownDocRef);
@@ -88,6 +96,8 @@ module.exports = {
                     });
                 }
             }
+            console.log(`[Solo Command - Debug] User is not on cooldown or has no active solo in another channel.`);
+
 
             // --- Get original channel name for MobDetect revert ---
             const guildChannelsRef = collection(db, `Guilds/${guildId}/channels`);
@@ -142,5 +152,6 @@ module.exports = {
                 await interaction.editReply({ content: '❌ An unexpected error occurred while trying to activate the solo message. Please check logs.', ephemeral: false });
             }
         }
+        console.log(`[Solo Command - Debug] END: Command /solo execution for ${interaction.user.tag}.`);
     },
 };
