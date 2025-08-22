@@ -1,8 +1,9 @@
-const { collection, doc, setDoc, getDoc, deleteDoc } = require('firebase/firestore');
+const { collection, doc, setDoc, getDoc, updateDoc, deleteDoc } = require('firebase/firestore');
 const statsTracker = require('../utils/statsTracker');
 
 // --- Configuration ---
 const TARGET_GAME_BOT_ID = '493316754689359874'; // User ID of the game bot that sends attack messages
+const NOTIFICATION_CHANNEL_ID = '1329235188907114506'; // Channel to send debug notifications
 
 // Weapon cooldown data in milliseconds [HH:MM:SS]
 const WEAPON_COOLDOWNS_MS = {
@@ -51,8 +52,8 @@ const WEAPON_COOLDOWNS_MS = {
     'rocket launcher': 2 * 60 * 60 * 1000 + 24 * 60 * 1000 + 40 * 1000,
 };
 
-// Regex to extract player ID and weapon name from the message content
-const ATTACK_MESSAGE_REGEX = /^\S+\s+<@(\d+)>\s+hit the\s+\*\*(?:.*?)\*\*.*using their\s+:\S+:\s+`([^`]+)`/;
+// --- UPDATED REGEX: To capture player ID, enemy type, and weapon name ---
+const ATTACK_MESSAGE_REGEX = /^\S+\s+<@(\d+)>\s+hit the\s+\*\*(.*?)\*\*.*using their\s+:\S+:\s+`([^`]+)`/;
 
 /**
  * Pings a user when their attack cooldown is over.
@@ -74,7 +75,7 @@ async function sendCooldownPing(client, db, userId, channelId, weapon, cooldownD
     try {
         await channel.send(`<@${userId}> your **${weapon}** attack cooldown is over!`);
         console.log(`Attack Cooldown Notifier: Sent cooldown ping to ${userId} for ${weapon} in #${channel.name}.`);
-        statsTracker.incrementTotalHelps(db, 'APP_ID_FOR_FIRESTORE_PLACEHOLDER'); // Use a placeholder, actual APP_ID is passed from index.js
+        statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Use APP_ID_FOR_FIRESTORE
         await deleteDoc(doc(collection(db, `ActiveAttackCooldowns`), cooldownDocId)); // Remove from Firestore after pinging
         console.log(`Attack Cooldown Notifier: Removed cooldown entry ${cooldownDocId} from Firestore.`);
     } catch (error) {
@@ -102,8 +103,23 @@ module.exports = {
 
         if (match) {
             const playerId = match[1];
-            const weaponName = match[2].toLowerCase(); // Convert to lowercase for map lookup
+            const enemyType = match[2]; // Captured enemy type
+            const weaponName = match[3].toLowerCase(); // Convert to lowercase for map lookup
             const cooldownDuration = WEAPON_COOLDOWNS_MS[weaponName];
+
+            // --- NEW: Debug Notification to specific channel ---
+            const notificationChannel = client.channels.cache.get(NOTIFICATION_CHANNEL_ID);
+            if (notificationChannel && notificationChannel.isTextBased()) {
+                try {
+                    await notificationChannel.send(`Debug: <@${playerId}> hit '${enemyType}' with '${weaponName}'`);
+                    console.log(`Attack Cooldown Notifier: Sent debug notification to #${notificationChannel.name}.`);
+                } catch (error) {
+                    console.error(`Attack Cooldown Notifier: Failed to send debug notification to #${notificationChannel.name}:`, error);
+                }
+            } else {
+                console.warn(`Attack Cooldown Notifier: Debug notification channel with ID ${NOTIFICATION_CHANNEL_ID} not found or not a text channel.`);
+            }
+            // --- END NEW Debug Notification ---
 
             if (cooldownDuration === undefined) {
                 console.log(`Attack Cooldown Notifier: Unknown weapon "${weaponName}" used. No cooldown to track.`);
@@ -126,7 +142,7 @@ module.exports = {
                     guildId: message.guild.id,
                     pinged: false // Track if ping has been sent
                 });
-                console.log(`Attack Cooldown Notifier: Stored cooldown for ${playerId} (${weaponName}) in #${message.channel.name}. Ends at ${new Date(cooldownEndsAt).toLocaleString()}.`);
+                console.log(`Attack Cooldown Notifier: Stored cooldown for ${playerId} (${weaponName}) in #${message.channel.id}. Ends at ${new Date(cooldownEndsAt).toLocaleString()}.`);
 
                 // Schedule the ping
                 const delay = cooldownEndsAt - Date.now();
@@ -144,4 +160,5 @@ module.exports = {
             }
         }
     },
+    sendCooldownPing // Export sendCooldownPing for startupChecks
 };
