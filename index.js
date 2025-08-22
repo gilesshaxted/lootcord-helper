@@ -17,8 +17,8 @@ const botStatus = require('./utils/botStatus');
 const paginationHelpers = require('./utils/pagination');
 const startupChecks = require('./utils/startupChecks');
 const wordleHelpers = require('./utils/wordleHelpers');
-const stickyMessageManager = require('./utils/stickyMessageManager'); // Import stickyMessageManager
-// const { sendCooldownPing } = require('./events/attackCooldownNotifier'); // This import needs to be uncommented if attackCooldownNotifier is used
+const stickyMessageManager = require('./utils/stickyMessageManager');
+const { sendCooldownPing } = require('./events/attackCooldownNotifier'); // Import sendCooldownPing for startup rescheduling
 
 // Load environment variables from a custom .env file
 // Assumes lootcord-helper.env is in the same directory as index.js
@@ -37,7 +37,7 @@ const firebaseConfig = {
     authDomain: process.env.FIREBASE_AUTH_DOMAIN,
     projectId: process.env.FIREBASE_PROJECT_ID,
     storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: process.env.MESSAGING_SENDER_ID,
+    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
     appId: process.env.FIREBASE_APP_ID,
     // measurementId: process.env.MEASUREMENT_ID // Uncomment if you use Measurement ID
 };
@@ -52,16 +52,14 @@ if (!TOKEN) {
 }
 if (!CLIENT_ID) {
     console.error('Error: DISCORD_CLIENT_ID environment variable not set. This is required for slash commands.');
-    console.error('You can find your Client ID (Application ID) in the Discord Developer Portal under "General Information".');
     process.exit(1);
 }
 if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.projectId || !firebaseConfig.appId) {
-    console.error('Error: Incomplete Firebase configuration. Please ensure ALL required Firebase environment variables are set on Render:');
+    console.error('Error: Incomplete Firebase configuration. Please ensure ALL required Firebase environment variables are set:');
     console.error('  - FIREBASE_API_KEY');
     console.error('  - FIREBASE_AUTH_DOMAIN');
     console.error('  - FIREBASE_PROJECT_ID');
     console.error('  - FIREBASE_APP_ID');
-    console.error('You can find these in your Firebase Console > Project settings > Your apps (Web app config).');
     process.exit(1);
 }
 
@@ -99,6 +97,7 @@ async function initializeFirebase() {
 
     } catch (error) {
         console.error('Error initializing Firebase or signing in:', error);
+        process.exit(1);
     }
 }
 
@@ -154,6 +153,7 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.GuildMembers, // Required for fetching members for voice channel updater, etc.
     ]
 });
 
@@ -248,6 +248,40 @@ client.once('ready', async () => {
     }, 300000); // Every 5 minutes
 
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
+
+    // --- Reschedule active attack cooldown pings on startup ---
+    const activeCooldownsRef = collection(db, `ActiveAttackCooldowns`);
+    try {
+        const querySnapshot = await getDocs(activeCooldownsRef);
+        const now = Date.now();
+        let rescheduledCount = 0;
+        for (const docSnap of querySnapshot.docs) {
+            const cooldownData = docSnap.data();
+            const cooldownDocId = docSnap.id;
+            const delay = cooldownData.cooldownEndsAt - now;
+
+            if (delay > 0) {
+                setTimeout(() => {
+                    // Pass APP_ID_FOR_FIRESTORE to sendCooldownPing
+                    sendCooldownPing(client, db, cooldownData.userId, cooldownData.channelId, cooldownData.weapon, cooldownDocId, APP_ID_FOR_FIRESTORE);
+                }, delay);
+                rescheduledCount++;
+            } else {
+                // Cooldown already passed, ping immediately if not already pinged
+                if (!cooldownData.pinged) {
+                    // Pass APP_ID_FOR_FIRESTORE to sendCooldownPing
+                    sendCooldownPing(client, db, cooldownData.userId, cooldownData.channelId, cooldownData.weapon, cooldownDocId, APP_ID_FOR_FIRESTORE);
+                } else {
+                    // If already pinged, just remove the entry if it somehow persisted
+                    await deleteDoc(doc(activeCooldownsRef, cooldownDocId));
+                    console.log(`Attack Cooldown Notifier: Removed stale cooldown entry ${cooldownDocId} on startup.`);
+                }
+            }
+        }
+        console.log(`Attack Cooldown Notifier: Rescheduled ${rescheduledCount} active cooldowns on startup.`);
+    } catch (error) {
+        console.error('Attack Cooldown Notifier: Error rescheduling cooldowns on startup:', error);
+    }
 
     // Start cleanup for expired sticky messages every 10 minutes
     setInterval(() => stickyMessageManager.cleanupExpiredStickyMessages(db, client), 10 * 60 * 1000); // Every 10 minutes
