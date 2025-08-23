@@ -134,19 +134,19 @@ module.exports = {
 
             console.log(`[Attack Cooldown Notifier - Debug] Detected attack: Player ID=${playerId}, Enemy=${enemyType}, Weapon=${weaponName}.`);
 
-            // --- Debug Notification to specific channel ---
-            const notificationChannel = client.channels.cache.get(NOTIFICATION_CHANNEL_ID);
-            if (notificationChannel && notificationChannel.isTextBased()) {
-                try {
-                    await notificationChannel.send(`Debug: <@${playerId}> hit '${enemyType}' with '${weaponName}'`);
-                    console.log(`Attack Cooldown Notifier: Sent debug notification to #${notificationChannel.name}.`);
-                } catch (error) {
-                    console.error(`Attack Cooldown Notifier: Failed to send debug notification to #${notificationChannel.name}:`, error);
-                }
-            } else {
-                console.warn(`Attack Cooldown Notifier: Debug notification channel with ID ${NOTIFICATION_CHANNEL_ID} not found or not a text channel.`);
-            }
-            // --- END Debug Notification ---
+            // --- REMOVED: Debug Notification to specific channel ---
+            // const notificationChannel = client.channels.cache.get(NOTIFICATION_CHANNEL_ID);
+            // if (notificationChannel && notificationChannel.isTextBased()) {
+            //     try {
+            //         await notificationChannel.send(`Debug: <@${playerId}> hit '${enemyType}' with '${weaponName}'`);
+            //         console.log(`Attack Cooldown Notifier: Sent debug notification to #${notificationChannel.name}.`);
+            //     } catch (error) {
+            //         console.error(`Attack Cooldown Notifier: Failed to send debug notification to #${notificationChannel.name}:`, error);
+            //     }
+            // } else {
+            //     console.warn(`Attack Cooldown Notifier: Debug notification channel with ID ${NOTIFICATION_CHANNEL_ID} not found or not a text channel.`);
+            // }
+            // --- END REMOVED Debug Notification ---
 
             const cooldownDuration = WEAPON_COOLDOWNS_MS[weaponName];
 
