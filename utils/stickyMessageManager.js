@@ -5,13 +5,14 @@ const STICKY_DURATION_MS = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
 
 /**
  * Creates and stores a new sticky message entry in Firestore.
+ * @param {Client} client The Discord client instance. // NEW: Added client
  * @param {object} db The Firestore database instance.
  * @param {string} channelId The ID of the channel where the sticky message is.
  * @param {string} userId The ID of the user who activated the solo command.
  * @param {string} mobChannelOriginalName The original name of the channel before renaming (for revert trigger).
  * @returns {Promise<string|null>} The ID of the newly created sticky message in Discord, or null on failure.
  */
-async function createStickyMessage(db, channelId, userId, mobChannelOriginalName) {
+async function createStickyMessage(client, db, channelId, userId, mobChannelOriginalName) { // NEW: Added client
     const soloStickyMessagesRef = collection(db, `SoloStickyMessages`);
     const stickyDocRef = doc(soloStickyMessagesRef, channelId); // Document ID is channelId
 
@@ -23,7 +24,7 @@ async function createStickyMessage(db, channelId, userId, mobChannelOriginalName
             .setDescription(`<@${userId}> has chosen to take this mob solo.\nPlease do not attack this mob.`)
             .setFooter({ text: `Thanks the Lemon Team - ${new Date().toLocaleString()}` });
 
-        const channel = await client.channels.cache.get(channelId);
+        const channel = client.channels.cache.get(channelId); // Now client is available
         if (!channel || !channel.isTextBased()) {
             console.error(`Sticky Message Manager: Channel ${channelId} not found or not text-based for sticky message.`);
             return null;
@@ -38,7 +39,7 @@ async function createStickyMessage(db, channelId, userId, mobChannelOriginalName
             channelId: channelId,
             guildId: channel.guild.id,
             expirationTimestamp: expirationTimestamp,
-            mobChannelOriginalName: mobChannelOriginalName,
+            mobChannelOriginalName: mobChannelOriginalName, // Store original name for revert trigger
             isActive: true,
             lastPostedTimestamp: Date.now()
         }, { merge: true });
@@ -54,20 +55,20 @@ async function createStickyMessage(db, channelId, userId, mobChannelOriginalName
 
 /**
  * Reposts an existing sticky message to keep it at the bottom.
- * @param {Client} client The Discord client instance.
+ * @param {Client} client The Discord client instance. // NEW: Added client
  * @param {object} db The Firestore database instance.
  * @param {object} stickyMessageData The data of the sticky message from Firestore.
  */
-async function repostStickyMessage(client, db, stickyMessageData) {
+async function repostStickyMessage(client, db, stickyMessageData) { // NEW: Added client
     const channelId = stickyMessageData.channelId;
     const oldStickyMessageId = stickyMessageData.stickyMessageId;
     const userId = stickyMessageData.userId; // User who activated solo
     const mobChannelOriginalName = stickyMessageData.mobChannelOriginalName;
 
-    const channel = client.channels.cache.get(channelId);
+    const channel = client.channels.cache.get(channelId); // Now client is available
     if (!channel || !channel.isTextBased()) {
         console.warn(`Sticky Message Manager: Channel ${channelId} not found or not text-based for repost. Removing sticky entry.`);
-        await removeStickyMessage(db, channelId);
+        await removeStickyMessage(client, db, channelId); // Pass client to removeStickyMessage
         return;
     }
 
@@ -101,16 +102,17 @@ async function repostStickyMessage(client, db, stickyMessageData) {
     } catch (error) {
         console.error(`Sticky Message Manager: Error reposting sticky message in #${channel.name}:`, error);
         // If reposting fails, it might be best to remove the sticky entry to prevent further errors
-        await removeStickyMessage(db, channelId);
+        await removeStickyMessage(client, db, channelId); // Pass client to removeStickyMessage
     }
 }
 
 /**
  * Removes a sticky message entry from Firestore and attempts to delete the Discord message.
+ * @param {Client} client The Discord client instance. // NEW: Added client
  * @param {object} db The Firestore database instance.
  * @param {string} channelId The ID of the channel.
  */
-async function removeStickyMessage(db, channelId) {
+async function removeStickyMessage(client, db, channelId) { // NEW: Added client
     const stickyDocRef = doc(collection(db, `SoloStickyMessages`), channelId);
 
     try {
@@ -118,13 +120,15 @@ async function removeStickyMessage(db, channelId) {
         if (docSnap.exists()) {
             const stickyData = docSnap.data();
             const stickyMessageId = stickyData.stickyMessageId;
-            const channel = client.channels.cache.get(channelId);
+            const channel = client.channels.cache.get(channelId); // Now client is available
 
             if (channel && channel.isTextBased()) {
                 const oldMessage = await channel.messages.fetch(stickyMessageId).catch(() => null);
                 if (oldMessage) {
                     await oldMessage.delete();
                     console.log(`Sticky Message Manager: Deleted Discord sticky message ${stickyMessageId} in #${channel.name}.`);
+                } else {
+                    console.warn(`Sticky Message Manager: Discord sticky message ${stickyMessageId} not found or already deleted.`);
                 }
             } else {
                 console.warn(`Sticky Message Manager: Channel ${channelId} not found or not text-based for sticky message deletion.`);
@@ -168,7 +172,7 @@ async function cleanupExpiredStickyMessages(db, client) {
             const stickyData = docSnap.data();
             if (stickyData.expirationTimestamp <= now) {
                 console.log(`Sticky Message Manager: Expired sticky message found for channel ${stickyData.channelId}. Cleaning up.`);
-                await removeStickyMessage(db, stickyData.channelId);
+                await removeStickyMessage(client, db, stickyData.channelId); // Pass client here
                 cleanedCount++;
             }
         }
