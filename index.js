@@ -5,9 +5,6 @@ const { Routes } = require('discord-api-types/v10');
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const session = require('express-session'); // NEW: For session management
-const passport = require('passport'); // NEW: For authentication
-const DiscordStrategy = require('passport-discord').Strategy; // NEW: Discord OAuth strategy
 
 // Import Firebase modules
 const { initializeApp } = require('firebase/app');
@@ -31,8 +28,6 @@ require('dotenv').config({ path: path.resolve(__dirname, 'lootcord-helper.env') 
 // --- Configuration Variables ---
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
-const CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET; // NEW: Discord Client Secret for OAuth
-const CALLBACK_URL = process.env.DISCORD_CALLBACK_URL || 'http://localhost:3000/auth/discord/callback'; // NEW: OAuth callback URL
 const PREFIX = '!';
 const PORT = process.env.PORT || 3000;
 
@@ -56,11 +51,7 @@ if (!TOKEN) {
     process.exit(1);
 }
 if (!CLIENT_ID) {
-    console.error('Error: DISCORD_CLIENT_ID environment variable not set. This is required for slash commands and OAuth.');
-    process.exit(1);
-}
-if (!CLIENT_SECRET) { // NEW: Validate Client Secret
-    console.error('Error: DISCORD_CLIENT_SECRET environment variable not set. This is required for Discord OAuth.');
+    console.error('Error: DISCORD_CLIENT_ID environment variable not set. This is required for slash commands.');
     process.exit(1);
 }
 if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.projectId || !firebaseConfig.appId) {
@@ -77,7 +68,7 @@ if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.proj
 let firebaseApp;
 let db;
 let auth;
-let userId = 'unknown'; // This is the bot's internal Firebase user ID
+let userId = 'unknown';
 let isFirestoreReady = false;
 
 async function initializeFirebase() {
@@ -91,10 +82,10 @@ async function initializeFirebase() {
         onAuthStateChanged(auth, async (user) => {
             if (user) {
                 userId = user.uid;
-                console.log(`Firebase authenticated. Bot User ID: ${userId}`);
+                console.log(`Firebase authenticated. User ID: ${userId}`);
             } else {
                 userId = crypto.randomUUID();
-                console.log(`Firebase not authenticated. Using anonymous/random Bot User ID: ${userId}`);
+                console.log(`Firebase not authenticated. Using anonymous/random User ID: ${userId}`);
             }
             isFirestoreReady = true;
             console.log("Firestore client initialized and ready.");
@@ -113,7 +104,7 @@ async function initializeFirebase() {
 // Function to set up Firestore listeners
 async function setupFirestoreListeners() {
     if (!db || !userId || !isFirestoreReady) {
-        console.warn('Firestore, Bot User ID, or Auth not ready for listeners. Skipping setup.');
+        console.warn('Firestore, User ID, or Auth not ready for listeners. Skipping setup.');
         return;
     }
 
@@ -220,7 +211,7 @@ client.once('ready', async () => {
     // --- Slash Command Registration ---
     // This block registers commands globally.
     try {
-        console.log(`Started refreshing ${slashCommandsToRegister.length} application (/) commands.`);
+    console.log(`Started refreshing ${slashCommandsToRegister.length} application (/) commands.`);
         const data = await rest.put(
             Routes.applicationCommands(CLIENT_ID), // This line registers commands GLOBALLY
             { body: slashCommandsToRegister },
@@ -271,17 +262,13 @@ client.once('ready', async () => {
 
             if (delay > 0) {
                 setTimeout(() => {
-                    // Pass APP_ID_FOR_FIRESTORE to sendCooldownPing
                     sendCooldownPing(client, db, cooldownData.userId, cooldownData.channelId, cooldownData.weapon, cooldownDocId, APP_ID_FOR_FIRESTORE);
                 }, delay);
                 rescheduledCount++;
             } else {
-                // Cooldown already passed, ping immediately if not already pinged
                 if (!cooldownData.pinged) {
-                    // Pass APP_ID_FOR_FIRESTORE to sendCooldownPing
                     sendCooldownPing(client, db, cooldownData.userId, cooldownData.channelId, cooldownData.weapon, cooldownDocId, APP_ID_FOR_FIRESTORE);
                 } else {
-                    // If already pinged, just remove the entry if it somehow persisted
                     await deleteDoc(doc(activeCooldownsRef, cooldownDocId));
                     console.log(`Attack Cooldown Notifier: Removed stale cooldown entry ${cooldownDocId} on startup.`);
                 }
