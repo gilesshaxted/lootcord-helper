@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ButtonStyle, ActionRowBuilder, ButtonBuilder } = require('discord.js');
 const { doc, collection, getDoc, setDoc, deleteDoc } = require('firebase/firestore');
+const { createStickyMessage } = require('../utils/stickyMessageManager'); // Import createStickyMessage
 
 // Cooldown duration: 3 hours in milliseconds
 const COOLDOWN_DURATION_MS = 3 * 60 * 60 * 1000;
@@ -18,17 +19,6 @@ module.exports = {
             await interaction.deferReply({ ephemeral: false }); 
             console.log(`[Solo Command - Debug] Interaction deferred.`);
 
-            // --- REMOVED: Permissions Check for ManageChannels ---
-            // if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-            //     console.warn(`[Solo Command] User ${interaction.user.tag} tried to use /solo without Manage Channels permission.`);
-            //     return await interaction.editReply({
-            //         content: '❌ You need "Manage Channels" permission to use this command.',
-            //         ephemeral: true,
-            //     });
-            // }
-            // console.log(`[Solo Command - Debug] User has required permissions.`); // This log is no longer relevant here
-
-
             if (!db) {
                 console.error('[Solo Command] Firestore DB not initialized.');
                 return await interaction.editReply({ content: 'Bot is not fully initialized (Firestore not ready). Please try again in a moment.', ephemeral: false });
@@ -41,10 +31,10 @@ module.exports = {
             const guildId = interaction.guild.id;
 
             const soloCooldownsRef = collection(db, `SoloCooldowns`);
-            const soloStickyMessagesRef = collection(db, `SoloStickyMessages`);
+            // const soloStickyMessagesRef = collection(db, `SoloStickyMessages`); // Not directly used here anymore
 
             const userCooldownDocRef = doc(soloCooldownsRef, userId);
-            const channelStickyDocRef = doc(soloStickyMessagesRef, channelId);
+            // const channelStickyDocRef = doc(soloStickyMessagesRef, channelId); // Not directly used here anymore
 
             // --- NEW: Check if channel is configured for the bot ---
             const guildChannelsRef = collection(db, `Guilds/${guildId}/channels`);
@@ -64,21 +54,16 @@ module.exports = {
             // --- Debugging Cooldown/Active Solo Checks ---
             console.log(`[Solo Command - Debug] Checking solo status for channel ${channelId} and user ${userId}.`);
 
-            // --- Check Channel Cooldown/Active Solo ---
-            const channelStickySnap = await getDoc(channelStickyDocRef);
-            if (channelStickySnap.exists()) {
-                const stickyData = channelStickySnap.data();
-                const now = Date.now();
-                console.log(`[Solo Command - Debug] Existing sticky data for channel ${channelId}:`, stickyData);
-
-                if (stickyData.isActive && stickyData.expirationTimestamp > now) {
-                    const remainingTime = Math.ceil((stickyData.expirationTimestamp - now) / (60 * 1000)); // In minutes
-                    console.warn(`[Solo Command] Channel ${channelId} already has an active solo. Remaining: ${remainingTime} minutes.`);
-                    return await interaction.editReply({
-                        content: `⚠️ This channel is already marked solo by <@${stickyData.userId}>. It will expire in approximately ${remainingTime} minutes.`,
-                        ephemeral: false,
-                    });
-                }
+            // --- Check Channel Cooldown/Active Solo (via stickyMessageManager) ---
+            // Fetch directly from stickyMessageManager's view of Firestore
+            const stickyMessageData = await getDoc(doc(collection(db, `SoloStickyMessages`), channelId)).then(snap => snap.data());
+            if (stickyMessageData && stickyMessageData.isActive && stickyMessageData.expirationTimestamp > Date.now()) {
+                const remainingTime = Math.ceil((stickyMessageData.expirationTimestamp - Date.now()) / (60 * 1000)); // In minutes
+                console.warn(`[Solo Command] Channel ${channelId} already has an active solo. Remaining: ${remainingTime} minutes.`);
+                return await interaction.editReply({
+                    content: `⚠️ This channel is already marked solo by <@${stickyMessageData.userId}>. It will expire in approximately ${remainingTime} minutes.`,
+                    ephemeral: false,
+                });
             }
             console.log(`[Solo Command - Debug] Channel is available for solo.`);
 
@@ -118,29 +103,13 @@ module.exports = {
             console.log(`[Solo Command - Debug] Original channel name for mob revert: \`${mobChannelOriginalName}\``);
 
 
-            // --- Create and Send Sticky Message ---
-            const embed = new EmbedBuilder()
-                .setColor(0xFF0000) // Red color
-                .setTitle('THIS MOB IS SOLO')
-                .setDescription(`<@${userId}> has chosen to take this mob solo.\nPlease do not attack this mob.`)
-                .setFooter({ text: `Thanks the Lemon Team - ${new Date().toLocaleString()}` });
-
-            const stickyMessage = await interaction.channel.send({ embeds: [embed] });
-            console.log(`[Solo Command - Debug] Posted initial sticky message in #${interaction.channel.name} (ID: ${stickyMessage.id})`);
-
-            // --- Store Sticky Message State in Firestore ---
-            const expirationTimestamp = Date.now() + STICKY_DURATION_MS;
-            await setDoc(channelStickyDocRef, {
-                userId: userId,
-                stickyMessageId: stickyMessage.id, // Store the ID of the bot's message
-                channelId: channelId,
-                guildId: guildId,
-                expirationTimestamp: expirationTimestamp,
-                mobChannelOriginalName: mobChannelOriginalName, // Store original name for revert trigger
-                isActive: true,
-                lastPostedTimestamp: Date.now()
-            }, { merge: true });
-            console.log(`[Solo Command - Debug] Stored sticky message state in Firestore for channel ${channelId}.`);
+            // --- Create and Send Sticky Message using manager ---
+            const stickyMessageId = await createStickyMessage(client, db, channelId, userId, mobChannelOriginalName); // NEW: Pass client
+            
+            if (!stickyMessageId) {
+                console.error(`[Solo Command] Failed to create sticky message for channel ${channelId}.`);
+                return await interaction.editReply({ content: '❌ An error occurred while trying to create the sticky message. Please check logs.', ephemeral: false });
+            }
 
             // --- Update User Cooldown ---
             await setDoc(userCooldownDocRef, {
