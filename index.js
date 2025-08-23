@@ -1,5 +1,5 @@
 // Import necessary classes from the discord.js library
-const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder, EmbedBuilder } = require('discord.js'); // NEW: Added EmbedBuilder
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 const express = require('express');
@@ -379,7 +379,7 @@ client.on('interactionCreate', async interaction => {
                 console.log(`[Notify Button] User ${userId} toggled attack cooldown notifications to: ${newEnabledState}`);
 
                 // Re-create the embed and button to reflect the new state
-                const embed = new EmbedBuilder()
+                const embed = new EmbedBuilder() // EmbedBuilder is now defined
                     .setColor(0x0099ff)
                     .setTitle('Lootcord Helper Notifications')
                     .setDescription(
