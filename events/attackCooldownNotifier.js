@@ -88,25 +88,45 @@ module.exports = {
     name: 'messageCreate',
     once: false,
     async execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
+        // --- NEW: Very early log to confirm listener is active and receiving messages ---
+        console.log(`[Attack Cooldown Notifier - Debug] Listener active. Message received from ${message.author.tag} (ID: ${message.author.id}) in #${message.channel.name}.`);
+
         // Ignore messages not from the target game bot or from this bot itself
-        if (message.author.id !== TARGET_GAME_BOT_ID) return;
-        if (message.author.id === client.user.id) return;
+        if (message.author.id !== TARGET_GAME_BOT_ID) {
+            console.log(`[Attack Cooldown Notifier - Debug] Ignoring message: Not from target game bot.`);
+            return;
+        }
+        if (message.author.id === client.user.id) {
+            console.log(`[Attack Cooldown Notifier - Debug] Ignoring message: From self.`);
+            return;
+        }
 
         // Only process messages in guilds
-        if (!message.guild) return;
+        if (!message.guild) {
+            console.log(`[Attack Cooldown Notifier - Debug] Ignoring message: Not in a guild.`);
+            return;
+        }
 
         if (!isFirestoreReady) {
             console.warn('Attack Cooldown Notifier: Firestore not ready. Skipping message processing.');
             return;
         }
 
+        // --- Debugging: Log the raw message content ---
+        console.log(`[Attack Cooldown Notifier - Debug] Message Content: \n\`\`\`\n${message.content}\n\`\`\``);
+
         const match = message.content.match(ATTACK_MESSAGE_REGEX);
+        // --- Debugging: Log the regex match result ---
+        console.log(`[Attack Cooldown Notifier - Debug] Regex Match Result:`, match);
+
 
         if (match) {
             const playerId = match[1];
             const enemyType = match[2]; // Captured enemy type
             const weaponName = match[3].toLowerCase(); // Convert to lowercase for map lookup
             const cooldownDuration = WEAPON_COOLDOWNS_MS[weaponName];
+
+            console.log(`[Attack Cooldown Notifier - Debug] Detected attack: Player ID=${playerId}, Enemy=${enemyType}, Weapon=${weaponName}.`);
 
             // --- NEW: Debug Notification to specific channel ---
             const notificationChannel = client.channels.cache.get(NOTIFICATION_CHANNEL_ID);
@@ -159,6 +179,8 @@ module.exports = {
             } catch (error) {
                 console.error(`Attack Cooldown Notifier: Error storing/scheduling cooldown for ${playerId}/${weaponName}:`, error);
             }
+        } else {
+            console.log(`[Attack Cooldown Notifier - Debug] Message did not match regex. Content: "${message.content}"`);
         }
     },
     sendCooldownPing // Export sendCooldownPing for startupChecks
