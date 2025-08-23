@@ -386,7 +386,7 @@ client.on('interactionCreate', async interaction => {
                             explanationContent += `${letter}: ${explanations[letter]}\n`;
                         }
                     });
-                    explanationContent += `\`\`\``;
+                    explanationContent += `\`\```;
 
                     // Fetch the original message to edit its components
                     const originalMessage = interaction.message;
