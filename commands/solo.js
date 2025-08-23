@@ -12,23 +12,21 @@ module.exports = {
         .setDescription('Activates a sticky "mob solo" message in the current channel.'),
 
     async execute(interaction, db, client, APP_ID_FOR_FIRESTORE) {
-        // --- NEW: Very early log to confirm command execution start ---
         console.log(`[Solo Command - Debug] START: Command /solo received by ${interaction.user.tag} in #${interaction.channel.name} (Guild: ${interaction.guild.name}).`);
 
         try {
-            // Acknowledge the interaction immediately to prevent "Interaction Failed"
             await interaction.deferReply({ ephemeral: false }); 
             console.log(`[Solo Command - Debug] Interaction deferred.`);
 
-            // Permissions Check
-            if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-                console.warn(`[Solo Command] User ${interaction.user.tag} tried to use /solo without Manage Channels permission.`);
-                return await interaction.editReply({
-                    content: '❌ You need "Manage Channels" permission to use this command.',
-                    ephemeral: true,
-                });
-            }
-            console.log(`[Solo Command - Debug] User has required permissions.`);
+            // --- REMOVED: Permissions Check for ManageChannels ---
+            // if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+            //     console.warn(`[Solo Command] User ${interaction.user.tag} tried to use /solo without Manage Channels permission.`);
+            //     return await interaction.editReply({
+            //         content: '❌ You need "Manage Channels" permission to use this command.',
+            //         ephemeral: true,
+            //     });
+            // }
+            // console.log(`[Solo Command - Debug] User has required permissions.`); // This log is no longer relevant here
 
 
             if (!db) {
@@ -47,6 +45,21 @@ module.exports = {
 
             const userCooldownDocRef = doc(soloCooldownsRef, userId);
             const channelStickyDocRef = doc(soloStickyMessagesRef, channelId);
+
+            // --- NEW: Check if channel is configured for the bot ---
+            const guildChannelsRef = collection(db, `Guilds/${guildId}/channels`);
+            const channelConfigDocRef = doc(guildChannelsRef, channelId);
+            const channelConfigSnap = await getDoc(channelConfigDocRef);
+
+            if (!channelConfigSnap.exists()) {
+                console.warn(`[Solo Command] Channel ${channelId} is not a configured channel. Command usage denied.`);
+                return await interaction.editReply({
+                    content: '❌ This command can only be used in channels that have been configured for the bot. Please use `/channel-set` first.',
+                    ephemeral: true,
+                });
+            }
+            console.log(`[Solo Command - Debug] Channel ${channelId} is a configured channel.`);
+
 
             // --- Debugging Cooldown/Active Solo Checks ---
             console.log(`[Solo Command - Debug] Checking solo status for channel ${channelId} and user ${userId}.`);
@@ -100,10 +113,8 @@ module.exports = {
 
 
             // --- Get original channel name for MobDetect revert ---
-            const guildChannelsRef = collection(db, `Guilds/${guildId}/channels`);
-            const channelConfigDocRef = doc(guildChannelsRef, channelId);
-            const channelConfigSnap = await getDoc(channelConfigDocRef);
-            const mobChannelOriginalName = channelConfigSnap.exists() ? channelConfigSnap.data().originalChannelName : interaction.channel.name;
+            // This is fetched from the channelConfigSnap now, which we already have.
+            const mobChannelOriginalName = channelConfigSnap.data().originalChannelName;
             console.log(`[Solo Command - Debug] Original channel name for mob revert: \`${mobChannelOriginalName}\``);
 
 
