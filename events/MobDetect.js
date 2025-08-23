@@ -147,7 +147,7 @@ module.exports = {
                 console.log(`[MobDetect - Debug] Revert condition met for channel ${channelId}.`);
 
                 // --- NEW: Always attempt to remove sticky message if revert condition is met ---
-                await removeStickyMessage(db, channelId); // Remove solo sticky message
+                await removeStickyMessage(client, db, channelId); // Pass client to removeStickyMessage
 
                 // Only perform channel rename if it's actually different from original
                 if (originalChannelName && message.channel.name !== originalChannelName) {
