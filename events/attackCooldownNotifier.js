@@ -8,48 +8,48 @@ const NOTIFICATION_CHANNEL_ID = '1329235188907114506'; // Channel to send debug 
 // Weapon cooldown data in milliseconds [HH:MM:SS]
 const WEAPON_COOLDOWNS_MS = {
     // Melee Weapons
-    'bone knife': 9 * 60 * 1000 + 5 * 1000,
+    'bone knife': 15 * 60 * 1000 + 45 * 1000,
     'butcher knife': 21 * 60 * 1000 + 45 * 1000,
     'candy cane': 22 * 60 * 1000 + 9 * 1000,
     'chain saw': 52 * 60 * 1000 + 12 * 1000,
     'long sword': 36 * 60 * 1000 + 2 * 1000,
     'mace': 34 * 60 * 1000 + 3 * 1000,
-    'machete': 24 * 60 * 1000 + 23 * 1000,
-    'pickaxe': 9 * 60 * 1000 + 18 * 1000,
+    'machete': 25 * 60 * 60 * 1000 + 23 * 60 * 1000 + 0 * 1000, // 25 hours 23 minutes
+    'pickaxe': 11 * 60 * 1000 + 38 * 1000,
     'pitchfork': 42 * 60 * 1000 + 32 * 1000,
-    'rock': 7 * 60 * 1000 + 34 * 1000,
-    'salvage cleaver': 19 * 60 * 1000 + 1 * 1000,
-    'salvaged sword': 18 * 60 * 1000 + 43 * 1000,
+    'rock': 9 * 60 * 1000 + 14 * 1000,
+    'salvage cleaver': 21 * 60 * 1000 + 1 * 1000,
+    'salvaged sword': 20 * 60 * 1000 + 43 * 1000,
     'sickle': 34 * 60 * 1000 + 10 * 1000,
     'snowball': 39 * 60 * 1000 + 12 * 1000,
     'stone spear': 29 * 60 * 1000 + 13 * 1000,
-    'wooden spear': 8 * 60 * 1000 + 40 * 1000,
+    'wooden spear': 15 * 60 * 1000 + 20 * 1000,
 
     // Ranged Weapons
-    'bow': 28 * 60 * 1000 + 35 * 1000,
+    'bow': 26 * 60 * 1000 + 55 * 1000,
     'crossbow': 37 * 60 * 1000 + 12 * 1000,
-    'f1 grenade': 31 * 60 * 1000 + 2 * 1000,
-    'flame thrower': 58 * 60 * 1000 + 32 * 1000,
-    'snowball gun': 1 * 60 * 60 * 1000 + 10 * 60 * 1000 + 10 * 1000,
+    'f1 grenade': 39 * 60 * 1000 + 22 * 1000,
+    'flame thrower': 51 * 60 * 1000 + 42 * 1000,
+    'snowball gun': 1 * 60 * 60 * 1000 + 10 * 60 * 1000 + 0 * 1000,
     'waterpipe shotgun': 45 * 60 * 1000 + 32 * 1000,
     'pump shotgun': 57 * 60 * 1000 + 12 * 1000,
-    'spas-12': 1 * 60 * 60 * 1000 + 17 * 60 * 1000 + 42 * 1000,
-    'm92': 45 * 60 * 1000 + 42 * 1000,
+    'spas-12': 1 * 60 * 60 * 1000 + 17 * 60 * 1000 + 0 * 1000,
+    'm92': 38 * 60 * 1000 + 22 * 1000,
     'semi pistol': 35 * 60 * 1000 + 55 * 1000,
     'revolver': 30 * 60 * 1000 + 35 * 1000,
-    'python': 1 * 60 * 60 * 1000 + 8 * 60 * 1000 + 40 * 1000,
-    'mp5': 1 * 60 * 60 * 1000 + 6 * 60 * 1000 + 35 * 1000,
+    'python': 1 * 60 * 60 * 1000 + 8 * 60 * 1000 + 0 * 1000,
+    'mp5': 1 * 60 * 60 * 1000 + 6 * 60 * 1000 + 0 * 1000,
     'thompson': 52 * 60 * 1000 + 47 * 1000,
     'custom smg': 48 * 60 * 1000 + 4 * 1000,
-    'semi rifle': 1 * 60 * 60 * 1000 + 5 * 60 * 1000 + 30 * 1000,
-    'm39 rifle': 1 * 60 * 60 * 1000 + 12 * 60 * 1000 + 28 * 1000,
-    'lr-300': 1 * 60 * 60 * 1000 + 10 * 60 * 1000 + 50 * 1000,
-    'm249': 2 * 60 * 60 * 1000 + 10 * 60 * 1000,
-    'bolt rifle': 2 * 60 * 60 * 1000 + 1 * 60 * 1000,
-    'assault rifle': 1 * 60 * 60 * 1000 + 16 * 60 * 1000,
-    'l96': 3 * 60 * 60 * 1000 + 37 * 60 * 1000 + 45 * 1000,
-    'grenade launcher': 1 * 60 * 60 * 1000 + 34 * 60 * 1000 + 15 * 1000,
-    'rocket launcher': 2 * 60 * 60 * 1000 + 24 * 60 * 1000 + 40 * 1000,
+    'semi rifle': 1 * 60 * 60 * 1000 + 5 * 60 * 1000 + 0 * 1000,
+    'm39 rifle': 1 * 60 * 60 * 1000 + 12 * 60 * 1000 + 0 * 1000,
+    'lr-300': 1 * 60 * 60 * 1000 + 10 * 60 * 1000 + 0 * 1000,
+    'm249': 2 * 60 * 60 * 1000 + 10 * 60 * 1000 + 0 * 1000,
+    'bolt rifle': 2 * 60 * 60 * 1000 + 1 * 60 * 1000 + 0 * 1000,
+    'assault rifle': 1 * 60 * 60 * 1000 + 16 * 60 * 1000 + 0 * 1000,
+    'l96': 3 * 60 * 60 * 1000 + 37 * 60 * 1000 + 0 * 1000,
+    'grenade launcher': 1 * 60 * 60 * 1000 + 45 * 60 * 1000 + 0 * 1000,
+    'rocket launcher': 2 * 60 * 60 * 1000 + 24 * 60 * 1000 + 0 * 1000,
 };
 
 // Regex to capture player ID, enemy type, and weapon name
@@ -146,7 +146,7 @@ module.exports = {
             } else {
                 console.warn(`Attack Cooldown Notifier: Debug notification channel with ID ${NOTIFICATION_CHANNEL_ID} not found or not a text channel.`);
             }
-            // --- END NEW Debug Notification ---
+            // --- END Debug Notification ---
 
             const cooldownDuration = WEAPON_COOLDOWNS_MS[weaponName];
 
