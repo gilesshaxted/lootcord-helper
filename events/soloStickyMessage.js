@@ -27,15 +27,13 @@ module.exports = {
             if (channelStickySnap.exists()) {
                 const stickyData = channelStickySnap.data();
                 if (stickyData.isActive && stickyData.stickyMessageId) {
-                    // Check if the message being processed is NOT the sticky message itself
-                    // and if the sticky message is still valid (not expired)
                     const now = Date.now();
                     if (message.id !== stickyData.stickyMessageId && stickyData.expirationTimestamp > now) {
                         console.log(`Solo Sticky Message Listener: New message detected in solo channel #${message.channel.name}. Reposting sticky.`);
-                        await repostStickyMessage(client, db, stickyData);
+                        await repostStickyMessage(client, db, stickyData); // NEW: Pass client
                     } else if (stickyData.expirationTimestamp <= now) {
                         console.log(`Solo Sticky Message Listener: Sticky message in #${message.channel.name} expired. Removing.`);
-                        await removeStickyMessage(db, channelId);
+                        await removeStickyMessage(client, db, channelId); // NEW: Pass client
                     }
                 }
             }
