@@ -9,7 +9,7 @@ const fs = require('fs');
 // Import Firebase modules
 const { initializeApp } = require('firebase/app');
 const { getAuth, signInAnonymously, onAuthStateChanged } = require('firebase/auth');
-const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, getDoc, query, where } = require('firebase/firestore'); // Added query, where
+const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, getDoc, query, where } = require('firebase/firestore');
 
 // Import Utilities
 const statsTracker = require('./utils/statsTracker');
@@ -17,7 +17,7 @@ const botStatus = require('./utils/botStatus');
 const paginationHelpers = require('./utils/pagination');
 const startupChecks = require('./utils/startupChecks');
 const wordleHelpers = require('./utils/wordleHelpers');
-const stickyMessageManager = require('./utils/stickyMessageManager'); // Import stickyMessageManager
+const stickyMessageManager = require('./utils/stickyMessageManager');
 const { sendCooldownPing } = require('./events/attackCooldownNotifier'); // Import sendCooldownPing for startup rescheduling
 
 // Load environment variables from a custom .env file
@@ -248,6 +248,40 @@ client.once('ready', async () => {
     }, 300000); // Every 5 minutes
 
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
+
+    // --- Reschedule active attack cooldown pings on startup ---
+    const activeCooldownsRef = collection(db, `ActiveAttackCooldowns`);
+    try {
+        const querySnapshot = await getDocs(activeCooldownsRef);
+        const now = Date.now();
+        let rescheduledCount = 0;
+        for (const docSnap of querySnapshot.docs) {
+            const cooldownData = docSnap.data();
+            const cooldownDocId = docSnap.id;
+            const delay = cooldownData.cooldownEndsAt - now;
+
+            if (delay > 0) {
+                setTimeout(() => {
+                    // Pass APP_ID_FOR_FIRESTORE to sendCooldownPing
+                    sendCooldownPing(client, db, cooldownData.userId, cooldownData.channelId, cooldownData.weapon, cooldownDocId, APP_ID_FOR_FIRESTORE);
+                }, delay);
+                rescheduledCount++;
+            } else {
+                // Cooldown already passed, ping immediately if not already pinged
+                if (!cooldownData.pinged) {
+                    // Pass APP_ID_FOR_FIRESTORE to sendCooldownPing
+                    sendCooldownPing(client, db, cooldownData.userId, cooldownData.channelId, cooldownData.weapon, cooldownDocId, APP_ID_FOR_FIRESTORE);
+                } else {
+                    // If already pinged, just remove the entry if it somehow persisted
+                    await deleteDoc(doc(activeCooldownsRef, cooldownDocId));
+                    console.log(`Attack Cooldown Notifier: Removed stale cooldown entry ${cooldownDocId} on startup.`);
+                }
+            }
+        }
+        console.log(`Attack Cooldown Notifier: Rescheduled ${rescheduledCount} active cooldowns on startup.`);
+    } catch (error) {
+        console.error('Attack Cooldown Notifier: Error rescheduling cooldowns on startup:', error);
+    }
 
     // Start cleanup for expired sticky messages every 10 minutes
     setInterval(() => stickyMessageManager.cleanupExpiredStickyMessages(db, client), 10 * 60 * 1000); // Every 10 minutes
