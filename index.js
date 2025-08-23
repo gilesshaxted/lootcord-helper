@@ -363,6 +363,48 @@ client.on('interactionCreate', async interaction => {
 
             const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage);
             await interaction.editReply({ content, components, ephemeral: false });
+        } else if (interaction.customId.startsWith('toggle_attack_notifications')) { // Handle toggle_attack_notifications button
+            console.log(`[Notify Button - Debug] Button click received by ${interaction.user.tag} for customId: ${interaction.customId}`);
+            await interaction.deferUpdate(); // Acknowledge button click immediately
+
+            const userId = interaction.user.id;
+            const userPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'attackCooldown');
+
+            try {
+                const prefSnap = await getDoc(userPrefsRef);
+                const currentEnabledState = prefSnap.exists() ? prefSnap.data().enabled : false;
+                const newEnabledState = !currentEnabledState;
+
+                await setDoc(userPrefsRef, { enabled: newEnabledState }, { merge: true });
+                console.log(`[Notify Button] User ${userId} toggled attack cooldown notifications to: ${newEnabledState}`);
+
+                // Re-create the embed and button to reflect the new state
+                const embed = new EmbedBuilder()
+                    .setColor(0x0099ff)
+                    .setTitle('Lootcord Helper Notifications')
+                    .setDescription(
+                        `Here you can manage your personal notification settings for Lootcord Helper.\n\n` +
+                        `**Attack Cooldown Notifications:**\n` +
+                        `Status: **${newEnabledState ? 'ON ✅' : 'OFF ❌'}**\n` +
+                        `You'll be pinged when your weapon cooldowns are over.`
+                    )
+                    .setFooter({ text: 'Use the buttons to toggle your notifications.' });
+
+                const attackButton = new ButtonBuilder()
+                    .setCustomId('toggle_attack_notifications')
+                    .setLabel('Toggle Attack Cooldowns')
+                    .setStyle(newEnabledState ? ButtonStyle.Success : ButtonStyle.Danger);
+
+                const row = new ActionRowBuilder().addComponents(attackButton);
+
+                // Edit the original message with the updated embed and button state
+                await interaction.editReply({ embeds: [embed], components: [row] });
+                console.log(`[Notify Button] Updated original message with new notification status for ${userId}.`);
+
+            } catch (error) {
+                console.error(`[Notify Button] Error toggling notification preference for ${userId}:`, error);
+                await interaction.followUp({ content: '❌ An error occurred while updating your notification settings. Please check logs.', ephemeral: true });
+            }
         } else if (interaction.customId.startsWith('show_trivia_explanation_')) { // Handle trivia explanation button
             await interaction.deferUpdate(); // Acknowledge button click
 
@@ -386,7 +428,7 @@ client.on('interactionCreate', async interaction => {
                             explanationContent += `${letter}: ${explanations[letter]}\n`;
                         }
                     });
-                    explanationContent += `\`\```;
+                    explanationContent += `\`\`\``;
 
                     // Fetch the original message to edit its components
                     const originalMessage = interaction.message;
