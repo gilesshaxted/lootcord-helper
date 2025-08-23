@@ -52,9 +52,9 @@ const WEAPON_COOLDOWNS_MS = {
     'rocket launcher': 2 * 60 * 60 * 1000 + 24 * 60 * 1000 + 40 * 1000,
 };
 
-// --- UPDATED REGEX: More robust to capture player ID, enemy type, and weapon name ---
-// It now correctly handles the initial emoji and the full Discord emoji format for the weapon.
-const ATTACK_MESSAGE_REGEX = /^(?:<a?:.+?:\d+>|\S+)\s+\*\*<@(\d+)>\*\* hit the \*\*(.*?)\*\* for \*\*(\d+)\*\* damage using their\s+<a?:.+?:\d+>\s+`([^`]+)`/;
+// --- UPDATED REGEX: Made damage part non-capturing ---
+// Captures: 1: Player ID, 2: Enemy Type, 3: Weapon Name
+const ATTACK_MESSAGE_REGEX = /^(?:<a?:.+?:\d+>|\S+)\s+\*\*<@(\d+)>\*\* hit the \*\*(.*?)\*\* for \*\*(?:\d+)\*\* damage using their\s+<a?:.+?:\d+>\s+`([^`]+)`/;
 
 
 /**
@@ -78,8 +78,8 @@ async function sendCooldownPing(client, db, userId, channelId, weapon, cooldownD
     try {
         await channel.send(`<@${userId}> your **${weapon}** attack cooldown is over!`);
         console.log(`Attack Cooldown Notifier: Sent cooldown ping to ${userId} for ${weapon} in #${channel.name}.`);
-        statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Use APP_ID_FOR_FIRESTORE
-        await deleteDoc(doc(collection(db, `ActiveAttackCooldowns`), cooldownDocId)); // Remove from Firestore after pinging
+        statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
+        await deleteDoc(doc(collection(db, `ActiveAttackCooldowns`), cooldownDocId));
         console.log(`Attack Cooldown Notifier: Removed cooldown entry ${cooldownDocId} from Firestore.`);
     } catch (error) {
         console.error(`Attack Cooldown Notifier: Failed to send cooldown ping in #${channel.name} for ${userId}/${weapon}:`, error);
@@ -90,10 +90,8 @@ module.exports = {
     name: 'messageCreate',
     once: false,
     async execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
-        // --- NEW: Very early log to confirm listener is active and receiving messages ---
         console.log(`[Attack Cooldown Notifier - Debug] Listener active. Message received from ${message.author.tag} (ID: ${message.author.id}) in #${message.channel.name}.`);
 
-        // Ignore messages not from the target game bot or from this bot itself
         if (message.author.id !== TARGET_GAME_BOT_ID) {
             console.log(`[Attack Cooldown Notifier - Debug] Ignoring message: Not from target game bot.`);
             return;
@@ -103,7 +101,6 @@ module.exports = {
             return;
         }
 
-        // Only process messages in guilds
         if (!message.guild) {
             console.log(`[Attack Cooldown Notifier - Debug] Ignoring message: Not in a guild.`);
             return;
@@ -114,23 +111,20 @@ module.exports = {
             return;
         }
 
-        // --- Debugging: Log the raw message content ---
         console.log(`[Attack Cooldown Notifier - Debug] Message Content: \n\`\`\`\n${message.content}\n\`\`\``);
 
         const match = message.content.match(ATTACK_MESSAGE_REGEX);
-        // --- Debugging: Log the regex match result ---
         console.log(`[Attack Cooldown Notifier - Debug] Regex Match Result:`, match);
 
 
         if (match) {
             const playerId = match[1];
-            const enemyType = match[2]; // Captured enemy type
-            const weaponName = match[3].toLowerCase(); // Captured weapon name, convert to lowercase for map lookup
-            const cooldownDuration = WEAPON_COOLDOWNS_MS[weaponName];
+            const enemyType = match[2];
+            const weaponName = match[3].toLowerCase(); // This will now correctly be the weapon name
 
             console.log(`[Attack Cooldown Notifier - Debug] Detected attack: Player ID=${playerId}, Enemy=${enemyType}, Weapon=${weaponName}.`);
 
-            // --- NEW: Debug Notification to specific channel ---
+            // --- Debug Notification to specific channel ---
             const notificationChannel = client.channels.cache.get(NOTIFICATION_CHANNEL_ID);
             if (notificationChannel && notificationChannel.isTextBased()) {
                 try {
@@ -142,7 +136,9 @@ module.exports = {
             } else {
                 console.warn(`Attack Cooldown Notifier: Debug notification channel with ID ${NOTIFICATION_CHANNEL_ID} not found or not a text channel.`);
             }
-            // --- END NEW Debug Notification ---
+            // --- END Debug Notification ---
+
+            const cooldownDuration = WEAPON_COOLDOWNS_MS[weaponName];
 
             if (cooldownDuration === undefined) {
                 console.log(`Attack Cooldown Notifier: Unknown weapon "${weaponName}" used. No cooldown to track.`);
@@ -150,7 +146,7 @@ module.exports = {
             }
 
             const cooldownEndsAt = Date.now() + cooldownDuration;
-            const cooldownDocId = `${playerId}_${message.channel.id}`; // Unique ID for this cooldown
+            const cooldownDocId = `${playerId}_${message.channel.id}`;
 
             const activeCooldownsRef = collection(db, `ActiveAttackCooldowns`);
             const cooldownDocRef = doc(activeCooldownsRef, cooldownDocId);
@@ -163,21 +159,19 @@ module.exports = {
                     cooldownEndsAt: cooldownEndsAt,
                     originalMessageId: message.id,
                     guildId: message.guild.id,
-                    pinged: false // Track if ping has been sent
+                    pinged: false
                 });
                 console.log(`Attack Cooldown Notifier: Stored cooldown for ${playerId} (${weaponName}) in #${message.channel.id}. Ends at ${new Date(cooldownEndsAt).toLocaleString()}.`);
 
-                // Schedule the ping
                 const delay = cooldownEndsAt - Date.now();
                 if (delay > 0) {
                     setTimeout(() => {
-                        sendCooldownPing(client, db, playerId, message.channel.id, weaponName, cooldownDocId, APP_ID_FOR_FIRESTORE); // Pass APP_ID_FOR_FIRESTORE
+                        sendCooldownPing(client, db, playerId, message.channel.id, weaponName, cooldownDocId, APP_ID_FOR_FIRESTORE);
                     }, delay);
                 } else {
-                    // Cooldown already over (e.g., bot restarted, or very short cooldown)
-                    sendCooldownPing(client, db, playerId, message.channel.id, weaponName, cooldownDocId, APP_ID_FOR_FIRESTORE); // Pass APP_ID_FOR_FIRESTORE
+                    sendCooldownPing(client, db, playerId, message.channel.id, weaponName, cooldownDocId, APP_ID_FOR_FIRESTORE);
                 }
-                statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment help for tracking cooldown
+                statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
             } catch (error) {
                 console.error(`Attack Cooldown Notifier: Error storing/scheduling cooldown for ${playerId}/${weaponName}:`, error);
             }
