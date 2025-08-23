@@ -53,17 +53,17 @@ module.exports = {
         const currentChannelData = storedChannels[channelId];
         const originalChannelName = currentChannelData.originalChannelName;
 
-        // console.log(`\n--- [MobDetect - Debug] Processing Message for Channel Renaming/Revert ---`); // Too verbose
-        // console.log(`Message from: ${message.author.tag} (ID: ${message.author.id})`);
-        // console.log(`Channel: #${message.channel.name} (ID: ${channelId})`);
-        // console.log(`Original Stored Name: \`${originalChannelName}\``);
-        // console.log(`Current Channel Name: \`${message.channel.name}\``);
-        // console.log(`Message Content: \n\`\`\`\n${message.content || 'N/A'}\n\`\`\``);
-        // if (message.embeds.length > 0) {
-        //     console.log(`Embed Title: \`${message.embeds[0].title || 'N/A'}\``);
-        //     console.log(`Embed Description: \n\`\`\`\n${message.embeds[0].description || 'N/A'}\n\`\`\``);
-        // }
-        // console.log(`--- End MobDetect Message Debug ---\n`);
+        console.log(`\n--- [MobDetect - Debug] Processing Message for Channel Renaming/Revert ---`);
+        console.log(`Message from: ${message.author.tag} (ID: ${message.author.id})`);
+        console.log(`Channel: #${message.channel.name} (ID: ${channelId})`);
+        console.log(`Original Stored Name: \`${originalChannelName}\``);
+        console.log(`Current Channel Name: \`${message.channel.name}\``);
+        console.log(`Message Content: \n\`\`\`\n${message.content || 'N/A'}\n\`\`\``);
+        if (message.embeds.length > 0) {
+            console.log(`Embed Title: \`${message.embeds[0].title || 'N/A'}\``);
+            console.log(`Embed Description: \n\`\`\`\n${message.embeds[0].description || 'N/A'}\n\`\`\``);
+        }
+        console.log(`--- End MobDetect Message Debug ---\n`);
 
         // --- Role Pinging Logic (ONLY if 'An enemy has spawned...' is in content) ---
         if (message.content.includes('An enemy has spawned...') && message.embeds.length > 0) {
@@ -128,30 +128,33 @@ module.exports = {
         }
 
         // --- Logic for Reverting to original name (triggered by Mob Kill/Leave) ---
-        // This block will execute if the channel was NOT renamed in the current message
-        // and a revert condition is met.
-        if (!renamedThisTurn && (message.embeds.length > 0 || message.content)) {
+        // This block will execute if a revert condition is met.
+        if (message.embeds.length > 0 || message.content) { // Check if there's content or embed to analyze
             const embed = message.embeds.length > 0 ? message.embeds[0] : null;
 
             // Condition 1: Embed title includes 'left...'
             const embedTitleRevert = embed && embed.title && embed.title.includes('left...');
             
-            // Condition 2: Message content or embed description contains ":deth:" and "DIED!"
+            // Condition 2: Message content contains ":deth:" and "DIED!"
             const contentDiedRevert = message.content.includes(':deth:') && message.content.includes('DIED!');
             const embedDescriptionDiedRevert = embed && embed.description && embed.description.includes(':deth:') && embed.description.includes('DIED!');
 
             const revertCondition = embedTitleRevert || contentDiedRevert || embedDescriptionDiedRevert;
 
-            // console.log(`[MobDetect - Debug] Revert Conditions: embedTitleRevert=${embedTitleRevert}, contentDiedRevert=${contentDiedRevert}, embedDescriptionDiedRevert=${embedDescriptionDiedRevert}`); // Too verbose
+            console.log(`[MobDetect - Debug] Revert Conditions: embedTitleRevert=${embedTitleRevert}, contentDiedRevert=${contentDiedRevert}, embedDescriptionDiedRevert=${embedDescriptionDiedRevert}`);
             
             if (revertCondition) {
+                console.log(`[MobDetect - Debug] Revert condition met for channel ${channelId}.`);
+
+                // --- NEW: Always attempt to remove sticky message if revert condition is met ---
+                await removeStickyMessage(db, channelId); // Remove solo sticky message
+
+                // Only perform channel rename if it's actually different from original
                 if (originalChannelName && message.channel.name !== originalChannelName) {
                     try {
                         await message.channel.setName(originalChannelName, 'Automated revert to original name.');
                         console.log(`MobDetect: Reverted channel ${message.channel.name} to ${originalChannelName} in guild ${message.guild.name}`);
                         statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
-                        // --- NEW: Remove sticky message when channel reverts ---
-                        await removeStickyMessage(db, channelId); // Remove solo sticky message
                     } catch (error) {
                         console.error(`MobDetect: Failed to revert channel ${message.channel.name} to original name:`, error);
                         if (error.code === 50013) { // Missing Permissions
@@ -159,10 +162,10 @@ module.exports = {
                         }
                     }
                 } else {
-                    // console.log(`[MobDetect - Debug] Revert condition met, but channel name is already original or original name is missing.`); // Too verbose
+                    console.log(`[MobDetect - Debug] Revert condition met, but channel name is already original or original name is missing. No channel rename needed.`);
                 }
             } else {
-                // console.log(`[MobDetect - Debug] No revert condition met for this message.`); // Too verbose
+                console.log(`[MobDetect - Debug] No revert condition met for this message.`);
             }
         }
     },
