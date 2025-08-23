@@ -52,10 +52,8 @@ const WEAPON_COOLDOWNS_MS = {
     'rocket launcher': 2 * 60 * 60 * 1000 + 24 * 60 * 1000 + 40 * 1000,
 };
 
-// --- UPDATED REGEX: Made damage part non-capturing ---
-// Captures: 1: Player ID, 2: Enemy Type, 3: Weapon Name
+// Regex to capture player ID, enemy type, and weapon name
 const ATTACK_MESSAGE_REGEX = /^(?:<a?:.+?:\d+>|\S+)\s+\*\*<@(\d+)>\*\* hit the \*\*(.*?)\*\* for \*\*(?:\d+)\*\* damage using their\s+<a?:.+?:\d+>\s+`([^`]+)`/;
-
 
 /**
  * Pings a user when their attack cooldown is over.
@@ -68,6 +66,18 @@ const ATTACK_MESSAGE_REGEX = /^(?:<a?:.+?:\d+>|\S+)\s+\*\*<@(\d+)>\*\* hit the \
  * @param {string} APP_ID_FOR_FIRESTORE The application ID for Firestore path.
  */
 async function sendCooldownPing(client, db, userId, channelId, weapon, cooldownDocId, APP_ID_FOR_FIRESTORE) {
+    // --- NEW: Check user's notification preference before sending ping ---
+    const userPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'attackCooldown');
+    const prefSnap = await getDoc(userPrefsRef);
+    const isAttackCooldownEnabled = prefSnap.exists() ? prefSnap.data().enabled : false; // Default to off
+
+    if (!isAttackCooldownEnabled) {
+        console.log(`Attack Cooldown Notifier: User ${userId} has opted out of attack cooldown pings. Not sending.`);
+        await deleteDoc(doc(collection(db, `ActiveAttackCooldowns`), cooldownDocId)); // Still remove from Firestore
+        return;
+    }
+    // --- END NEW Check ---
+
     const channel = client.channels.cache.get(channelId);
     if (!channel || !channel.isTextBased()) {
         console.warn(`Attack Cooldown Notifier: Channel ${channelId} not found or not text-based for ping. Removing cooldown entry.`);
@@ -79,7 +89,7 @@ async function sendCooldownPing(client, db, userId, channelId, weapon, cooldownD
         await channel.send(`<@${userId}> your **${weapon}** attack cooldown is over!`);
         console.log(`Attack Cooldown Notifier: Sent cooldown ping to ${userId} for ${weapon} in #${channel.name}.`);
         statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
-        await deleteDoc(doc(collection(db, `ActiveAttackCooldowns`), cooldownDocId));
+        await deleteDoc(doc(collection(db, `ActiveAttackCooldowns`), cooldownDocId)); // Remove from Firestore after pinging
         console.log(`Attack Cooldown Notifier: Removed cooldown entry ${cooldownDocId} from Firestore.`);
     } catch (error) {
         console.error(`Attack Cooldown Notifier: Failed to send cooldown ping in #${channel.name} for ${userId}/${weapon}:`, error);
@@ -120,7 +130,7 @@ module.exports = {
         if (match) {
             const playerId = match[1];
             const enemyType = match[2];
-            const weaponName = match[3].toLowerCase(); // This will now correctly be the weapon name
+            const weaponName = match[3].toLowerCase();
 
             console.log(`[Attack Cooldown Notifier - Debug] Detected attack: Player ID=${playerId}, Enemy=${enemyType}, Weapon=${weaponName}.`);
 
@@ -136,7 +146,7 @@ module.exports = {
             } else {
                 console.warn(`Attack Cooldown Notifier: Debug notification channel with ID ${NOTIFICATION_CHANNEL_ID} not found or not a text channel.`);
             }
-            // --- END Debug Notification ---
+            // --- END NEW Debug Notification ---
 
             const cooldownDuration = WEAPON_COOLDOWNS_MS[weaponName];
 
