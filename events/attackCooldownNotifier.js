@@ -52,8 +52,10 @@ const WEAPON_COOLDOWNS_MS = {
     'rocket launcher': 2 * 60 * 60 * 1000 + 24 * 60 * 1000 + 40 * 1000,
 };
 
-// --- UPDATED REGEX: To capture player ID, enemy type, and weapon name ---
-const ATTACK_MESSAGE_REGEX = /^\S+\s+<@(\d+)>\s+hit the\s+\*\*(.*?)\*\*.*using their\s+:\S+:\s+`([^`]+)`/;
+// --- UPDATED REGEX: More robust to capture player ID, enemy type, and weapon name ---
+// It now correctly handles the initial emoji and the full Discord emoji format for the weapon.
+const ATTACK_MESSAGE_REGEX = /^(?:<a?:.+?:\d+>|\S+)\s+\*\*<@(\d+)>\*\* hit the \*\*(.*?)\*\* for \*\*(\d+)\*\* damage using their\s+<a?:.+?:\d+>\s+`([^`]+)`/;
+
 
 /**
  * Pings a user when their attack cooldown is over.
@@ -123,7 +125,7 @@ module.exports = {
         if (match) {
             const playerId = match[1];
             const enemyType = match[2]; // Captured enemy type
-            const weaponName = match[3].toLowerCase(); // Convert to lowercase for map lookup
+            const weaponName = match[3].toLowerCase(); // Captured weapon name, convert to lowercase for map lookup
             const cooldownDuration = WEAPON_COOLDOWNS_MS[weaponName];
 
             console.log(`[Attack Cooldown Notifier - Debug] Detected attack: Player ID=${playerId}, Enemy=${enemyType}, Weapon=${weaponName}.`);
