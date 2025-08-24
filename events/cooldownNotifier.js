@@ -32,7 +32,7 @@ const COOLDOWN_DURATIONS_MS = {
     'crossbow': 37 * 60 * 1000 + 12 * 1000,
     'f1 grenade': 39 * 60 * 1000 + 22 * 1000,
     'flame thrower': 51 * 60 * 1000 + 42 * 1000,
-    'snowball gun': 1 * 60 * 60 * 1000 + 10 * 60 * 1000 + 10 * 1000,
+    'snowball gun': 1 * 60 * 60 * 1000 + 10 * 60 * 1000 + 0 * 1000,
     'waterpipe shotgun': 45 * 60 * 1000 + 32 * 1000,
     'pump shotgun': 57 * 60 * 1000 + 12 * 1000,
     'spas-12': 1 * 60 * 60 * 1000 + 17 * 60 * 1000 + 0 * 1000,
@@ -74,13 +74,12 @@ const COOLDOWN_DURATIONS_MS = {
 // Regex to capture player ID, enemy type, and weapon name for attack messages
 const ATTACK_MESSAGE_REGEX = /^(?:<a?:.+?:\d+>|\S+)\s+\*\*<@(\d+)>\*\* hit the \*\*(.*?)\*\* for \*\*(?:\d+)\*\* damage using their\s+<a?:.+?:\d+>\s+`([^`]+)`/;
 
-// Regex to capture player ID for farm messages
-const FARM_MESSAGE_REGEX = /^You decide to\s+(?:scavenge for loot|go :axe: chop some trees|go :pick: mining).*<@(\d+)>/;
+// --- UPDATED FARM_MESSAGE_REGEX: Removed player ID capture, now uses message.author.id ---
+const FARM_MESSAGE_REGEX = /^You decide to\s+(?:scavenge for loot|go :axe: chop some trees|go :pick: mining).*and (?:find|receive|bring back).*`([^`]+)`!/;
 
-// --- UPDATED MED_MESSAGE_REGEX: To correctly capture med item name ---
-// Captures: 1: Med Item Name (e.g., 'bandage', 'medical syringe', 'large medkit')
-// Player ID is derived from message.author.id as it's not in the message content itself.
-const MED_MESSAGE_REGEX = /^You use your\s+<a?:.+?:\d+>\s+`([^`]+)` to heal for \*\*(?:\d+)\*\* health! You now have/;
+
+// Regex to capture player ID and med type for med messages
+const MED_MESSAGE_REGEX = /^You use your\s+<a?:.+?:\d+>\s+`([^`]+)` to heal for \*\*(?:\d+)\*\* health! You now have.*<@(\d+)>/;
 
 // Regex to capture player ID for vote messages
 const VOTE_MESSAGE_REGEX = /^\S+\s+\*\*<@(\d+)>\*\* received rewards for voting!/;
@@ -208,8 +207,9 @@ module.exports = {
         // --- Attempt to match Farm Message (only if not an attack message) ---
         const farmMatch = message.content.match(FARM_MESSAGE_REGEX);
         if (farmMatch && !attackMatch) { // Only process as farm if not already an attack message
-            playerId = farmMatch[1]; // Player ID is captured in farm regex
-            item = 'farming'; // Generic item for farming cooldown
+            // Player ID is message.author.id (the bot that sent the message)
+            playerId = message.author.id; // Correctly get player ID from message.author.id
+            item = farmMatch[1].toLowerCase(); // Captured item name (e.g., 'crate', 'wood', 'metal', 'stone', 'high quality metal')
             cooldownType = 'farm';
             cooldownDuration = COOLDOWN_DURATIONS_MS['farming'];
             console.log(`[Cooldown Notifier - Debug] Farm Regex Match Result:`, farmMatch);
@@ -221,8 +221,7 @@ module.exports = {
         const medMatch = message.content.match(MED_MESSAGE_REGEX);
         if (medMatch && !attackMatch && !farmMatch) {
             item = medMatch[1].toLowerCase(); // Med item name
-            // Player ID is message.author.id (the bot that sent the message)
-            playerId = message.author.id; // Correctly get player ID from message.author.id
+            playerId = medMatch[2]; // Player ID is captured in med regex
             cooldownType = 'med';
             cooldownDuration = COOLDOWN_DURATIONS_MS[item];
             console.log(`[Cooldown Notifier - Debug] Med Regex Match Result:`, medMatch);
