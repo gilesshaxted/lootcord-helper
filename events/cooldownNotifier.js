@@ -4,7 +4,7 @@ const statsTracker = require('../utils/statsTracker');
 // --- Configuration ---
 const TARGET_GAME_BOT_ID = '493316754689359874'; // User ID of the game bot that sends attack/farm/med/vote/repair messages
 const NOTIFICATION_CHANNEL_ID = '1329235188907114506'; // Channel to send debug notifications
-const COOLDOWN_DEBUG_CHANNEL_ID = '1307628841799254026'; // NEW: Channel to send detailed cooldown debug info
+const COOLDOWN_DEBUG_CHANNEL_ID = '1307628841799254026'; // Channel to send detailed cooldown debug info
 
 
 // Cooldown data in milliseconds [HH:MM:SS]
@@ -83,8 +83,9 @@ const MED_MESSAGE_REGEX = /^You use your\s+<a?:.+?:\d+>\s+`([^`]+)` to heal for 
 // Regex to capture player ID for vote messages
 const VOTE_MESSAGE_REGEX = /^\S+\s+\*\*<@(\d+)>\*\* received rewards for voting!/;
 
-// Regex to capture player ID and repair item for clan repair messages
-const REPAIR_MESSAGE_REGEX = /:white_check_mark: You used 1x\s+<a?:.+?:\d+>\s+`([^`]+)` to repair the clan!.*The clan can be repaired again in (?:\d+ (?:minute|hour)s?\.?)/s;
+// --- UPDATED REGEX: To capture repair item and match the correct emoji ---
+// Captures: 1: Repair Item (e.g., 'metal'), Player ID is from message.author.id
+const REPAIR_MESSAGE_REGEX = /^✅ You used 1x\s+<a?:.+?:\d+>\s+`([^`]+)` to repair the clan!/s;
 
 
 /**
@@ -189,7 +190,7 @@ module.exports = {
         let item = null;
         let cooldownType = null;
         let cooldownDuration = undefined;
-        let debugMessage = ''; // NEW: For detailed debug message
+        let debugMessage = ''; // For detailed debug message
 
         // --- Attempt to match Attack Message ---
         const attackMatch = message.content.match(ATTACK_MESSAGE_REGEX);
@@ -244,22 +245,17 @@ module.exports = {
             }
         }
 
-        // --- NEW: Attempt to match Repair Message (only if not attack, farm, med, or vote) ---
+        // --- Attempt to match Repair Message (only if not attack, farm, med, or vote) ---
         const repairMatch = message.content.match(REPAIR_MESSAGE_REGEX);
         if (repairMatch && !attackMatch && !farmMatch && !medMatch && !voteMatch) {
             item = repairMatch[1].toLowerCase(); // Repair item name (wood, stone, metal, high quality metal)
-            // The player ID for repair is not directly in the regex, need to extract from message.content
-            const repairPlayerIdMatch = message.content.match(/<@(\d+)>/);
-            if (repairPlayerIdMatch && repairPlayerIdMatch[1]) {
-                playerId = repairPlayerIdMatch[1];
-                cooldownType = 'repair';
-                cooldownDuration = COOLDOWN_DURATIONS_MS[item];
-                console.log(`[Cooldown Notifier - Debug] Repair Regex Match Result:`, repairMatch);
-                console.log(`[Cooldown Notifier - Debug] Detected repair: Player ID=${playerId}, Item=${item}.`);
-                debugMessage = `Cooldown Type: Repair - User: <@${playerId}> - Item: ${item} - Cooldown: ${cooldownDuration / 60000} mins`;
-            } else {
-                console.warn(`[Cooldown Notifier - Debug] Repair message found, but player ID not found in content.`);
-            }
+            // The player ID for repair is not directly in the regex, so we use message.author.id
+            playerId = message.author.id; // Player who sent the message is the one who repaired
+            cooldownType = 'repair';
+            cooldownDuration = COOLDOWN_DURATIONS_MS[item];
+            console.log(`[Cooldown Notifier - Debug] Repair Regex Match Result:`, repairMatch);
+            console.log(`[Cooldown Notifier - Debug] Detected repair: Player ID=${playerId}, Item=${item}.`);
+            debugMessage = `Cooldown Type: Repair - User: <@${playerId}> - Item: ${item} - Cooldown: ${cooldownDuration / 60000} mins`;
         }
 
 
