@@ -18,7 +18,7 @@ const paginationHelpers = require('./utils/pagination');
 const startupChecks = require('./utils/startupChecks');
 const wordleHelpers = require('./utils/wordleHelpers');
 const stickyMessageManager = require('./utils/stickyMessageManager');
-const { sendCooldownPing } = require('./events/attackCooldownNotifier'); // Import sendCooldownPing for startup rescheduling
+const { sendCooldownPing } = require('./events/cooldownNotifier'); // UPDATED: Corrected import path
 
 // Load environment variables from a custom .env file
 // Assumes lootcord-helper.env is in the same directory as index.js
@@ -384,7 +384,7 @@ client.on('interactionCreate', async interaction => {
                 const isFarmCooldownEnabled = farmPrefSnap.exists() ? farmPrefSnap.data().enabled : false;
 
                 // Re-create the embed and buttons to reflect the new state
-                const embed = new EmbedBuilder()
+                const embed = new EmbedBuilder() // EmbedBuilder is now defined
                     .setColor(0x0099ff)
                     .setTitle('Lootcord Helper Notifications')
                     .setDescription(
