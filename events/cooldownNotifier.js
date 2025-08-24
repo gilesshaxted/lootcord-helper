@@ -2,7 +2,7 @@ const { collection, doc, setDoc, getDoc, updateDoc, deleteDoc } = require('fireb
 const statsTracker = require('../utils/statsTracker');
 
 // --- Configuration ---
-const TARGET_GAME_BOT_ID = '493316754689359874'; // User ID of the game bot that sends attack/farm/med messages
+const TARGET_GAME_BOT_ID = '493316754689359874'; // User ID of the game bot that sends attack/farm/med/vote messages
 const NOTIFICATION_CHANNEL_ID = '1329235188907114506'; // Channel to send debug notifications
 
 // Cooldown data in milliseconds [HH:MM:SS]
@@ -30,7 +30,7 @@ const COOLDOWN_DURATIONS_MS = {
     'crossbow': 37 * 60 * 1000 + 12 * 1000,
     'f1 grenade': 39 * 60 * 1000 + 22 * 1000,
     'flame thrower': 51 * 60 * 1000 + 42 * 1000,
-    'snowball gun': 1 * 60 * 60 * 1000 + 10 * 60 * 1000 + 0 * 1000,
+    'snowball gun': 1 * 60 * 60 * 1000 + 10 * 60 * 1000 + 10 * 1000,
     'waterpipe shotgun': 45 * 60 * 1000 + 32 * 1000,
     'pump shotgun': 57 * 60 * 1000 + 12 * 1000,
     'spas-12': 1 * 60 * 60 * 1000 + 17 * 60 * 1000 + 0 * 1000,
@@ -51,13 +51,16 @@ const COOLDOWN_DURATIONS_MS = {
     'grenade launcher': 1 * 60 * 60 * 1000 + 45 * 60 * 1000 + 0 * 1000,
     'rocket launcher': 2 * 60 * 60 * 1000 + 24 * 60 * 1000 + 0 * 1000,
 
-    // NEW: Med Cooldowns
+    // Med Cooldowns
     'bandage': 16 * 60 * 1000 + 7 * 1000,
     'medical syringe': 28 * 60 * 1000 + 16 * 1000,
     'large medkit': 44 * 60 * 1000 + 42 * 1000,
 
     // Farm Cooldown
-    'farming': 60 * 60 * 1000 // 60 minutes
+    'farming': 60 * 60 * 1000, // 60 minutes
+
+    // NEW: Vote Cooldown
+    'voting': 12 * 60 * 60 * 1000 // 12 hours
 };
 
 // Regex to capture player ID, enemy type, and weapon name for attack messages
@@ -66,8 +69,11 @@ const ATTACK_MESSAGE_REGEX = /^(?:<a?:.+?:\d+>|\S+)\s+\*\*<@(\d+)>\*\* hit the \
 // Regex to capture player ID for farm messages
 const FARM_MESSAGE_REGEX = /^You decide to\s+(?:scavenge for loot|go :axe: chop some trees|go :pick: mining).*<@(\d+)>/;
 
-// NEW: Regex to capture player ID and med type for med messages
+// Regex to capture player ID and med type for med messages
 const MED_MESSAGE_REGEX = /^You use your\s+<a?:.+?:\d+>\s+`([^`]+)` to heal for \*\*(?:\d+)\*\* health! You now have.*<@(\d+)>/;
+
+// NEW: Regex to capture player ID for vote messages
+const VOTE_MESSAGE_REGEX = /^\S+\s+\*\*<@(\d+)>\*\* received rewards for voting!/;
 
 
 /**
@@ -76,7 +82,7 @@ const MED_MESSAGE_REGEX = /^You use your\s+<a?:.+?:\d+>\s+`([^`]+)` to heal for 
  * @param {object} db The Firestore database instance.
  * @param {string} userId The ID of the user to ping.
  * @param {string} channelId The ID of the channel to ping in.
- * @param {string} type The type of cooldown ('attack', 'farm', 'med').
+ * @param {string} type The type of cooldown ('attack', 'farm', 'med', 'vote').
  * @param {string} item The name of the item/weapon/activity.
  * @param {string} cooldownDocId The Firestore document ID for this cooldown.
  * @param {string} APP_ID_FOR_FIRESTORE The application ID for Firestore path.
@@ -95,8 +101,12 @@ async function sendCooldownPing(client, db, userId, channelId, type, item, coold
             notificationType = 'farmCooldown';
             pingMessage = `<@${userId}> your **${item}** cooldown is over!`;
             break;
-        case 'med': // NEW: Med cooldown type
+        case 'med':
             notificationType = 'medCooldown';
+            pingMessage = `<@${userId}> your **${item}** cooldown is over!`;
+            break;
+        case 'vote': // NEW: Vote cooldown type
+            notificationType = 'voteCooldown';
             pingMessage = `<@${userId}> your **${item}** cooldown is over!`;
             break;
         default:
@@ -187,7 +197,7 @@ module.exports = {
             console.log(`[Cooldown Notifier - Debug] Detected farm: Player ID=${playerId}, Item=${item}.`);
         }
 
-        // --- NEW: Attempt to match Med Message (only if not attack or farm) ---
+        // --- Attempt to match Med Message (only if not attack or farm) ---
         const medMatch = message.content.match(MED_MESSAGE_REGEX);
         if (medMatch && !attackMatch && !farmMatch) {
             item = medMatch[1].toLowerCase(); // Med item name
@@ -198,20 +208,37 @@ module.exports = {
             console.log(`[Cooldown Notifier - Debug] Detected med usage: Player ID=${playerId}, Item=${item}.`);
         }
 
+        // --- NEW: Attempt to match Vote Message (only if not attack, farm, or med) ---
+        const voteMatch = message.embeds.length > 0 && message.embeds[0].title === 'Voting rewards';
+        if (voteMatch && !attackMatch && !farmMatch && !medMatch) {
+            // The user ID for voting rewards is typically in the message content, not the embed title
+            const votePlayerIdMatch = message.content.match(/\*\*<@(\d+)>\*\* received rewards for voting!/);
+            if (votePlayerIdMatch && votePlayerIdMatch[1]) {
+                playerId = votePlayerIdMatch[1];
+                item = 'voting'; // Generic item for vote cooldown
+                cooldownType = 'vote';
+                cooldownDuration = COOLDOWN_DURATIONS_MS['voting'];
+                console.log(`[Cooldown Notifier - Debug] Vote Regex Match Result:`, votePlayerIdMatch);
+                console.log(`[Cooldown Notifier - Debug] Detected vote: Player ID=${playerId}, Item=${item}.`);
+            } else {
+                console.warn(`[Cooldown Notifier - Debug] Vote rewards embed found, but player ID not found in content.`);
+            }
+        }
+
 
         if (playerId && item && cooldownType && cooldownDuration !== undefined) {
             // --- Debug Notification to specific channel ---
-            const notificationChannel = client.channels.cache.get(NOTIFICATION_CHANNEL_ID);
-            if (notificationChannel && notificationChannel.isTextBased()) {
-                try {
-                    await notificationChannel.send(`Debug: <@${playerId}> initiated '${cooldownType}' with '${item}'`);
-                    console.log(`Cooldown Notifier: Sent debug notification to #${notificationChannel.name}.`);
-                } catch (error) {
-                    console.error(`Cooldown Notifier: Failed to send debug notification to #${notificationChannel.name}:`, error);
-                }
-            } else {
-                console.warn(`Cooldown Notifier: Debug notification channel with ID ${NOTIFICATION_CHANNEL_ID} not found or not a text channel.`);
-            }
+            // const notificationChannel = client.channels.cache.get(NOTIFICATION_CHANNEL_ID);
+            // if (notificationChannel && notificationChannel.isTextBased()) {
+            //     try {
+            //         await notificationChannel.send(`Debug: <@${playerId}> initiated '${cooldownType}' with '${item}'`);
+            //         console.log(`Cooldown Notifier: Sent debug notification to #${notificationChannel.name}.`);
+            //     } catch (error) {
+            //         console.error(`Cooldown Notifier: Failed to send debug notification to #${notificationChannel.name}:`, error);
+            //     }
+            // } else {
+            //     console.warn(`Cooldown Notifier: Debug notification channel with ID ${NOTIFICATION_CHANNEL_ID} not found or not a text channel.`);
+            // }
             // --- END Debug Notification ---
 
 
