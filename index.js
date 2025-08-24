@@ -308,7 +308,7 @@ client.on('messageCreate', async message => {
                     logContent += `  Embeds (${msg.embeds.length}):\n`;
                     msg.embeds.forEach((embed, index) => {
                         logContent += `    Embed ${index + 1}:\n`;
-                        if (embed.title) embed.title ? logContent += `      Title: "${embed.title}"\n` : ''; // Check if title exists before adding
+                        if (embed.title) logContent += `      Title: "${embed.title}"\n`;
                         if (embed.description) logContent += `      Description:\n\`\`\`\n${embed.description}\n\`\`\`\n`;
                         if (embed.fields.length > 0) {
                             logContent += `      Fields:\n`;
@@ -371,6 +371,7 @@ client.on('interactionCreate', async interaction => {
             const attackPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'attackCooldown');
             const farmPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'farmCooldown'); // Fetch farm preference
             const medPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'medCooldown'); // Fetch med preference
+            const votePrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'voteCooldown'); // Fetch vote preference
 
             try {
                 // Toggle attack preference
@@ -380,11 +381,13 @@ client.on('interactionCreate', async interaction => {
                 await setDoc(attackPrefsRef, { enabled: newAttackEnabledState }, { merge: true });
                 console.log(`[Notify Button] User ${userId} toggled attack cooldown notifications to: ${newAttackEnabledState}`);
 
-                // Fetch current farm and med preferences (to rebuild embed correctly)
+                // Fetch current farm, med, and vote preferences (to rebuild embed correctly)
                 const farmPrefSnap = await getDoc(farmPrefsRef);
                 const isFarmCooldownEnabled = farmPrefSnap.exists() ? farmPrefSnap.data().enabled : false;
                 const medPrefSnap = await getDoc(medPrefsRef);
                 const isMedCooldownEnabled = medPrefSnap.exists() ? medPrefSnap.data().enabled : false;
+                const votePrefSnap = await getDoc(votePrefsRef);
+                const isVoteCooldownEnabled = votePrefSnap.exists() ? votePrefSnap.data().enabled : false;
 
                 // Re-create the embed and buttons to reflect the new state
                 const embed = new EmbedBuilder()
@@ -394,32 +397,40 @@ client.on('interactionCreate', async interaction => {
                         `Here you can manage your personal notification settings for Lootcord Helper.\n\n` +
                         `**Attack Cooldown Notifications:**\n` +
                         `Status: **${newAttackEnabledState ? 'ON ✅' : 'OFF ❌'}**\n` +
-                        `You'll be pinged when your weapon cooldowns are over.\n\n` +
+                        `You'll be pinged when your **weapon cooldowns** are over.\n\n` +
                         `**Farm Cooldown Notifications:**\n` +
                         `Status: **${isFarmCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
-                        `You'll be pinged when your farming cooldowns are over.\n\n` +
+                        `You'll be pinged when your **farming cooldowns** are over.\n\n` +
                         `**Med Cooldown Notifications:**\n` +
                         `Status: **${isMedCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
-                        `You'll be pinged when your medical item cooldowns are over.`
+                        `You'll be pinged when your **medical item cooldowns** are over.\n\n` +
+                        `**Vote Cooldown Notifications:**\n` +
+                        `Status: **${isVoteCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
+                        `You'll be pinged when your **voting cooldown** is over.`
                     )
                     .setFooter({ text: 'Use the buttons to toggle your notifications.' });
 
                 const attackButton = new ButtonBuilder()
                     .setCustomId('toggle_attack_notifications')
-                    .setLabel('Toggle Attack Cooldowns')
+                    .setLabel('Attack') // Simplified label
                     .setStyle(newAttackEnabledState ? ButtonStyle.Success : ButtonStyle.Danger);
 
                 const farmButton = new ButtonBuilder()
                     .setCustomId('toggle_farm_notifications')
-                    .setLabel('Toggle Farm Cooldowns')
+                    .setLabel('Farm') // Simplified label
                     .setStyle(isFarmCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
 
                 const medButton = new ButtonBuilder()
                     .setCustomId('toggle_med_notifications')
-                    .setLabel('Toggle Med Cooldowns')
+                    .setLabel('Meds') // Simplified label
                     .setStyle(isMedCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
 
-                const row = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton);
+                const voteButton = new ButtonBuilder()
+                    .setCustomId('toggle_vote_notifications')
+                    .setLabel('Vote') // Simplified label
+                    .setStyle(isVoteCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
+
+                const row = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton, voteButton);
 
                 // Edit the original message with the updated embed and button state
                 await interaction.editReply({ embeds: [embed], components: [row] });
@@ -437,6 +448,7 @@ client.on('interactionCreate', async interaction => {
             const attackPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'attackCooldown'); // Fetch attack preference
             const farmPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'farmCooldown');
             const medPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'medCooldown'); // Fetch med preference
+            const votePrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'voteCooldown'); // Fetch vote preference
 
             try {
                 // Toggle farm preference
@@ -446,11 +458,13 @@ client.on('interactionCreate', async interaction => {
                 await setDoc(farmPrefsRef, { enabled: newFarmEnabledState }, { merge: true });
                 console.log(`[Notify Button] User ${userId} toggled farm cooldown notifications to: ${newFarmEnabledState}`);
 
-                // Fetch current attack and med preferences (to rebuild embed correctly)
+                // Fetch current attack, med, and vote preferences (to rebuild embed correctly)
                 const attackPrefSnap = await getDoc(attackPrefsRef);
                 const isAttackCooldownEnabled = attackPrefSnap.exists() ? attackPrefSnap.data().enabled : false;
                 const medPrefSnap = await getDoc(medPrefsRef);
                 const isMedCooldownEnabled = medPrefSnap.exists() ? medPrefSnap.data().enabled : false;
+                const votePrefSnap = await getDoc(votePrefsRef);
+                const isVoteCooldownEnabled = votePrefSnap.exists() ? votePrefSnap.data().enabled : false;
 
                 // Re-create the embed and buttons to reflect the new state
                 const embed = new EmbedBuilder()
@@ -466,26 +480,34 @@ client.on('interactionCreate', async interaction => {
                         `You'll be pinged when your farming cooldowns are over.\n\n` +
                         `**Med Cooldown Notifications:**\n` +
                         `Status: **${isMedCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
-                        `You'll be pinged when your medical item cooldowns are over.`
+                        `You'll be pinged when your medical item cooldowns are over.\n\n` +
+                        `**Vote Cooldown Notifications:**\n` +
+                        `Status: **${isVoteCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
+                        `You'll be pinged when your voting cooldowns are over.`
                     )
                     .setFooter({ text: 'Use the buttons to toggle your notifications.' });
 
                 const attackButton = new ButtonBuilder()
                     .setCustomId('toggle_attack_notifications')
-                    .setLabel('Toggle Attack Cooldowns')
+                    .setLabel('Attack')
                     .setStyle(isAttackCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
 
                 const farmButton = new ButtonBuilder()
                     .setCustomId('toggle_farm_notifications')
-                    .setLabel('Toggle Farm Cooldowns')
+                    .setLabel('Farm')
                     .setStyle(newFarmEnabledState ? ButtonStyle.Success : ButtonStyle.Danger);
 
                 const medButton = new ButtonBuilder()
                     .setCustomId('toggle_med_notifications')
-                    .setLabel('Toggle Med Cooldowns')
+                    .setLabel('Meds')
                     .setStyle(isMedCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
 
-                const row = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton);
+                const voteButton = new ButtonBuilder()
+                    .setCustomId('toggle_vote_notifications')
+                    .setLabel('Vote')
+                    .setStyle(isVoteCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
+
+                const row = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton, voteButton);
 
                 // Edit the original message with the updated embed and button state
                 await interaction.editReply({ embeds: [embed], components: [row] });
@@ -495,14 +517,15 @@ client.on('interactionCreate', async interaction => {
                 console.error(`[Notify Button] Error toggling farm notification preference for ${userId}:`, error);
                 await interaction.followUp({ content: '❌ An error occurred while updating your farm notification settings. Please check logs.', ephemeral: true });
             }
-        } else if (interaction.customId.startsWith('toggle_med_notifications')) { // NEW: Handle toggle_med_notifications button
+        } else if (interaction.customId.startsWith('toggle_med_notifications')) { // Handle toggle_med_notifications button
             console.log(`[Notify Button - Debug] Button click received by ${interaction.user.tag} for customId: ${interaction.customId}`);
             await interaction.deferUpdate(); // Acknowledge button click immediately
 
             const userId = interaction.user.id;
-            const attackPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'attackCooldown'); // Fetch attack preference
-            const farmPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'farmCooldown'); // Fetch farm preference
+            const attackPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'attackCooldown');
+            const farmPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'farmCooldown');
             const medPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'medCooldown');
+            const votePrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'voteCooldown'); // Fetch vote preference
 
             try {
                 // Toggle med preference
@@ -512,11 +535,13 @@ client.on('interactionCreate', async interaction => {
                 await setDoc(medPrefsRef, { enabled: newMedEnabledState }, { merge: true });
                 console.log(`[Notify Button] User ${userId} toggled med cooldown notifications to: ${newMedEnabledState}`);
 
-                // Fetch current attack and farm preferences (to rebuild embed correctly)
+                // Fetch current attack, farm, and vote preferences (to rebuild embed correctly)
                 const attackPrefSnap = await getDoc(attackPrefsRef);
                 const isAttackCooldownEnabled = attackPrefSnap.exists() ? attackPrefSnap.data().enabled : false;
                 const farmPrefSnap = await getDoc(farmPrefsRef);
                 const isFarmCooldownEnabled = farmPrefSnap.exists() ? farmPrefSnap.data().enabled : false;
+                const votePrefSnap = await getDoc(votePrefsRef);
+                const isVoteCooldownEnabled = votePrefSnap.exists() ? votePrefSnap.data().enabled : false;
 
                 // Re-create the embed and buttons to reflect the new state
                 const embed = new EmbedBuilder()
@@ -532,26 +557,34 @@ client.on('interactionCreate', async interaction => {
                         `You'll be pinged when your farming cooldowns are over.\n\n` +
                         `**Med Cooldown Notifications:**\n` +
                         `Status: **${newMedEnabledState ? 'ON ✅' : 'OFF ❌'}**\n` +
-                        `You'll be pinged when your medical item cooldowns are over.`
+                        `You'll be pinged when your medical item cooldowns are over.\n\n` +
+                        `**Vote Cooldown Notifications:**\n` +
+                        `Status: **${isVoteCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
+                        `You'll be pinged when your voting cooldowns are over.`
                     )
                     .setFooter({ text: 'Use the buttons to toggle your notifications.' });
 
                 const attackButton = new ButtonBuilder()
                     .setCustomId('toggle_attack_notifications')
-                    .setLabel('Toggle Attack Cooldowns')
+                    .setLabel('Attack')
                     .setStyle(isAttackCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
 
                 const farmButton = new ButtonBuilder()
                     .setCustomId('toggle_farm_notifications')
-                    .setLabel('Toggle Farm Cooldowns')
+                    .setLabel('Farm')
                     .setStyle(isFarmCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
 
                 const medButton = new ButtonBuilder()
                     .setCustomId('toggle_med_notifications')
-                    .setLabel('Toggle Med Cooldowns')
+                    .setLabel('Meds')
                     .setStyle(newMedEnabledState ? ButtonStyle.Success : ButtonStyle.Danger);
 
-                const row = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton);
+                const voteButton = new ButtonBuilder()
+                    .setCustomId('toggle_vote_notifications')
+                    .setLabel('Vote')
+                    .setStyle(isVoteCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
+
+                const row = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton, voteButton);
 
                 // Edit the original message with the updated embed and button state
                 await interaction.editReply({ embeds: [embed], components: [row] });
@@ -560,6 +593,83 @@ client.on('interactionCreate', async interaction => {
             } catch (error) {
                 console.error(`[Notify Button] Error toggling med notification preference for ${userId}:`, error);
                 await interaction.followUp({ content: '❌ An error occurred while updating your med notification settings. Please check logs.', ephemeral: true });
+            }
+        } else if (interaction.customId.startsWith('toggle_vote_notifications')) { // NEW: Handle toggle_vote_notifications button
+            console.log(`[Notify Button - Debug] Button click received by ${interaction.user.tag} for customId: ${interaction.customId}`);
+            await interaction.deferUpdate(); // Acknowledge button click immediately
+
+            const userId = interaction.user.id;
+            const attackPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'attackCooldown');
+            const farmPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'farmCooldown');
+            const medPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'medCooldown');
+            const votePrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'voteCooldown');
+
+            try {
+                // Toggle vote preference
+                const votePrefSnap = await getDoc(votePrefsRef);
+                const currentVoteEnabledState = votePrefSnap.exists() ? votePrefSnap.data().enabled : false;
+                const newVoteEnabledState = !currentVoteEnabledState;
+                await setDoc(votePrefsRef, { enabled: newVoteEnabledState }, { merge: true });
+                console.log(`[Notify Button] User ${userId} toggled vote cooldown notifications to: ${newVoteEnabledState}`);
+
+                // Fetch current attack, farm, and med preferences (to rebuild embed correctly)
+                const attackPrefSnap = await getDoc(attackPrefsRef);
+                const isAttackCooldownEnabled = attackPrefSnap.exists() ? attackPrefSnap.data().enabled : false;
+                const farmPrefSnap = await getDoc(farmPrefsRef);
+                const isFarmCooldownEnabled = farmPrefSnap.exists() ? farmPrefSnap.data().enabled : false;
+                const medPrefSnap = await getDoc(medPrefsRef);
+                const isMedCooldownEnabled = medPrefSnap.exists() ? medPrefSnap.data().enabled : false;
+
+                // Re-create the embed and buttons to reflect the new state
+                const embed = new EmbedBuilder()
+                    .setColor(0x0099ff)
+                    .setTitle('Lootcord Helper Notifications')
+                    .setDescription(
+                        `Here you can manage your personal notification settings for Lootcord Helper.\n\n` +
+                        `**Attack Cooldown Notifications:**\n` +
+                        `Status: **${isAttackCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
+                        `You'll be pinged when your weapon cooldowns are over.\n\n` +
+                        `**Farm Cooldown Notifications:**\n` +
+                        `Status: **${isFarmCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
+                        `You'll be pinged when your farming cooldowns are over.\n\n` +
+                        `**Med Cooldown Notifications:**\n` +
+                        `Status: **${isMedCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
+                        `You'll be pinged when your medical item cooldowns are over.\n\n` +
+                        `**Vote Cooldown Notifications:**\n` +
+                        `Status: **${newVoteEnabledState ? 'ON ✅' : 'OFF ❌'}**\n` +
+                        `You'll be pinged when your voting cooldowns are over.`
+                    )
+                    .setFooter({ text: 'Use the buttons to toggle your notifications.' });
+
+                const attackButton = new ButtonBuilder()
+                    .setCustomId('toggle_attack_notifications')
+                    .setLabel('Attack')
+                    .setStyle(isAttackCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
+
+                const farmButton = new ButtonBuilder()
+                    .setCustomId('toggle_farm_notifications')
+                    .setLabel('Farm')
+                    .setStyle(isFarmCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
+
+                const medButton = new ButtonBuilder()
+                    .setCustomId('toggle_med_notifications')
+                    .setLabel('Meds')
+                    .setStyle(isMedCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
+
+                const voteButton = new ButtonBuilder()
+                    .setCustomId('toggle_vote_notifications')
+                    .setLabel('Vote')
+                    .setStyle(newVoteEnabledState ? ButtonStyle.Success : ButtonStyle.Danger);
+
+                const row = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton, voteButton);
+
+                // Edit the original message with the updated embed and button state
+                await interaction.editReply({ embeds: [embed], components: [row] });
+                console.log(`[Notify Button] Updated original message with new vote notification status for ${userId}.`);
+
+            } catch (error) {
+                console.error(`[Notify Button] Error toggling vote notification preference for ${userId}:`, error);
+                await interaction.followUp({ content: '❌ An error occurred while updating your vote notification settings. Please check logs.', ephemeral: true });
             }
         } else if (interaction.customId.startsWith('show_trivia_explanation_')) { // Handle trivia explanation button
             await interaction.deferUpdate(); // Acknowledge button click
