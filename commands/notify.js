@@ -21,7 +21,8 @@ module.exports = {
             const attackPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'attackCooldown');
             const farmPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'farmCooldown');
             const medPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'medCooldown');
-            const votePrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'voteCooldown'); // NEW: Vote preferences ref
+            const votePrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'voteCooldown');
+            const repairPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'repairCooldown'); // NEW: Repair preferences ref
 
             // Fetch current preferences
             const attackPrefSnap = await getDoc(attackPrefsRef);
@@ -33,8 +34,11 @@ module.exports = {
             const medPrefSnap = await getDoc(medPrefsRef);
             const isMedCooldownEnabled = medPrefSnap.exists() ? medPrefSnap.data().enabled : false;
 
-            const votePrefSnap = await getDoc(votePrefsRef); // NEW: Fetch vote preference
+            const votePrefSnap = await getDoc(votePrefsRef);
             const isVoteCooldownEnabled = votePrefSnap.exists() ? votePrefSnap.data().enabled : false;
+
+            const repairPrefSnap = await getDoc(repairPrefsRef); // NEW: Fetch repair preference
+            const isRepairCooldownEnabled = repairPrefSnap.exists() ? repairPrefSnap.data().enabled : false;
 
 
             // Create the embed
@@ -52,36 +56,44 @@ module.exports = {
                     `**Med Cooldown Notifications:**\n` +
                     `Status: **${isMedCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
                     `You'll be pinged when your **medical item cooldowns** are over.\n\n` +
-                    // NEW: Vote Cooldown Description
                     `**Vote Cooldown Notifications:**\n` +
                     `Status: **${isVoteCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
-                    `You'll be pinged when your **voting cooldown** is over.`
+                    `You'll be pinged when your **voting cooldown** is over.\n\n` +
+                    // NEW: Repair Cooldown Description
+                    `**Repair Cooldown Notifications:**\n` +
+                    `Status: **${isRepairCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
+                    `You'll be pinged when your **clan repair cooldown** is over.`
                 )
                 .setFooter({ text: 'Use the buttons to toggle your notifications.' });
 
             // Create the toggle buttons with simplified labels
             const attackButton = new ButtonBuilder()
                 .setCustomId('toggle_attack_notifications')
-                .setLabel('Attack') // Simplified label
+                .setLabel('Attack')
                 .setStyle(isAttackCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
 
             const farmButton = new ButtonBuilder()
                 .setCustomId('toggle_farm_notifications')
-                .setLabel('Farm') // Simplified label
+                .setLabel('Farm')
                 .setStyle(isFarmCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
 
             const medButton = new ButtonBuilder()
                 .setCustomId('toggle_med_notifications')
-                .setLabel('Meds') // Simplified label
+                .setLabel('Meds')
                 .setStyle(isMedCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
 
-            const voteButton = new ButtonBuilder() // NEW: Vote Cooldown Button
+            const voteButton = new ButtonBuilder()
                 .setCustomId('toggle_vote_notifications')
-                .setLabel('Vote') // Simplified label
+                .setLabel('Vote')
                 .setStyle(isVoteCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
 
+            const repairButton = new ButtonBuilder() // NEW: Repair Cooldown Button
+                .setCustomId('toggle_repair_notifications')
+                .setLabel('Repair')
+                .setStyle(isRepairCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
 
-            const row = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton, voteButton); // Add all four buttons to the row
+
+            const row = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton, voteButton, repairButton); // Add all five buttons to the row
 
             await interaction.editReply({ embeds: [embed], components: [row], ephemeral: true });
             console.log(`[Notify Command] Displayed notification preferences for ${interaction.user.tag}.`);
