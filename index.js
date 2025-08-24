@@ -18,7 +18,7 @@ const paginationHelpers = require('./utils/pagination');
 const startupChecks = require('./utils/startupChecks');
 const wordleHelpers = require('./utils/wordleHelpers');
 const stickyMessageManager = require('./utils/stickyMessageManager');
-const { sendCooldownPing } = require('./events/cooldownNotifier'); // UPDATED: Import sendCooldownPing from renamed file
+const { sendCooldownPing } = require('./events/attackCooldownNotifier'); // Import sendCooldownPing for startup rescheduling
 
 // Load environment variables from a custom .env file
 // Assumes lootcord-helper.env is in the same directory as index.js
@@ -368,34 +368,47 @@ client.on('interactionCreate', async interaction => {
             await interaction.deferUpdate(); // Acknowledge button click immediately
 
             const userId = interaction.user.id;
-            const userPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'attackCooldown');
+            const attackPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'attackCooldown');
+            const farmPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'farmCooldown'); // Fetch farm preference
 
             try {
-                const prefSnap = await getDoc(userPrefsRef);
-                const currentEnabledState = prefSnap.exists() ? prefSnap.data().enabled : false;
-                const newEnabledState = !currentEnabledState;
+                // Toggle attack preference
+                const attackPrefSnap = await getDoc(attackPrefsRef);
+                const currentAttackEnabledState = attackPrefSnap.exists() ? attackPrefSnap.data().enabled : false;
+                const newAttackEnabledState = !currentAttackEnabledState;
+                await setDoc(attackPrefsRef, { enabled: newAttackEnabledState }, { merge: true });
+                console.log(`[Notify Button] User ${userId} toggled attack cooldown notifications to: ${newAttackEnabledState}`);
 
-                await setDoc(userPrefsRef, { enabled: newEnabledState }, { merge: true });
-                console.log(`[Notify Button] User ${userId} toggled attack cooldown notifications to: ${newEnabledState}`);
+                // Fetch current farm preference (to rebuild embed correctly)
+                const farmPrefSnap = await getDoc(farmPrefsRef);
+                const isFarmCooldownEnabled = farmPrefSnap.exists() ? farmPrefSnap.data().enabled : false;
 
-                // Re-create the embed and button to reflect the new state
+                // Re-create the embed and buttons to reflect the new state
                 const embed = new EmbedBuilder()
                     .setColor(0x0099ff)
                     .setTitle('Lootcord Helper Notifications')
                     .setDescription(
                         `Here you can manage your personal notification settings for Lootcord Helper.\n\n` +
                         `**Attack Cooldown Notifications:**\n` +
-                        `Status: **${newEnabledState ? 'ON ✅' : 'OFF ❌'}**\n` +
-                        `You'll be pinged when your weapon cooldowns are over.`
+                        `Status: **${newAttackEnabledState ? 'ON ✅' : 'OFF ❌'}**\n` +
+                        `You'll be pinged when your weapon cooldowns are over.\n\n` +
+                        `**Farm Cooldown Notifications:**\n` +
+                        `Status: **${isFarmCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
+                        `You'll be pinged when your farming cooldowns are over.`
                     )
                     .setFooter({ text: 'Use the buttons to toggle your notifications.' });
 
                 const attackButton = new ButtonBuilder()
                     .setCustomId('toggle_attack_notifications')
                     .setLabel('Toggle Attack Cooldowns')
-                    .setStyle(newEnabledState ? ButtonStyle.Success : ButtonStyle.Danger);
+                    .setStyle(newAttackEnabledState ? ButtonStyle.Success : ButtonStyle.Danger);
 
-                const row = new ActionRowBuilder().addComponents(attackButton);
+                const farmButton = new ButtonBuilder()
+                    .setCustomId('toggle_farm_notifications')
+                    .setLabel('Toggle Farm Cooldowns')
+                    .setStyle(isFarmCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
+
+                const row = new ActionRowBuilder().addComponents(attackButton, farmButton);
 
                 // Edit the original message with the updated embed and button state
                 await interaction.editReply({ embeds: [embed], components: [row] });
@@ -405,39 +418,40 @@ client.on('interactionCreate', async interaction => {
                 console.error(`[Notify Button] Error toggling notification preference for ${userId}:`, error);
                 await interaction.followUp({ content: '❌ An error occurred while updating your notification settings. Please check logs.', ephemeral: true });
             }
-        } else if (interaction.customId.startsWith('toggle_farm_notifications')) { // NEW: Handle toggle_farm_notifications button
+        } else if (interaction.customId.startsWith('toggle_farm_notifications')) { // Handle toggle_farm_notifications button
             console.log(`[Notify Button - Debug] Button click received by ${interaction.user.tag} for customId: ${interaction.customId}`);
             await interaction.deferUpdate(); // Acknowledge button click immediately
 
             const userId = interaction.user.id;
-            const userPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'farmCooldown');
+            const attackPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'attackCooldown'); // Fetch attack preference
+            const farmPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'farmCooldown');
 
             try {
-                const prefSnap = await getDoc(userPrefsRef);
-                const currentEnabledState = prefSnap.exists() ? prefSnap.data().enabled : false;
-                const newEnabledState = !currentEnabledState;
+                // Toggle farm preference
+                const farmPrefSnap = await getDoc(farmPrefsRef);
+                const currentFarmEnabledState = farmPrefSnap.exists() ? farmPrefSnap.data().enabled : false;
+                const newFarmEnabledState = !currentFarmEnabledState;
+                await setDoc(farmPrefsRef, { enabled: newFarmEnabledState }, { merge: true });
+                console.log(`[Notify Button] User ${userId} toggled farm cooldown notifications to: ${newFarmEnabledState}`);
 
-                await setDoc(userPrefsRef, { enabled: newEnabledState }, { merge: true });
-                console.log(`[Notify Button] User ${userId} toggled farm cooldown notifications to: ${newEnabledState}`);
+                // Fetch current attack preference (to rebuild embed correctly)
+                const attackPrefSnap = await getDoc(attackPrefsRef);
+                const isAttackCooldownEnabled = attackPrefSnap.exists() ? attackPrefSnap.data().enabled : false;
 
-                // Re-create the embed and button to reflect the new state
+                // Re-create the embed and buttons to reflect the new state
                 const embed = new EmbedBuilder()
                     .setColor(0x0099ff)
                     .setTitle('Lootcord Helper Notifications')
                     .setDescription(
                         `Here you can manage your personal notification settings for Lootcord Helper.\n\n` +
                         `**Attack Cooldown Notifications:**\n` +
-                        `Status: **${currentEnabledState ? 'ON ✅' : 'OFF ❌'}**\n` + // Keep attack status as it was
+                        `Status: **${isAttackCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
                         `You'll be pinged when your weapon cooldowns are over.\n\n` +
                         `**Farm Cooldown Notifications:**\n` +
-                        `Status: **${newEnabledState ? 'ON ✅' : 'OFF ❌'}**\n` +
+                        `Status: **${newFarmEnabledState ? 'ON ✅' : 'OFF ❌'}**\n` +
                         `You'll be pinged when your farming cooldowns are over.`
                     )
                     .setFooter({ text: 'Use the buttons to toggle your notifications.' });
-
-                const attackPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'attackCooldown');
-                const attackPrefSnap = await getDoc(attackPrefsRef);
-                const isAttackCooldownEnabled = attackPrefSnap.exists() ? attackPrefSnap.data().enabled : false;
 
                 const attackButton = new ButtonBuilder()
                     .setCustomId('toggle_attack_notifications')
@@ -447,7 +461,7 @@ client.on('interactionCreate', async interaction => {
                 const farmButton = new ButtonBuilder()
                     .setCustomId('toggle_farm_notifications')
                     .setLabel('Toggle Farm Cooldowns')
-                    .setStyle(newEnabledState ? ButtonStyle.Success : ButtonStyle.Danger);
+                    .setStyle(newFarmEnabledState ? ButtonStyle.Success : ButtonStyle.Danger);
 
                 const row = new ActionRowBuilder().addComponents(attackButton, farmButton);
 
