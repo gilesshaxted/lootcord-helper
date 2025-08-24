@@ -20,7 +20,8 @@ module.exports = {
             const userId = interaction.user.id;
             const attackPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'attackCooldown');
             const farmPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'farmCooldown');
-            const medPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'medCooldown'); // NEW: Med preferences ref
+            const medPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'medCooldown');
+            const votePrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'voteCooldown'); // NEW: Vote preferences ref
 
             // Fetch current preferences
             const attackPrefSnap = await getDoc(attackPrefsRef);
@@ -29,8 +30,11 @@ module.exports = {
             const farmPrefSnap = await getDoc(farmPrefsRef);
             const isFarmCooldownEnabled = farmPrefSnap.exists() ? farmPrefSnap.data().enabled : false;
 
-            const medPrefSnap = await getDoc(medPrefsRef); // NEW: Fetch med preference
+            const medPrefSnap = await getDoc(medPrefsRef);
             const isMedCooldownEnabled = medPrefSnap.exists() ? medPrefSnap.data().enabled : false;
+
+            const votePrefSnap = await getDoc(votePrefsRef); // NEW: Fetch vote preference
+            const isVoteCooldownEnabled = votePrefSnap.exists() ? votePrefSnap.data().enabled : false;
 
 
             // Create the embed
@@ -45,32 +49,39 @@ module.exports = {
                     `**Farm Cooldown Notifications:**\n` +
                     `Status: **${isFarmCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
                     `You'll be pinged when your **farming cooldowns** are over.\n\n` +
-                    // NEW: Med Cooldown Description
                     `**Med Cooldown Notifications:**\n` +
                     `Status: **${isMedCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
-                    `You'll be pinged when your **medical item cooldowns** are over.`
+                    `You'll be pinged when your **medical item cooldowns** are over.\n\n` +
+                    // NEW: Vote Cooldown Description
+                    `**Vote Cooldown Notifications:**\n` +
+                    `Status: **${isVoteCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
+                    `You'll be pinged when your **voting cooldown** is over.`
                 )
                 .setFooter({ text: 'Use the buttons to toggle your notifications.' });
 
-            // Create the toggle buttons
+            // Create the toggle buttons with simplified labels
             const attackButton = new ButtonBuilder()
                 .setCustomId('toggle_attack_notifications')
-                .setLabel('Toggle Attack Cooldowns')
-                .setStyle(isAttackCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger); // Green if on, Red if off
+                .setLabel('Attack') // Simplified label
+                .setStyle(isAttackCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
 
             const farmButton = new ButtonBuilder()
                 .setCustomId('toggle_farm_notifications')
-                .setLabel('Toggle Farm Cooldowns')
-                .setStyle(isFarmCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger); // Green if on, Red if off
+                .setLabel('Farm') // Simplified label
+                .setStyle(isFarmCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
 
-            // NEW: Med Cooldown Button
             const medButton = new ButtonBuilder()
-                .setCustomId('toggle_med_notifications') // New custom ID
-                .setLabel('Toggle Med Cooldowns')
-                .setStyle(isMedCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger); // Green if on, Red if off
+                .setCustomId('toggle_med_notifications')
+                .setLabel('Meds') // Simplified label
+                .setStyle(isMedCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
+
+            const voteButton = new ButtonBuilder() // NEW: Vote Cooldown Button
+                .setCustomId('toggle_vote_notifications')
+                .setLabel('Vote') // Simplified label
+                .setStyle(isVoteCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
 
 
-            const row = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton); // Add all three buttons to the row
+            const row = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton, voteButton); // Add all four buttons to the row
 
             await interaction.editReply({ embeds: [embed], components: [row], ephemeral: true });
             console.log(`[Notify Command] Displayed notification preferences for ${interaction.user.tag}.`);
