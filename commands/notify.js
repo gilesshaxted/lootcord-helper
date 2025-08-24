@@ -19,14 +19,18 @@ module.exports = {
 
             const userId = interaction.user.id;
             const attackPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'attackCooldown');
-            const farmPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'farmCooldown'); // NEW: Farm preferences ref
+            const farmPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'farmCooldown');
+            const medPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'medCooldown'); // NEW: Med preferences ref
 
             // Fetch current preferences
             const attackPrefSnap = await getDoc(attackPrefsRef);
             const isAttackCooldownEnabled = attackPrefSnap.exists() ? attackPrefSnap.data().enabled : false; // Default to off
 
-            const farmPrefSnap = await getDoc(farmPrefsRef); // NEW: Fetch farm preference
-            const isFarmCooldownEnabled = farmPrefSnap.exists() ? farmPrefSnap.data().enabled : false; // Default to off
+            const farmPrefSnap = await getDoc(farmPrefsRef);
+            const isFarmCooldownEnabled = farmPrefSnap.exists() ? farmPrefSnap.data().enabled : false;
+
+            const medPrefSnap = await getDoc(medPrefsRef); // NEW: Fetch med preference
+            const isMedCooldownEnabled = medPrefSnap.exists() ? medPrefSnap.data().enabled : false;
 
 
             // Create the embed
@@ -38,10 +42,13 @@ module.exports = {
                     `**Attack Cooldown Notifications:**\n` +
                     `Status: **${isAttackCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
                     `You'll be pinged when your **weapon cooldowns** are over.\n\n` +
-                    // NEW: Farm Cooldown Description
                     `**Farm Cooldown Notifications:**\n` +
                     `Status: **${isFarmCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
-                    `You'll be pinged when your **farming cooldowns** are over.`
+                    `You'll be pinged when your **farming cooldowns** are over.\n\n` +
+                    // NEW: Med Cooldown Description
+                    `**Med Cooldown Notifications:**\n` +
+                    `Status: **${isMedCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
+                    `You'll be pinged when your **medical item cooldowns** are over.`
                 )
                 .setFooter({ text: 'Use the buttons to toggle your notifications.' });
 
@@ -51,14 +58,19 @@ module.exports = {
                 .setLabel('Toggle Attack Cooldowns')
                 .setStyle(isAttackCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger); // Green if on, Red if off
 
-            // NEW: Farm Cooldown Button
             const farmButton = new ButtonBuilder()
-                .setCustomId('toggle_farm_notifications') // New custom ID
+                .setCustomId('toggle_farm_notifications')
                 .setLabel('Toggle Farm Cooldowns')
                 .setStyle(isFarmCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger); // Green if on, Red if off
 
+            // NEW: Med Cooldown Button
+            const medButton = new ButtonBuilder()
+                .setCustomId('toggle_med_notifications') // New custom ID
+                .setLabel('Toggle Med Cooldowns')
+                .setStyle(isMedCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger); // Green if on, Red if off
 
-            const row = new ActionRowBuilder().addComponents(attackButton, farmButton); // Add both buttons to the row
+
+            const row = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton); // Add all three buttons to the row
 
             await interaction.editReply({ embeds: [embed], components: [row], ephemeral: true });
             console.log(`[Notify Command] Displayed notification preferences for ${interaction.user.tag}.`);
