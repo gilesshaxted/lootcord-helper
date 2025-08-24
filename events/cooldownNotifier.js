@@ -2,7 +2,7 @@ const { collection, doc, setDoc, getDoc, updateDoc, deleteDoc } = require('fireb
 const statsTracker = require('../utils/statsTracker');
 
 // --- Configuration ---
-const TARGET_GAME_BOT_ID = '493316754689359874'; // User ID of the game bot that sends attack/farm/med/vote messages
+const TARGET_GAME_BOT_ID = '493316754689359874'; // User ID of the game bot that sends attack/farm/med/vote/repair messages
 const NOTIFICATION_CHANNEL_ID = '1329235188907114506'; // Channel to send debug notifications
 
 // Cooldown data in milliseconds [HH:MM:SS]
@@ -30,7 +30,7 @@ const COOLDOWN_DURATIONS_MS = {
     'crossbow': 37 * 60 * 1000 + 12 * 1000,
     'f1 grenade': 39 * 60 * 1000 + 22 * 1000,
     'flame thrower': 51 * 60 * 1000 + 42 * 1000,
-    'snowball gun': 1 * 60 * 60 * 1000 + 10 * 60 * 1000 + 10 * 1000,
+    'snowball gun': 1 * 60 * 60 * 1000 + 10 * 60 * 1000 + 0 * 1000,
     'waterpipe shotgun': 45 * 60 * 1000 + 32 * 1000,
     'pump shotgun': 57 * 60 * 1000 + 12 * 1000,
     'spas-12': 1 * 60 * 60 * 1000 + 17 * 60 * 1000 + 0 * 1000,
@@ -59,8 +59,14 @@ const COOLDOWN_DURATIONS_MS = {
     // Farm Cooldown
     'farming': 60 * 60 * 1000, // 60 minutes
 
-    // NEW: Vote Cooldown
-    'voting': 12 * 60 * 60 * 1000 // 12 hours
+    // Vote Cooldown
+    'voting': 12 * 60 * 60 * 1000, // 12 hours
+
+    // NEW: Repair Cooldowns
+    'wood': 2 * 60 * 1000, // 2 minutes
+    'stone': 10 * 60 * 1000, // 10 minutes
+    'metal': 25 * 60 * 1000, // 25 minutes
+    'high quality metal': 60 * 60 * 1000 // 60 minutes
 };
 
 // Regex to capture player ID, enemy type, and weapon name for attack messages
@@ -72,8 +78,11 @@ const FARM_MESSAGE_REGEX = /^You decide to\s+(?:scavenge for loot|go :axe: chop 
 // Regex to capture player ID and med type for med messages
 const MED_MESSAGE_REGEX = /^You use your\s+<a?:.+?:\d+>\s+`([^`]+)` to heal for \*\*(?:\d+)\*\* health! You now have.*<@(\d+)>/;
 
-// NEW: Regex to capture player ID for vote messages
+// Regex to capture player ID for vote messages
 const VOTE_MESSAGE_REGEX = /^\S+\s+\*\*<@(\d+)>\*\* received rewards for voting!/;
+
+// NEW: Regex to capture player ID and repair item for clan repair messages
+const REPAIR_MESSAGE_REGEX = /:white_check_mark: You used 1x\s+<a?:.+?:\d+>\s+`([^`]+)` to repair the clan!.*The clan can be repaired again in (?:\d+ (?:minute|hour)s?\.?)/s;
 
 
 /**
@@ -82,7 +91,7 @@ const VOTE_MESSAGE_REGEX = /^\S+\s+\*\*<@(\d+)>\*\* received rewards for voting!
  * @param {object} db The Firestore database instance.
  * @param {string} userId The ID of the user to ping.
  * @param {string} channelId The ID of the channel to ping in.
- * @param {string} type The type of cooldown ('attack', 'farm', 'med', 'vote').
+ * @param {string} type The type of cooldown ('attack', 'farm', 'med', 'vote', 'repair').
  * @param {string} item The name of the item/weapon/activity.
  * @param {string} cooldownDocId The Firestore document ID for this cooldown.
  * @param {string} APP_ID_FOR_FIRESTORE The application ID for Firestore path.
@@ -99,15 +108,19 @@ async function sendCooldownPing(client, db, userId, channelId, type, item, coold
             break;
         case 'farm':
             notificationType = 'farmCooldown';
-            pingMessage = `<@${userId}> your **${item}** cooldown is over!`;
+            pingMessage = `<@${userId}> your **${item}** farming cooldown is over!`;
             break;
         case 'med':
             notificationType = 'medCooldown';
             pingMessage = `<@${userId}> your **${item}** cooldown is over!`;
             break;
-        case 'vote': // NEW: Vote cooldown type
+        case 'vote':
             notificationType = 'voteCooldown';
             pingMessage = `<@${userId}> your **${item}** cooldown is over!`;
+            break;
+        case 'repair': // NEW: Repair cooldown type
+            notificationType = 'repairCooldown';
+            pingMessage = `<@${userId}> your **clan repair (${item})** cooldown is over!`;
             break;
         default:
             console.warn(`Cooldown Notifier: Unknown cooldown type "${type}". Cannot send ping.`);
@@ -208,7 +221,7 @@ module.exports = {
             console.log(`[Cooldown Notifier - Debug] Detected med usage: Player ID=${playerId}, Item=${item}.`);
         }
 
-        // --- NEW: Attempt to match Vote Message (only if not attack, farm, or med) ---
+        // --- Attempt to match Vote Message (only if not attack, farm, or med) ---
         const voteMatch = message.embeds.length > 0 && message.embeds[0].title === 'Voting rewards';
         if (voteMatch && !attackMatch && !farmMatch && !medMatch) {
             // The user ID for voting rewards is typically in the message content, not the embed title
@@ -225,9 +238,26 @@ module.exports = {
             }
         }
 
+        // --- NEW: Attempt to match Repair Message (only if not attack, farm, med, or vote) ---
+        const repairMatch = message.content.match(REPAIR_MESSAGE_REGEX);
+        if (repairMatch && !attackMatch && !farmMatch && !medMatch && !voteMatch) {
+            item = repairMatch[1].toLowerCase(); // Repair item name (wood, stone, metal, high quality metal)
+            // The player ID for repair is not directly in the regex, need to extract from message.content
+            const repairPlayerIdMatch = message.content.match(/<@(\d+)>/);
+            if (repairPlayerIdMatch && repairPlayerIdMatch[1]) {
+                playerId = repairPlayerIdMatch[1];
+                cooldownType = 'repair';
+                cooldownDuration = COOLDOWN_DURATIONS_MS[item];
+                console.log(`[Cooldown Notifier - Debug] Repair Regex Match Result:`, repairMatch);
+                console.log(`[Cooldown Notifier - Debug] Detected repair: Player ID=${playerId}, Item=${item}.`);
+            } else {
+                console.warn(`[Cooldown Notifier - Debug] Repair message found, but player ID not found in content.`);
+            }
+        }
+
 
         if (playerId && item && cooldownType && cooldownDuration !== undefined) {
-            // --- Debug Notification to specific channel ---
+            // --- Debug Notification to specific channel (for all types) ---
             // const notificationChannel = client.channels.cache.get(NOTIFICATION_CHANNEL_ID);
             // if (notificationChannel && notificationChannel.isTextBased()) {
             //     try {
