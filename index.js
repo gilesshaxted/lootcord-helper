@@ -1,5 +1,5 @@
 // Import necessary classes from the discord.js library
-const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder, EmbedBuilder } = require('discord.js'); // NEW: Added EmbedBuilder
+const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder, EmbedBuilder } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 const express = require('express');
@@ -18,7 +18,7 @@ const paginationHelpers = require('./utils/pagination');
 const startupChecks = require('./utils/startupChecks');
 const wordleHelpers = require('./utils/wordleHelpers');
 const stickyMessageManager = require('./utils/stickyMessageManager');
-const { sendCooldownPing } = require('./events/attackCooldownNotifier'); // Import sendCooldownPing for startup rescheduling
+const { sendCooldownPing } = require('./events/cooldownNotifier'); // UPDATED: Import sendCooldownPing from renamed file
 
 // Load environment variables from a custom .env file
 // Assumes lootcord-helper.env is in the same directory as index.js
@@ -250,7 +250,7 @@ client.once('ready', async () => {
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
 
     // --- Reschedule active attack cooldown pings on startup ---
-    const activeCooldownsRef = collection(db, `ActiveAttackCooldowns`);
+    const activeCooldownsRef = collection(db, `ActiveCooldowns`); // Use generic collection name
     try {
         const querySnapshot = await getDocs(activeCooldownsRef);
         const now = Date.now();
@@ -262,21 +262,21 @@ client.once('ready', async () => {
 
             if (delay > 0) {
                 setTimeout(() => {
-                    sendCooldownPing(client, db, cooldownData.userId, cooldownData.channelId, cooldownData.weapon, cooldownDocId, APP_ID_FOR_FIRESTORE);
+                    sendCooldownPing(client, db, cooldownData.userId, cooldownData.channelId, cooldownData.type, cooldownData.item, cooldownDocId, APP_ID_FOR_FIRESTORE); // Pass type and item
                 }, delay);
                 rescheduledCount++;
             } else {
                 if (!cooldownData.pinged) {
-                    sendCooldownPing(client, db, cooldownData.userId, cooldownData.channelId, cooldownData.weapon, cooldownDocId, APP_ID_FOR_FIRESTORE);
+                    sendCooldownPing(client, db, cooldownData.userId, cooldownData.channelId, cooldownData.type, cooldownData.item, cooldownDocId, APP_ID_FOR_FIRESTORE); // Pass type and item
                 } else {
                     await deleteDoc(doc(activeCooldownsRef, cooldownDocId));
-                    console.log(`Attack Cooldown Notifier: Removed stale cooldown entry ${cooldownDocId} on startup.`);
+                    console.log(`Cooldown Notifier: Removed stale cooldown entry ${cooldownDocId} on startup.`);
                 }
             }
         }
-        console.log(`Attack Cooldown Notifier: Rescheduled ${rescheduledCount} active cooldowns on startup.`);
+        console.log(`Cooldown Notifier: Rescheduled ${rescheduledCount} active cooldowns on startup.`);
     } catch (error) {
-        console.error('Attack Cooldown Notifier: Error rescheduling cooldowns on startup:', error);
+        console.error('Cooldown Notifier: Error rescheduling cooldowns on startup:', error);
     }
 
     // Start cleanup for expired sticky messages every 10 minutes
@@ -379,7 +379,7 @@ client.on('interactionCreate', async interaction => {
                 console.log(`[Notify Button] User ${userId} toggled attack cooldown notifications to: ${newEnabledState}`);
 
                 // Re-create the embed and button to reflect the new state
-                const embed = new EmbedBuilder() // EmbedBuilder is now defined
+                const embed = new EmbedBuilder()
                     .setColor(0x0099ff)
                     .setTitle('Lootcord Helper Notifications')
                     .setDescription(
@@ -404,6 +404,60 @@ client.on('interactionCreate', async interaction => {
             } catch (error) {
                 console.error(`[Notify Button] Error toggling notification preference for ${userId}:`, error);
                 await interaction.followUp({ content: '❌ An error occurred while updating your notification settings. Please check logs.', ephemeral: true });
+            }
+        } else if (interaction.customId.startsWith('toggle_farm_notifications')) { // NEW: Handle toggle_farm_notifications button
+            console.log(`[Notify Button - Debug] Button click received by ${interaction.user.tag} for customId: ${interaction.customId}`);
+            await interaction.deferUpdate(); // Acknowledge button click immediately
+
+            const userId = interaction.user.id;
+            const userPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'farmCooldown');
+
+            try {
+                const prefSnap = await getDoc(userPrefsRef);
+                const currentEnabledState = prefSnap.exists() ? prefSnap.data().enabled : false;
+                const newEnabledState = !currentEnabledState;
+
+                await setDoc(userPrefsRef, { enabled: newEnabledState }, { merge: true });
+                console.log(`[Notify Button] User ${userId} toggled farm cooldown notifications to: ${newEnabledState}`);
+
+                // Re-create the embed and button to reflect the new state
+                const embed = new EmbedBuilder()
+                    .setColor(0x0099ff)
+                    .setTitle('Lootcord Helper Notifications')
+                    .setDescription(
+                        `Here you can manage your personal notification settings for Lootcord Helper.\n\n` +
+                        `**Attack Cooldown Notifications:**\n` +
+                        `Status: **${currentEnabledState ? 'ON ✅' : 'OFF ❌'}**\n` + // Keep attack status as it was
+                        `You'll be pinged when your weapon cooldowns are over.\n\n` +
+                        `**Farm Cooldown Notifications:**\n` +
+                        `Status: **${newEnabledState ? 'ON ✅' : 'OFF ❌'}**\n` +
+                        `You'll be pinged when your farming cooldowns are over.`
+                    )
+                    .setFooter({ text: 'Use the buttons to toggle your notifications.' });
+
+                const attackPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'attackCooldown');
+                const attackPrefSnap = await getDoc(attackPrefsRef);
+                const isAttackCooldownEnabled = attackPrefSnap.exists() ? attackPrefSnap.data().enabled : false;
+
+                const attackButton = new ButtonBuilder()
+                    .setCustomId('toggle_attack_notifications')
+                    .setLabel('Toggle Attack Cooldowns')
+                    .setStyle(isAttackCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
+
+                const farmButton = new ButtonBuilder()
+                    .setCustomId('toggle_farm_notifications')
+                    .setLabel('Toggle Farm Cooldowns')
+                    .setStyle(newEnabledState ? ButtonStyle.Success : ButtonStyle.Danger);
+
+                const row = new ActionRowBuilder().addComponents(attackButton, farmButton);
+
+                // Edit the original message with the updated embed and button state
+                await interaction.editReply({ embeds: [embed], components: [row] });
+                console.log(`[Notify Button] Updated original message with new farm notification status for ${userId}.`);
+
+            } catch (error) {
+                console.error(`[Notify Button] Error toggling farm notification preference for ${userId}:`, error);
+                await interaction.followUp({ content: '❌ An error occurred while updating your farm notification settings. Please check logs.', ephemeral: true });
             }
         } else if (interaction.customId.startsWith('show_trivia_explanation_')) { // Handle trivia explanation button
             await interaction.deferUpdate(); // Acknowledge button click
