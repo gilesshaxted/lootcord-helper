@@ -2,11 +2,11 @@ const { collection, doc, setDoc, getDoc, updateDoc, deleteDoc } = require('fireb
 const statsTracker = require('../utils/statsTracker');
 
 // --- Configuration ---
-const TARGET_GAME_BOT_ID = '493316754689359874'; // User ID of the game bot that sends attack/farm messages
+const TARGET_GAME_BOT_ID = '493316754689359874'; // User ID of the game bot that sends attack/farm/med messages
 const NOTIFICATION_CHANNEL_ID = '1329235188907114506'; // Channel to send debug notifications
 
-// Weapon cooldown data in milliseconds [HH:MM:SS]
-const WEAPON_COOLDOWNS_MS = {
+// Cooldown data in milliseconds [HH:MM:SS]
+const COOLDOWN_DURATIONS_MS = {
     // Melee Weapons
     'bone knife': 15 * 60 * 1000 + 45 * 1000,
     'butcher knife': 21 * 60 * 1000 + 45 * 1000,
@@ -50,16 +50,24 @@ const WEAPON_COOLDOWNS_MS = {
     'l96': 3 * 60 * 60 * 1000 + 37 * 60 * 1000 + 0 * 1000,
     'grenade launcher': 1 * 60 * 60 * 1000 + 45 * 60 * 1000 + 0 * 1000,
     'rocket launcher': 2 * 60 * 60 * 1000 + 24 * 60 * 1000 + 0 * 1000,
-};
 
-// NEW: Cooldown for farming activities (60 minutes)
-const FARM_COOLDOWN_MS = 60 * 60 * 1000;
+    // NEW: Med Cooldowns
+    'bandage': 16 * 60 * 1000 + 7 * 1000,
+    'medical syringe': 28 * 60 * 1000 + 16 * 1000,
+    'large medkit': 44 * 60 * 1000 + 42 * 1000,
+
+    // Farm Cooldown
+    'farming': 60 * 60 * 1000 // 60 minutes
+};
 
 // Regex to capture player ID, enemy type, and weapon name for attack messages
 const ATTACK_MESSAGE_REGEX = /^(?:<a?:.+?:\d+>|\S+)\s+\*\*<@(\d+)>\*\* hit the \*\*(.*?)\*\* for \*\*(?:\d+)\*\* damage using their\s+<a?:.+?:\d+>\s+`([^`]+)`/;
 
-// NEW: Regex to capture player ID for farm messages
-const FARM_MESSAGE_REGEX = /^You decide to\s+(?:scavenge for loot|go :axe: chop some trees|go :pick: mining).*and (?:find|receive|bring back).*<@(\d+)>/;
+// Regex to capture player ID for farm messages
+const FARM_MESSAGE_REGEX = /^You decide to\s+(?:scavenge for loot|go :axe: chop some trees|go :pick: mining).*<@(\d+)>/;
+
+// NEW: Regex to capture player ID and med type for med messages
+const MED_MESSAGE_REGEX = /^You use your\s+<a?:.+?:\d+>\s+`([^`]+)` to heal for \*\*(?:\d+)\*\* health! You now have.*<@(\d+)>/;
 
 
 /**
@@ -68,15 +76,34 @@ const FARM_MESSAGE_REGEX = /^You decide to\s+(?:scavenge for loot|go :axe: chop 
  * @param {object} db The Firestore database instance.
  * @param {string} userId The ID of the user to ping.
  * @param {string} channelId The ID of the channel to ping in.
- * @param {string} type The type of cooldown ('attack' or 'farm').
- * @param {string} item The name of the item/weapon.
+ * @param {string} type The type of cooldown ('attack', 'farm', 'med').
+ * @param {string} item The name of the item/weapon/activity.
  * @param {string} cooldownDocId The Firestore document ID for this cooldown.
  * @param {string} APP_ID_FOR_FIRESTORE The application ID for Firestore path.
  */
 async function sendCooldownPing(client, db, userId, channelId, type, item, cooldownDocId, APP_ID_FOR_FIRESTORE) {
     // Determine which preference to check based on type
-    const notificationType = type === 'attack' ? 'attackCooldown' : 'farmCooldown';
-    const pingMessage = type === 'attack' ? `<@${userId}> your **${item}** attack cooldown is over!` : `<@${userId}> your **${item}** farming cooldown is over!`;
+    let notificationType;
+    let pingMessage;
+
+    switch (type) {
+        case 'attack':
+            notificationType = 'attackCooldown';
+            pingMessage = `<@${userId}> your **${item}** attack cooldown is over!`;
+            break;
+        case 'farm':
+            notificationType = 'farmCooldown';
+            pingMessage = `<@${userId}> your **${item}** cooldown is over!`;
+            break;
+        case 'med': // NEW: Med cooldown type
+            notificationType = 'medCooldown';
+            pingMessage = `<@${userId}> your **${item}** cooldown is over!`;
+            break;
+        default:
+            console.warn(`Cooldown Notifier: Unknown cooldown type "${type}". Cannot send ping.`);
+            await deleteDoc(doc(collection(db, `ActiveCooldowns`), cooldownDocId));
+            return;
+    }
 
     const userPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), notificationType);
     const prefSnap = await getDoc(userPrefsRef);
@@ -112,7 +139,6 @@ module.exports = {
     async execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
         console.log(`[Cooldown Notifier - Debug] Listener active. Message received from ${message.author.tag} (ID: ${message.author.id}) in #${message.channel.name}.`);
 
-        // Ignore messages not from the target game bot or from this bot itself
         if (message.author.id !== TARGET_GAME_BOT_ID) {
             console.log(`[Cooldown Notifier - Debug] Ignoring message: Not from target game bot.`);
             return;
@@ -122,7 +148,6 @@ module.exports = {
             return;
         }
 
-        // Only process messages in guilds
         if (!message.guild) {
             console.log(`[Cooldown Notifier - Debug] Ignoring message: Not in a guild.`);
             return;
@@ -146,25 +171,36 @@ module.exports = {
             playerId = attackMatch[1];
             item = attackMatch[3].toLowerCase(); // Weapon name
             cooldownType = 'attack';
-            cooldownDuration = WEAPON_COOLDOWNS_MS[item];
+            cooldownDuration = COOLDOWN_DURATIONS_MS[item];
             console.log(`[Cooldown Notifier - Debug] Attack Regex Match Result:`, attackMatch);
             console.log(`[Cooldown Notifier - Debug] Detected attack: Player ID=${playerId}, Weapon=${item}.`);
         }
 
-        // --- NEW: Attempt to match Farm Message ---
+        // --- Attempt to match Farm Message (only if not an attack message) ---
         const farmMatch = message.content.match(FARM_MESSAGE_REGEX);
         if (farmMatch && !attackMatch) { // Only process as farm if not already an attack message
             playerId = farmMatch[1]; // Player ID is captured in farm regex
             item = 'farming'; // Generic item for farming cooldown
             cooldownType = 'farm';
-            cooldownDuration = FARM_COOLDOWN_MS;
+            cooldownDuration = COOLDOWN_DURATIONS_MS['farming'];
             console.log(`[Cooldown Notifier - Debug] Farm Regex Match Result:`, farmMatch);
             console.log(`[Cooldown Notifier - Debug] Detected farm: Player ID=${playerId}, Item=${item}.`);
         }
 
+        // --- NEW: Attempt to match Med Message (only if not attack or farm) ---
+        const medMatch = message.content.match(MED_MESSAGE_REGEX);
+        if (medMatch && !attackMatch && !farmMatch) {
+            item = medMatch[1].toLowerCase(); // Med item name
+            playerId = medMatch[2]; // Player ID is captured in med regex
+            cooldownType = 'med';
+            cooldownDuration = COOLDOWN_DURATIONS_MS[item];
+            console.log(`[Cooldown Notifier - Debug] Med Regex Match Result:`, medMatch);
+            console.log(`[Cooldown Notifier - Debug] Detected med usage: Player ID=${playerId}, Item=${item}.`);
+        }
+
 
         if (playerId && item && cooldownType && cooldownDuration !== undefined) {
-            // --- Debug Notification to specific channel (for both types) ---
+            // --- Debug Notification to specific channel ---
             const notificationChannel = client.channels.cache.get(NOTIFICATION_CHANNEL_ID);
             if (notificationChannel && notificationChannel.isTextBased()) {
                 try {
@@ -185,7 +221,7 @@ module.exports = {
             }
 
             const cooldownEndsAt = Date.now() + cooldownDuration;
-            // Cooldown Doc ID now includes type to differentiate attack/farm cooldowns for the same player/channel
+            // Cooldown Doc ID now includes type to differentiate cooldowns for the same player/channel
             const cooldownDocId = `${playerId}_${message.channel.id}_${cooldownType}`;
 
             const activeCooldownsRef = collection(db, `ActiveCooldowns`); // Using a more generic collection name
@@ -196,7 +232,7 @@ module.exports = {
                     userId: playerId,
                     channelId: message.channel.id,
                     type: cooldownType, // Store type
-                    item: item, // Store item/weapon
+                    item: item, // Store item/weapon/activity
                     cooldownEndsAt: cooldownEndsAt,
                     originalMessageId: message.id,
                     guildId: message.guild.id,
