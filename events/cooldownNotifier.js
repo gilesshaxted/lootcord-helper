@@ -74,14 +74,14 @@ const COOLDOWN_DURATIONS_MS = {
 // Regex to capture player ID, enemy type, and weapon name for attack messages
 const ATTACK_MESSAGE_REGEX = /^(?:<a?:.+?:\d+>|\S+)\s+\*\*<@(\d+)>\*\* hit the \*\*(.*?)\*\* for \*\*(?:\d+)\*\* damage using their\s+<a?:.+?:\d+>\s+`([^`]+)`/;
 
-// --- UPDATED FARM_MESSAGE_REGEX: Removed player ID capture from regex ---
-// Captures: 1: Farmed Item (e.g., 'crate', 'wood', 'metal', 'stone', 'high quality metal')
-// Player ID will be derived from the previous message.
+// Regex to capture player ID for farm messages
 const FARM_MESSAGE_REGEX = /^You decide to\s+(?:scavenge for loot|go :axe: chop some trees|go :pick: mining).*and (?:find|receive|bring back).*`([^`]+)`!/;
 
+// --- FIXED MED_MESSAGE_REGEX: Adjusted for flexibility in matching health bar emojis ---
+// Captures: 1: Med Item Name (e.g., 'bandage', 'medical syringe', 'large medkit')
+// Player ID is derived from message.author.id
+const MED_MESSAGE_REGEX = /^You use your\s+<a?:.+?:\d+>\s+`([^`]+)` to heal for \*\*(?:\d+)\*\* health! You now have(?:<a?:.+?:\d+>)*\s+\*\*(?:\d+)\*\* health\./;
 
-// Regex to capture player ID and med type for med messages
-const MED_MESSAGE_REGEX = /^You use your\s+<a?:.+?:\d+>\s+`([^`]+)` to heal for \*\*(?:\d+)\*\* health! You now have.*<@(\d+)>/;
 
 // Regex to capture player ID for vote messages
 const VOTE_MESSAGE_REGEX = /^\S+\s+\*\*<@(\d+)>\*\* received rewards for voting!/;
@@ -220,7 +220,7 @@ module.exports = {
                 const messages = await message.channel.messages.fetch({ limit: 2 });
                 const previousMessage = messages.last(); // The message before the current one
                 
-                if (previousMessage && !previousMessage.author.bot && previousMessage.content.toLowerCase().includes('t-farm')) {
+                if (previousMessage && !previousMessage.author.bot && previousMessage.content.toLowerCase().startsWith('t-farm')) { // Check for 't-farm'
                     playerId = previousMessage.author.id;
                     console.log(`[Cooldown Notifier - Debug] Farm Player ID from previous message: ${playerId}`);
                 } else {
@@ -240,11 +240,30 @@ module.exports = {
         const medMatch = message.content.match(MED_MESSAGE_REGEX);
         if (medMatch && !attackMatch && !farmMatch) {
             item = medMatch[1].toLowerCase(); // Med item name
-            playerId = message.author.id; // Player ID is message.author.id
             cooldownType = 'med';
             cooldownDuration = COOLDOWN_DURATIONS_MS[item];
             console.log(`[Cooldown Notifier - Debug] Med Regex Match Result:`, medMatch);
-            console.log(`[Cooldown Notifier - Debug] Detected med usage: Player ID=${playerId}, Item=${item}.`);
+            console.log(`[Cooldown Notifier - Debug] Detected med usage: Item=${item}.`);
+            
+            // --- NEW: Fetch previous message to get player ID for Med ---
+            try {
+                const messages = await message.channel.messages.fetch({ limit: 2 });
+                const previousMessage = messages.last(); // The message before the current one
+                
+                // Check if previous message is from a user and starts with 't-use'
+                if (previousMessage && !previousMessage.author.bot && previousMessage.content.toLowerCase().startsWith('t-use')) {
+                    playerId = previousMessage.author.id;
+                    console.log(`[Cooldown Notifier - Debug] Med Player ID from previous message: ${playerId}`);
+                } else {
+                    console.warn(`[Cooldown Notifier - Debug] Previous message not a 't-use' command or sent by a bot. Cannot determine med player. Using game bot ID as fallback.`);
+                    playerId = message.author.id; // Fallback to game bot ID if player not found
+                }
+            } catch (error) {
+                console.error(`[Cooldown Notifier - Debug] Error fetching previous message for med cooldown:`, error);
+                playerId = message.author.id; // Fallback to game bot ID on error
+            }
+            // --- END NEW Fetch previous message ---
+
             debugMessage = `Cooldown Type: Med - User: <@${playerId}> - Item: ${item} - Cooldown: ${cooldownDuration / 60000} mins`;
         }
 
