@@ -77,15 +77,16 @@ const ATTACK_MESSAGE_REGEX = /^(?:<a?:.+?:\d+>|\S+)\s+\*\*<@(\d+)>\*\* hit the \
 // Regex to capture player ID for farm messages
 const FARM_MESSAGE_REGEX = /^You decide to\s+(?:scavenge for loot|go :axe: chop some trees|go :pick: mining).*and (?:find|receive|bring back).*`([^`]+)`!/;
 
-// Regex to capture player ID and med type for med messages
-const MED_MESSAGE_REGEX = /^You use your\s+<a?:.+?:\d+>\s+`([^`]+)` to heal for \*\*(?:\d+)\*\* health! You now have.*<@(\d+)>/;
+// --- FIXED MED_MESSAGE_REGEX: Adjusted for flexibility in matching health bar emojis ---
+// Captures: 1: Med Item Name (e.g., 'bandage', 'medical syringe', 'large medkit')
+// Player ID is derived from message.author.id
+const MED_MESSAGE_REGEX = /^You use your\s+<a?:.+?:\d+>\s+`([^`]+)` to heal for \*\*(?:\d+)\*\* health! You now have(?:<a?:.+?:\d+>)*\s+\*\*(\d+)\*\* health\./;
+
 
 // Regex to capture player ID for vote messages
 const VOTE_MESSAGE_REGEX = /^\S+\s+\*\*<@(\d+)>\*\* received rewards for voting!/;
 
-// --- FIXED REPAIR_MESSAGE_REGEX: Adjusted for bolding and emoji format ---
-// Captures: 1: Repair Item (e.g., 'metal', 'wood', 'stone', 'high quality metal')
-// Player ID is derived from message.author.id
+// Regex to capture repair item and player ID for clan repair messages
 const REPAIR_MESSAGE_REGEX = /^✅ You used \*\*1x\*\* <a?:.+?:\d+>\s+`([^`]+)` to repair the clan!/s;
 
 
