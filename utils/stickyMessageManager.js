@@ -5,14 +5,14 @@ const STICKY_DURATION_MS = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
 
 /**
  * Creates and stores a new sticky message entry in Firestore.
- * @param {Client} client The Discord client instance. // NEW: Added client
+ * @param {Client} client The Discord client instance.
  * @param {object} db The Firestore database instance.
  * @param {string} channelId The ID of the channel where the sticky message is.
  * @param {string} userId The ID of the user who activated the solo command.
  * @param {string} mobChannelOriginalName The original name of the channel before renaming (for revert trigger).
  * @returns {Promise<string|null>} The ID of the newly created sticky message in Discord, or null on failure.
  */
-async function createStickyMessage(client, db, channelId, userId, mobChannelOriginalName) { // NEW: Added client
+async function createStickyMessage(client, db, channelId, userId, mobChannelOriginalName) {
     const soloStickyMessagesRef = collection(db, `SoloStickyMessages`);
     const stickyDocRef = doc(soloStickyMessagesRef, channelId); // Document ID is channelId
 
@@ -24,7 +24,7 @@ async function createStickyMessage(client, db, channelId, userId, mobChannelOrig
             .setDescription(`<@${userId}> has chosen to take this mob solo.\nPlease do not attack this mob.`)
             .setFooter({ text: `Thanks the Lemon Team - ${new Date().toLocaleString()}` });
 
-        const channel = client.channels.cache.get(channelId); // Now client is available
+        const channel = client.channels.cache.get(channelId);
         if (!channel || !channel.isTextBased()) {
             console.error(`Sticky Message Manager: Channel ${channelId} not found or not text-based for sticky message.`);
             return null;
@@ -55,19 +55,19 @@ async function createStickyMessage(client, db, channelId, userId, mobChannelOrig
 
 /**
  * Reposts an existing sticky message to keep it at the bottom.
- * @param {Client} client The Discord client instance. // NEW: Added client
+ * @param {Client} client The Discord client instance.
  * @param {object} db The Firestore database instance.
  * @param {object} stickyMessageData The data of the sticky message from Firestore.
  */
-async function repostStickyMessage(client, db, stickyMessageData) { // NEW: Added client
+async function repostStickyMessage(client, db, stickyMessageData) {
     const channelId = stickyMessageData.channelId;
     const oldStickyMessageId = stickyMessageData.stickyMessageId;
     const userId = stickyMessageData.userId; // User who activated solo
     const mobChannelOriginalName = stickyMessageData.mobChannelOriginalName;
 
-    const channel = client.channels.cache.get(channelId); // Now client is available
+    const channel = client.channels.cache.get(channelId);
     if (!channel || !channel.isTextBased()) {
-        console.warn(`Sticky Message Manager: Channel ${channelId} not found or not text-based for repost. Removing sticky entry.`);
+        console.warn(`Sticky Message Manager: Channel ${channelId} not found or not text-based for repost. Attempting to remove sticky entry.`);
         await removeStickyMessage(client, db, channelId); // Pass client to removeStickyMessage
         return;
     }
@@ -78,6 +78,8 @@ async function repostStickyMessage(client, db, stickyMessageData) { // NEW: Adde
         if (oldMessage) {
             await oldMessage.delete();
             console.log(`Sticky Message Manager: Deleted old sticky message ${oldStickyMessageId} in #${channel.name}.`);
+        } else {
+            console.warn(`Sticky Message Manager: Old Discord sticky message ${oldStickyMessageId} not found or already deleted during repost attempt.`);
         }
 
         // Recreate the embed for the new sticky message
@@ -108,34 +110,51 @@ async function repostStickyMessage(client, db, stickyMessageData) { // NEW: Adde
 
 /**
  * Removes a sticky message entry from Firestore and attempts to delete the Discord message.
- * @param {Client} client The Discord client instance. // NEW: Added client
+ * Also clears the user's activeChannelId in SoloCooldowns.
+ * @param {Client} client The Discord client instance.
  * @param {object} db The Firestore database instance.
  * @param {string} channelId The ID of the channel.
  */
-async function removeStickyMessage(client, db, channelId) { // NEW: Added client
-    const stickyDocRef = doc(collection(db, `SoloStickyMessages`), channelId);
+async function removeStickyMessage(client, db, channelId) {
+    const soloStickyMessagesRef = collection(db, `SoloStickyMessages`);
+    const stickyDocRef = doc(soloStickyMessagesRef, channelId);
+    const soloCooldownsRef = collection(db, `SoloCooldowns`);
 
     try {
         const docSnap = await getDoc(stickyDocRef);
         if (docSnap.exists()) {
             const stickyData = docSnap.data();
             const stickyMessageId = stickyData.stickyMessageId;
-            const channel = client.channels.cache.get(channelId); // Now client is available
+            const userId = stickyData.userId; // Get userId from stickyData
 
+            const channel = client.channels.cache.get(channelId);
             if (channel && channel.isTextBased()) {
                 const oldMessage = await channel.messages.fetch(stickyMessageId).catch(() => null);
                 if (oldMessage) {
                     await oldMessage.delete();
                     console.log(`Sticky Message Manager: Deleted Discord sticky message ${stickyMessageId} in #${channel.name}.`);
                 } else {
-                    console.warn(`Sticky Message Manager: Discord sticky message ${stickyMessageId} not found or already deleted.`);
+                    console.warn(`Sticky Message Manager: Discord sticky message ${stickyMessageId} not found or already deleted during removal.`);
                 }
             } else {
                 console.warn(`Sticky Message Manager: Channel ${channelId} not found or not text-based for sticky message deletion.`);
             }
 
-            await deleteDoc(stickyDocRef);
+            await deleteDoc(stickyDocRef); // Delete the sticky message entry from Firestore
             console.log(`Sticky Message Manager: Removed sticky message entry for channel ${channelId} from Firestore.`);
+
+            // --- NEW: Clear user's active solo channel and reset cooldown for this specific channel ---
+            const userCooldownDocRef = doc(soloCooldownsRef, userId);
+            const userCooldownSnap = await getDoc(userCooldownDocRef);
+            if (userCooldownSnap.exists() && userCooldownSnap.data().activeChannelId === channelId) {
+                await updateDoc(userCooldownDocRef, {
+                    activeChannelId: null, // Clear the active channel
+                    lastUsedTimestamp: 0 // Reset cooldown completely, or set to Date.now() if a new cooldown should start
+                });
+                console.log(`Sticky Message Manager: Cleared active channel and reset cooldown for user ${userId}.`);
+            } else {
+                console.log(`Sticky Message Manager: User ${userId} cooldown not found or not linked to channel ${channelId}.`);
+            }
             return true;
         } else {
             console.log(`Sticky Message Manager: No sticky message entry found for channel ${channelId} to remove.`);
