@@ -1,6 +1,6 @@
 {
   "name": "Lootcord-Helper",
-  "version": "0.7.24",
+  "version": "0.7.25",
   "description": "A discord bot designed to interact with Lootcord bot and help its players.",
   "main": "index.js",
   "scripts": {
