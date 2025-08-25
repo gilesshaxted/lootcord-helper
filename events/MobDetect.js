@@ -3,7 +3,7 @@
 
 const { collection, getDocs, doc, setDoc } = require('firebase/firestore');
 const statsTracker = require('../utils/statsTracker'); // Import Stats Tracker
-const { removeStickyMessage } = require('../utils/stickyMessageManager'); // NEW: Import removeStickyMessage
+const { removeStickyMessage } = require('../utils/stickyMessageManager'); // Import removeStickyMessage
 
 // Configuration specific to this listener
 const TARGET_BOT_ID = '493316754689359874'; // User ID of the other bot to listen to
@@ -46,7 +46,6 @@ module.exports = {
 
         // Check if the current channel is one of the configured channels
         if (!storedChannels[channelId]) {
-            // console.log(`[MobDetect - Debug] Channel ${message.channel.name} (${channelId}) is not a configured channel. Ignoring.`); // Too verbose
             return; // Not a configured channel, ignore
         }
 
