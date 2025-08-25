@@ -1,0 +1,13 @@
+cooldown notifier missed this med using a bandage
+
+[Cooldown Notifier - Debug] Listener active. Message received from Lootcord#6294 (ID: 493316754689359874) in #🔫╏patroncord.
+
+08-25 07:46:48 [Cooldown Notifier - Debug] Message Content: 
+
+08-25 07:46:48 ```
+
+08-25 07:46:48 You use your <:bandage:732858488652431480> `bandage` to heal for **14** health! You now have <:health_bar_start_full:849053369368313906><:health_bar_mid_full:849053369317326868><:health_bar_mid_full:849053369317326868><:health_bar_mid_full:849053369317326868><:health_bar_75:849055032879218718> **97** health.
+
+08-25 07:46:48 ```
+
+08-25 07:46:48 [Cooldown Notifier - Debug] Message did not match any known cooldown regex. Content: "You use your <:bandage:732858488652431480> `bandage` to heal for **14** health! You now have <:health_bar_start_full:849053369368313906><:health_bar_mid_full:849053369317326868><:health_bar_mid_full:849053369317326868><:health_bar_mid_full:849053369317326868><:health_bar_75:849055032879218718> **97** health."
