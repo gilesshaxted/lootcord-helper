@@ -80,7 +80,7 @@ const FARM_MESSAGE_REGEX = /^You decide to\s+(?:scavenge for loot|go :axe: chop 
 // --- FIXED MED_MESSAGE_REGEX: Adjusted for flexibility in matching health bar emojis ---
 // Captures: 1: Med Item Name (e.g., 'bandage', 'medical syringe', 'large medkit')
 // Player ID is derived from message.author.id
-const MED_MESSAGE_REGEX = /^You use your\s+<a?:.+?:\d+>\s+`([^`]+)` to heal for \*\*(?:\d+)\*\* health! You now have(?:<a?:.+?:\d+>)*\s+\*\*(?:\d+)\*\* health\./;
+const MED_MESSAGE_REGEX = /^You use your\s+<a?:.+?:\d+>\s+`([^`]+)` to heal for \*\*(?:\d+)\*\* health! You now have(?:<a?:.+?:\d+>)*\s+\*\*(\d+)\*\* health\./;
 
 
 // Regex to capture player ID for vote messages
@@ -256,7 +256,7 @@ module.exports = {
                     console.log(`[Cooldown Notifier - Debug] Med Player ID from previous message: ${playerId}`);
                 } else {
                     console.warn(`[Cooldown Notifier - Debug] Previous message not a 't-use' command or sent by a bot. Cannot determine med player. Using game bot ID as fallback.`);
-                    playerId = message.author.id; // Fallback to game bot ID if player not found
+                    playerId = message.author.id; // Fallback to game bot ID on error
                 }
             } catch (error) {
                 console.error(`[Cooldown Notifier - Debug] Error fetching previous message for med cooldown:`, error);
