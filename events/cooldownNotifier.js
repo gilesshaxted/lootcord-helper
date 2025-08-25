@@ -74,14 +74,14 @@ const COOLDOWN_DURATIONS_MS = {
 // Regex to capture player ID, enemy type, and weapon name for attack messages
 const ATTACK_MESSAGE_REGEX = /^(?:<a?:.+?:\d+>|\S+)\s+\*\*<@(\d+)>\*\* hit the \*\*(.*?)\*\* for \*\*(?:\d+)\*\* damage using their\s+<a?:.+?:\d+>\s+`([^`]+)`/;
 
-// Regex to capture player ID for farm messages
+// --- UPDATED FARM_MESSAGE_REGEX: Removed player ID capture from regex ---
+// Captures: 1: Farmed Item (e.g., 'crate', 'wood', 'metal', 'stone', 'high quality metal')
+// Player ID will be derived from the previous message.
 const FARM_MESSAGE_REGEX = /^You decide to\s+(?:scavenge for loot|go :axe: chop some trees|go :pick: mining).*and (?:find|receive|bring back).*`([^`]+)`!/;
 
-// --- FIXED MED_MESSAGE_REGEX: Adjusted for flexibility in matching health bar emojis ---
-// Captures: 1: Med Item Name (e.g., 'bandage', 'medical syringe', 'large medkit')
-// Player ID is derived from message.author.id
-const MED_MESSAGE_REGEX = /^You use your\s+<a?:.+?:\d+>\s+`([^`]+)` to heal for \*\*(?:\d+)\*\* health! You now have(?:<a?:.+?:\d+>)*\s+\*\*(\d+)\*\* health\./;
 
+// Regex to capture player ID and med type for med messages
+const MED_MESSAGE_REGEX = /^You use your\s+<a?:.+?:\d+>\s+`([^`]+)` to heal for \*\*(?:\d+)\*\* health! You now have.*<@(\d+)>/;
 
 // Regex to capture player ID for vote messages
 const VOTE_MESSAGE_REGEX = /^\S+\s+\*\*<@(\d+)>\*\* received rewards for voting!/;
@@ -209,12 +209,30 @@ module.exports = {
         // --- Attempt to match Farm Message (only if not an attack message) ---
         const farmMatch = message.content.match(FARM_MESSAGE_REGEX);
         if (farmMatch && !attackMatch) { // Only process as farm if not already an attack message
-            playerId = message.author.id; // Player ID is message.author.id
             item = farmMatch[1].toLowerCase(); // Captured item name (e.g., 'crate', 'wood', 'metal', 'stone', 'high quality metal')
             cooldownType = 'farm';
             cooldownDuration = COOLDOWN_DURATIONS_MS['farming'];
             console.log(`[Cooldown Notifier - Debug] Farm Regex Match Result:`, farmMatch);
-            console.log(`[Cooldown Notifier - Debug] Detected farm: Player ID=${playerId}, Item=${item}.`);
+            console.log(`[Cooldown Notifier - Debug] Detected farm: Item=${item}.`);
+            
+            // --- NEW: Fetch previous message to get player ID ---
+            try {
+                const messages = await message.channel.messages.fetch({ limit: 2 });
+                const previousMessage = messages.last(); // The message before the current one
+                
+                if (previousMessage && !previousMessage.author.bot && previousMessage.content.toLowerCase().includes('t-farm')) {
+                    playerId = previousMessage.author.id;
+                    console.log(`[Cooldown Notifier - Debug] Farm Player ID from previous message: ${playerId}`);
+                } else {
+                    console.warn(`[Cooldown Notifier - Debug] Previous message not a 't-farm' command or sent by a bot. Cannot determine farm player. Using game bot ID as fallback.`);
+                    playerId = message.author.id; // Fallback to game bot ID if player not found
+                }
+            } catch (error) {
+                console.error(`[Cooldown Notifier - Debug] Error fetching previous message for farm cooldown:`, error);
+                playerId = message.author.id; // Fallback to game bot ID on error
+            }
+            // --- END NEW Fetch previous message ---
+
             debugMessage = `Cooldown Type: Farm - User: <@${playerId}> - Activity: ${item} - Cooldown: ${cooldownDuration / 60000} mins`;
         }
 
