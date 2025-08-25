@@ -18,7 +18,7 @@ const paginationHelpers = require('./utils/pagination');
 const startupChecks = require('./utils/startupChecks');
 const wordleHelpers = require('./utils/wordleHelpers');
 const stickyMessageManager = require('./utils/stickyMessageManager');
-const { sendCooldownPing } = require('./events/cooldownNotifier'); // UPDATED: Import sendCooldownPing from renamed file
+const { sendCooldownPing } = require('./events/cooldownNotifier'); // Import sendCooldownPing from renamed file
 
 // Load environment variables from a custom .env file
 // Assumes lootcord-helper.env is in the same directory as index.js
@@ -249,7 +249,7 @@ client.once('ready', async () => {
 
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
 
-    // --- Reschedule active attack cooldown pings on startup ---
+    // --- Reschedule active cooldown pings on startup ---
     const activeCooldownsRef = collection(db, `ActiveCooldowns`); // Use generic collection name
     try {
         const querySnapshot = await getDocs(activeCooldownsRef);
@@ -825,6 +825,7 @@ client.on('interactionCreate', async interaction => {
                         if (explanations[letter]) {
                             explanationContent += `${letter}: ${explanations[letter]}\n`;
                         }
+                        // No need for else here, just don't add if no explanation
                     });
                     explanationContent += `\`\`\``;
 
@@ -838,7 +839,7 @@ client.on('interactionCreate', async interaction => {
                                 })
                             );
                         });
-                        await originalMessage.edit({ components: newComponents });
+                        await originalMessage.edit({ embeds: [originalMessage.embeds[0]], components: newComponents }); // Keep original embed, just update components
                     }
 
                     await interaction.followUp({ content: explanationContent, ephemeral: false }); // Send publicly
@@ -849,7 +850,7 @@ client.on('interactionCreate', async interaction => {
                 }
             } catch (error) {
                 console.error(`Trivia Solver: Error fetching explanation for message ID ${originalMessageId}:`, error);
-                await interaction.followUp({ content: 'An error occurred while fetching the explanation. Please check logs.', ephemeral: false });
+                await interaction.followUp({ content: 'An error occurred while fetching the explanation. Please check logs.', ephemeral: true });
             }
         }
     }
