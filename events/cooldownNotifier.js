@@ -288,11 +288,30 @@ module.exports = {
         const repairMatch = message.content.match(REPAIR_MESSAGE_REGEX);
         if (repairMatch && !attackMatch && !farmMatch && !medMatch && !voteMatch) {
             item = repairMatch[1].toLowerCase(); // Repair item name (wood, stone, metal, high quality metal)
-            playerId = message.author.id; // Player who sent the message is the one who repaired
             cooldownType = 'repair';
             cooldownDuration = COOLDOWN_DURATIONS_MS[item];
             console.log(`[Cooldown Notifier - Debug] Repair Regex Match Result:`, repairMatch);
-            console.log(`[Cooldown Notifier - Debug] Detected repair: Player ID=${playerId}, Item=${item}.`);
+            console.log(`[Cooldown Notifier - Debug] Detected repair: Item=${item}.`);
+            
+            // --- NEW: Fetch previous message to get player ID for Repair ---
+            try {
+                const messages = await message.channel.messages.fetch({ limit: 2 });
+                const previousMessage = messages.last(); // The message before the current one
+                
+                // Check if previous message is from a user and starts with 't-clan repair'
+                if (previousMessage && !previousMessage.author.bot && previousMessage.content.toLowerCase().startsWith('t-clan repair')) {
+                    playerId = previousMessage.author.id;
+                    console.log(`[Cooldown Notifier - Debug] Repair Player ID from previous message: ${playerId}`);
+                } else {
+                    console.warn(`[Cooldown Notifier - Debug] Previous message not a 't-clan repair' command or sent by a bot. Cannot determine repair player. Using game bot ID as fallback.`);
+                    playerId = message.author.id; // Fallback to game bot ID if player not found
+                }
+            } catch (error) {
+                console.error(`[Cooldown Notifier - Debug] Error fetching previous message for repair cooldown:`, error);
+                playerId = message.author.id; // Fallback to game bot ID on error
+            }
+            // --- END NEW Fetch previous message ---
+
             debugMessage = `Cooldown Type: Repair - User: <@${playerId}> - Item: ${item} - Cooldown: ${cooldownDuration / 60000} mins`;
         }
 
