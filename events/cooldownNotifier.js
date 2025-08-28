@@ -164,7 +164,7 @@ async function sendCooldownPing(client, db, userId, channelId, type, item, coold
 module.exports = {
     name: 'messageCreate',
     once: false,
-    async execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
+    async execute(message, db, client, APP_ID_FOR_FIRESTORE) { // Removed isFirestoreReady as it's checked at the start
         console.log(`[Cooldown Notifier - Debug] Listener active. Message received from ${message.author.tag} (ID: ${message.author.id}) in #${message.channel.name}.`);
 
         if (message.author.id !== TARGET_GAME_BOT_ID) {
@@ -181,10 +181,12 @@ module.exports = {
             return;
         }
 
-        if (!isFirestoreReady) {
-            console.warn('Cooldown Notifier: Firestore not ready. Skipping message processing.');
+        // --- NEW: Check isFirestoreReady here ---
+        if (!db || !APP_ID_FOR_FIRESTORE) { // Check db and APP_ID_FOR_FIRESTORE as well
+            console.warn('Cooldown Notifier: Firestore DB or App ID not ready. Skipping message processing.');
             return;
         }
+        // --- END NEW Check ---
 
         console.log(`[Cooldown Notifier - Debug] Message Content: \n\`\`\`\n${message.content}\n\`\`\``);
 
@@ -304,7 +306,7 @@ module.exports = {
                     console.log(`[Cooldown Notifier - Debug] Repair Player ID from previous message: ${playerId}`);
                 } else {
                     console.warn(`[Cooldown Notifier - Debug] Previous message not a 't-clan repair' command or sent by a bot. Cannot determine repair player. Using game bot ID as fallback.`);
-                    playerId = message.author.id; // Fallback to game bot ID on error
+                    playerId = message.author.id; // Fallback to game bot ID if player not found
                 }
             } catch (error) {
                 console.error(`[Cooldown Notifier - Debug] Error fetching previous message for repair cooldown:`, error);
