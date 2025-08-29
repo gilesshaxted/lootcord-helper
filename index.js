@@ -89,7 +89,8 @@ async function initializeFirebase() {
             }
             isFirestoreReady = true;
             console.log("Firestore client initialized and ready.");
-            await setupFirestoreListeners();
+            // Call setupFirestoreListeners ONLY after auth is ready
+            await setupFirestoreListeners(); 
         });
 
         await signInAnonymously(auth);
@@ -192,7 +193,7 @@ for (const file of eventFiles) {
 
 // --- Discord Event Handlers (main ones remaining in index.js) ---
 
-client.once('ready', async () => {
+client.once('clientReady', async () => { // Changed 'ready' to 'clientReady'
     console.log(`Logged in as ${client.user.tag}!`);
     console.log('------');
 
@@ -204,7 +205,7 @@ client.once('ready', async () => {
     }
 
     await initializeFirebase();
-    await setupFirestoreListeners();
+    // Removed: await setupFirestoreListeners(); // This call is now handled by onAuthStateChanged
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
@@ -641,16 +642,3 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
     console.log(`Web server listening on port ${PORT}`);
 });
-" code between  and  in the most up-to-date Canvas "Updated index.js" document above and am asking a query about/based on this code below.
-Instructions to follow:
-  * Don't output/edit the document if the query is Direct/Simple. For example, if the query asks for a simple explanation, output a direct answer.
-  * Make sure to **edit** the document if the query shows the intent of editing the document, in which case output the entire edited document, **not just that section or the edits**.
-    * Don't output the same document/empty document and say that you have edited it.
-    * Don't change unrelated code in the document.
-  * Don't output  and  in your final response.
-  * Any references like "this" or "selected code" refers to the code between  and  tags.
-  * Just acknowledge my request in the introduction.
-  * Make sure to refer to the document as "Canvas" in your response.
-
-i thought i had made a web dashboard for lootcord helper using /public folder
-i am hosting on render, why is it not worki
