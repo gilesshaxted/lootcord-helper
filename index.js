@@ -1,7 +1,7 @@
 // Import necessary classes from the discord.js library
 const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder, EmbedBuilder } = require('discord.js');
 const { REST } = require('@discordjs/rest');
-const { Routes } = require('discord-api-types/v10');
+const { Routes } = require('@discordjs/rest');
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -340,7 +340,7 @@ client.on('interactionCreate', async interaction => {
     if (!isFirestoreReady) {
         console.error('Firestore is not yet ready to process interactions. Skipping interaction.');
         if (interaction.isChatInputCommand() && !interaction.deferred && !interaction.replied) {
-            await interaction.reply({ content: 'The bot is still starting up. Please try the command again in a moment.', ephemeral: false });
+            await interaction.reply({ content: 'The bot is still starting up. Please try the command again in a moment.', flags: 0 });
         }
         return;
     }
@@ -362,7 +362,7 @@ client.on('interactionCreate', async interaction => {
             }
 
             const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage);
-            await interaction.editReply({ content, components, ephemeral: false });
+            await interaction.editReply({ content, components, flags: 0 });
         } else if (interaction.customId.startsWith('toggle_attack_notifications') ||
                    interaction.customId.startsWith('toggle_farm_notifications') ||
                    interaction.customId.startsWith('toggle_med_notifications') ||
@@ -393,6 +393,7 @@ client.on('interactionCreate', async interaction => {
                 }
                 
                 const currentPrefSnap = await getDoc(prefsRefs[targetCooldownType]); 
+                let newStates = {}; // Declare newStates here
                 newStates[targetCooldownType] = ! (currentPrefSnap.exists() ? currentPrefSnap.data().enabled : false);
                 console.log(`[Notify Button] User ${userId} toggled ${targetCooldownType} notifications to: ${newStates[targetCooldownType]}`);
 
@@ -473,7 +474,7 @@ client.on('interactionCreate', async interaction => {
 
             } catch (error) {
                 console.error(`[Notify Button] Error toggling notification preference for ${userId}:`, error);
-                await interaction.followUp({ content: '❌ An error occurred while updating your notification settings. Please check logs.', ephemeral: true });
+                await interaction.followUp({ content: '❌ An error occurred while updating your notification settings. Please check logs.', flags: MessageFlags.Ephemeral });
             }
         } else if (interaction.customId.startsWith('show_trivia_explanation_')) { // Handle trivia explanation button
             await interaction.deferUpdate(); // Acknowledge button click
@@ -514,15 +515,15 @@ client.on('interactionCreate', async interaction => {
                         await originalMessage.edit({ embeds: [originalMessage.embeds[0]], components: newComponents }); // Keep original embed, just update components
                     }
 
-                    await interaction.followUp({ content: explanationContent, ephemeral: false }); // Send publicly
+                    await interaction.followUp({ content: explanationContent, flags: 0 }); // Send publicly
                     console.log(`Trivia Solver: Posted explanation for message ID ${originalMessageId} in #${interaction.channel.name}.`);
                 } else {
-                    await interaction.followUp({ content: 'Could not find explanation for this trivia question.', ephemeral: false });
+                    await interaction.followUp({ content: 'Could not find explanation for this trivia question.', flags: 0 });
                     console.warn(`Trivia Solver: Explanation not found for message ID ${originalMessageId}.`);
                 }
             } catch (error) {
                 console.error(`Trivia Solver: Error fetching explanation for message ID ${originalMessageId}:`, error);
-                await interaction.followUp({ content: 'An error occurred while fetching the explanation. Please check logs.', ephemeral: true });
+                await interaction.followUp({ content: 'An error occurred while fetching the explanation. Please check logs.', flags: MessageFlags.Ephemeral });
             }
         }
     }
@@ -538,9 +539,9 @@ client.on('interactionCreate', async interaction => {
 
         try {
             if (command.data.name === 'channel-set') {
-                await interaction.deferReply({ ephemeral: false });
+                await interaction.deferReply({ flags: 0 });
                 const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, 0);
-                await interaction.editReply({ content, components, ephemeral: false });
+                await interaction.editReply({ content, components, flags: 0 });
             } else {
                 await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
             }
@@ -550,9 +551,9 @@ client.on('interactionCreate', async interaction => {
         } catch (error) {
             console.error(`Error executing command ${command.data.name}:`, error);
             if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: false });
+                await interaction.reply({ content: 'There was an error while executing this command!', flags: 0 });
             } else if (interaction.deferred) {
-                await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: false });
+                await interaction.followUp({ content: 'There was an error while executing this command!', flags: 0 });
             }
         }
     }
@@ -567,7 +568,7 @@ client.on('interactionCreate', async interaction => {
             const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
 
             if (!guild) {
-                return await interaction.followUp({ content: 'This action can only be performed in a guild.', ephemeral: false });
+                return await interaction.followUp({ content: 'This action can only be performed in a guild.', flags: 0 });
             }
 
             const guildCollectionRef = collection(db, `Guilds`);
@@ -622,7 +623,7 @@ client.on('interactionCreate', async interaction => {
                 replyContent += `\nFailed to set ${failureCount} channel(s). Check logs for details.`;
             }
 
-            await interaction.editReply({ content: replyContent, components: [], ephemeral: false });
+            await interaction.editReply({ content: replyContent, components: [], flags: 0 });
         }
     }
 });
