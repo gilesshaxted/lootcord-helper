@@ -68,7 +68,7 @@ const COOLDOWN_DURATIONS_MS = {
     'gambling': 5 * 60 * 1000, // 5 minutes (default for most gambling)
     'wheel': 10 * 60 * 1000, // Wheel Roulette cooldown (10 minutes)
     'jackpot': 9 * 60 * 1000, // Jackpot cooldown (9 minutes)
-    'roulette': 3 * 60 * 1000, // NEW: Roulette cooldown (3 minutes)
+    'roulette': 3 * 60 * 1000, // Roulette cooldown (3 minutes)
 
     // Repair Cooldowns
     'wood': 2 * 60 * 1000, // 2 minutes
@@ -153,7 +153,8 @@ async function sendCooldownPing(client, db, userId, channelId, type, item, coold
             break;
         case 'gambling': // Gambling case
             notificationType = 'gamblingCooldown';
-            pingMessage = `<@${userId}> your **${item}** cooldown is over!`; // Generic message for gambling
+            // The 'item' will now be the specific gambling game name (e.g., 'coinflip', 'blackjack')
+            pingMessage = `<@${userId}> your **${item}** cooldown is over!`; 
             break;
         default:
             console.warn(`Cooldown Notifier: Unknown cooldown type "${type}". Cannot send ping.`);
@@ -232,7 +233,6 @@ module.exports = {
             item = attackMatch[3].toLowerCase();
             cooldownType = 'attack';
             cooldownDuration = COOLDOWN_DURATIONS_MS[item];
-            console.log(`[Cooldown Notifier - Debug] Attack Regex Match Result:`, attackMatch);
             console.log(`[Cooldown Notifier - Debug] Detected attack: Player ID=${playerId}, Weapon=${item}.`);
             debugMessage = `Cooldown Type: Attack - User: <@${playerId}> - Weapon: ${item} - Cooldown: ${cooldownDuration / 60000} mins`;
         }
@@ -243,7 +243,6 @@ module.exports = {
             item = farmMatch[1].toLowerCase();
             cooldownType = 'farm';
             cooldownDuration = COOLDOWN_DURATIONS_MS['farming'];
-            console.log(`[Cooldown Notifier - Debug] Farm Regex Match Result:`, farmMatch);
             console.log(`[Cooldown Notifier - Debug] Detected farm: Item=${item}.`);
             
             try {
@@ -268,7 +267,6 @@ module.exports = {
             item = medMatch[1].toLowerCase();
             cooldownType = 'med';
             cooldownDuration = COOLDOWN_DURATIONS_MS[item];
-            console.log(`[Cooldown Notifier - Debug] Med Regex Match Result:`, medMatch);
             console.log(`[Cooldown Notifier - Debug] Detected med usage: Item=${item}.`);
             
             try {
@@ -293,33 +291,35 @@ module.exports = {
         const slotsEmbedMatch = message.embeds.length > 0 && message.embeds[0].title && SLOTS_EMBED_TITLE_REGEX.test(message.embeds[0].title);
         const wheelEmbedMatch = message.embeds.length > 0 && message.embeds[0].title && WHEEL_EMBED_TITLE_REGEX.test(message.embeds[0].title);
         const jackpotMessageMatch = message.content.match(JACKPOT_MESSAGE_REGEX);
-        const rouletteMessageMatch = message.content.match(ROULETTE_MESSAGE_REGEX); // NEW: Roulette message match
+        const rouletteMessageMatch = message.content.match(ROULETTE_MESSAGE_REGEX);
 
-        if ((gamblingMatch || blackjackEmbedMatch || slotsEmbedMatch || wheelEmbedMatch || jackpotMessageMatch || rouletteMessageMatch) && !attackMatch && !farmMatch && !medMatch) { // Added rouletteMessageMatch
-            item = 'gambling'; // Use a generic item name for gambling cooldowns
+        if ((gamblingMatch || blackjackEmbedMatch || slotsEmbedMatch || wheelEmbedMatch || jackpotMessageMatch || rouletteMessageMatch) && !attackMatch && !farmMatch && !medMatch) {
             cooldownType = 'gambling';
-            // Determine cooldown duration based on specific gambling type
-            if (wheelEmbedMatch) {
-                cooldownDuration = COOLDOWN_DURATIONS_MS['wheel']; // Use specific wheel cooldown
-            } else if (jackpotMessageMatch) {
-                cooldownDuration = COOLDOWN_DURATIONS_MS['jackpot'];
-            } else if (rouletteMessageMatch) { // NEW: Set roulette cooldown
-                cooldownDuration = COOLDOWN_DURATIONS_MS['roulette'];
-            } else {
-                cooldownDuration = COOLDOWN_DURATIONS_MS['gambling']; // Default gambling cooldown (for coinflip, blackjack, slots)
-            }
             
+            // Determine specific item and cooldown duration based on which gambling match occurred
             if (gamblingMatch) {
+                item = 'coinflip';
+                cooldownDuration = COOLDOWN_DURATIONS_MS['gambling']; // Coinflip uses generic gambling cooldown
                 console.log(`[Cooldown Notifier - Debug] Detected gambling message (coinflip) based on content.`);
             } else if (blackjackEmbedMatch) {
+                item = 'blackjack';
+                cooldownDuration = COOLDOWN_DURATIONS_MS['gambling']; // Blackjack uses generic gambling cooldown
                 console.log(`[Cooldown Notifier - Debug] Detected gambling message (blackjack) based on embed author name.`);
             } else if (slotsEmbedMatch) {
+                item = 'slots';
+                cooldownDuration = COOLDOWN_DURATIONS_MS['gambling']; // Slots uses generic gambling cooldown
                 console.log(`[Cooldown Notifier - Debug] Detected gambling message (slots) based on embed title.`);
             } else if (wheelEmbedMatch) {
+                item = 'wheel roulette';
+                cooldownDuration = COOLDOWN_DURATIONS_MS['wheel']; // Wheel uses specific wheel cooldown
                 console.log(`[Cooldown Notifier - Debug] Detected gambling message (wheel roulette) based on embed title.`);
             } else if (jackpotMessageMatch) {
+                item = 'jackpot';
+                cooldownDuration = COOLDOWN_DURATIONS_MS['jackpot']; // Jackpot uses specific jackpot cooldown
                 console.log(`[Cooldown Notifier - Debug] Detected gambling message (jackpot) based on content.`);
-            } else if (rouletteMessageMatch) { // NEW: Roulette debug log
+            } else if (rouletteMessageMatch) {
+                item = 'roulette';
+                cooldownDuration = COOLDOWN_DURATIONS_MS['roulette']; // Roulette uses specific roulette cooldown
                 console.log(`[Cooldown Notifier - Debug] Detected gambling message (roulette) based on content.`);
             }
             
@@ -339,7 +339,7 @@ module.exports = {
                         previousMessage.content.toLowerCase().startsWith('t-bj') ||
                         previousMessage.content.toLowerCase().startsWith('t-slots') ||
                         previousMessage.content.toLowerCase().startsWith('t-wheel') ||
-                        previousMessage.content.toLowerCase().startsWith('t-roulette'))) { // Added t-roulette
+                        previousMessage.content.toLowerCase().startsWith('t-roulette'))) {
                         playerId = previousMessage.author.id;
                         console.log(`[Cooldown Notifier - Debug] Gambling Player ID from previous message: ${playerId}`);
                     } else {
@@ -372,7 +372,7 @@ module.exports = {
                     console.warn(`[Cooldown Notifier - Debug] Previous message not from a user. Cannot determine vote player.`);
                 }
             } catch (error) {
-                console.error(`[Cooldown Notdown Notifier - Debug] Error fetching previous message for vote cooldown:`, error);
+                console.error(`[Cooldown Notifier - Debug] Error fetching previous message for vote cooldown:`, error);
             }
             debugMessage = `Cooldown Type: Vote - User: <@${playerId}> - Activity: ${item} - Cooldown: ${cooldownDuration / 3600000} hours`;
         }
@@ -384,7 +384,6 @@ module.exports = {
             item = repairMatch[1].toLowerCase();
             cooldownType = 'repair';
             cooldownDuration = COOLDOWN_DURATIONS_MS[item];
-            console.log(`[Cooldown Notifier - Debug] Repair Regex Match Result:`, repairMatch);
             console.log(`[Cooldown Notifier - Debug] Detected repair: Item=${item}.`);
             
             try {
@@ -400,7 +399,7 @@ module.exports = {
             } catch (error) {
                 console.error(`[Cooldown Notifier - Debug] Error fetching previous message for repair cooldown:`, error);
             }
-            debugMessage = `Cooldown Type: Repair - User: <@${playerId}> - Item: ${item} - Cooldown: ${cooldownDuration / 60000} mins`;
+            debugMessage = `Cooldown Type: Repair - User: <@${playerId}> - Activity: ${item} - Cooldown: ${cooldownDuration / 60000} mins`;
         }
 
 
