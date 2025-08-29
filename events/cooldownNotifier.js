@@ -104,6 +104,9 @@ async function sendCooldownPing(client, db, userId, channelId, type, item, coold
     let notificationType;
     let pingMessage;
 
+    // --- NEW LOGGING: Start of the function
+    console.log(`Cooldown Notifier: Attempting to send ping for userId: ${userId}, channelId: ${channelId}, type: ${type}`);
+
     switch (type) {
         case 'attack':
             notificationType = 'attackCooldown';
@@ -147,6 +150,9 @@ async function sendCooldownPing(client, db, userId, channelId, type, item, coold
         await deleteDoc(doc(collection(db, `ActiveCooldowns`), cooldownDocId));
         return;
     }
+
+    // --- NEW LOGGING: Before sending the message
+    console.log(`Cooldown Notifier: Channel found. Sending ping to #${channel.name}...`);
 
     try {
         await channel.send(pingMessage);
@@ -340,8 +346,11 @@ module.exports = {
                     pinged: false
                 });
                 console.log(`Cooldown Notifier: Stored ${cooldownType} cooldown for ${playerId} (${item}) in #${message.channel.id}. Ends at ${new Date(cooldownEndsAt).toLocaleString()}.`);
-
+                
+                // --- NEW LOGGING: Confirming setTimeout
                 const delay = cooldownEndsAt - Date.now();
+                console.log(`Cooldown Notifier: Scheduling ping for ${delay / 1000} seconds.`);
+
                 if (delay > 0) {
                     setTimeout(() => {
                         sendCooldownPing(client, db, playerId, message.channel.id, cooldownType, item, cooldownDocId, APP_ID_FOR_FIRESTORE);
