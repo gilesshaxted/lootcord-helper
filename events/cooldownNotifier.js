@@ -82,9 +82,8 @@ const FARM_MESSAGE_REGEX = /^You decide to\s+(?:scavenge for loot|go :axe: chop 
 // Player ID is derived from message.author.id
 const MED_MESSAGE_REGEX = /^You use your(?:<a?:.+?:\d+>)?\s+`([^`]+)` to heal for \*\*(?:\d+)\*\* health! You now have(?:<a?:.+?:\d+>)*\s+\*\*(\d+)\*\* health\./;
 
-
-// Regex to capture player ID for vote messages
-const VOTE_MESSAGE_REGEX = /^\S+\s+\*\*<@(\d+)>\*\* received rewards for voting!/;
+// --- Corrected Vote Message Regex ---
+const VOTE_MESSAGE_REGEX = /^You received \d+x\s.+ for voting on/i;
 
 // Regex to capture repair item and player ID for clan repair messages
 const REPAIR_MESSAGE_REGEX = /^✅ You used \*\*1x\*\* <a?:.+?:\d+>\s+`([^`]+)` to repair the clan!/s;
@@ -164,7 +163,7 @@ async function sendCooldownPing(client, db, userId, channelId, type, item, coold
 module.exports = {
     name: 'messageCreate',
     once: false,
-    async execute(message, db, client, APP_ID_FOR_FIRESTORE) { // Removed isFirestoreReady as it's checked at the start
+    async execute(message, db, client, APP_ID_FOR_FIRESTORE) {
         console.log(`[Cooldown Notifier - Debug] Listener active. Message received from ${message.author.tag} (ID: ${message.author.id}) in #${message.channel.name}.`);
 
         if (message.author.id !== TARGET_GAME_BOT_ID) {
@@ -181,26 +180,24 @@ module.exports = {
             return;
         }
 
-        // --- NEW: Check isFirestoreReady here ---
-        if (!db || !APP_ID_FOR_FIRESTORE) { // Check db and APP_ID_FOR_FIRESTORE as well
+        if (!db || !APP_ID_FOR_FIRESTORE) {
             console.warn('Cooldown Notifier: Firestore DB or App ID not ready. Skipping message processing.');
             return;
         }
-        // --- END NEW Check ---
-
+        
         console.log(`[Cooldown Notifier - Debug] Message Content: \n\`\`\`\n${message.content}\n\`\`\``);
 
         let playerId = null;
         let item = null;
         let cooldownType = null;
         let cooldownDuration = undefined;
-        let debugMessage = ''; // For detailed debug message
+        let debugMessage = '';
 
         // --- Attempt to match Attack Message ---
         const attackMatch = message.content.match(ATTACK_MESSAGE_REGEX);
         if (attackMatch) {
             playerId = attackMatch[1];
-            item = attackMatch[3].toLowerCase(); // Weapon name
+            item = attackMatch[3].toLowerCase();
             cooldownType = 'attack';
             cooldownDuration = COOLDOWN_DURATIONS_MS[item];
             console.log(`[Cooldown Notifier - Debug] Attack Regex Match Result:`, attackMatch);
@@ -208,118 +205,108 @@ module.exports = {
             debugMessage = `Cooldown Type: Attack - User: <@${playerId}> - Weapon: ${item} - Cooldown: ${cooldownDuration / 60000} mins`;
         }
 
-        // --- Attempt to match Farm Message (only if not an attack message) ---
+        // --- Attempt to match Farm Message ---
         const farmMatch = message.content.match(FARM_MESSAGE_REGEX);
-        if (farmMatch && !attackMatch) { // Only process as farm if not already an attack message
-            item = farmMatch[1].toLowerCase(); // Captured item name (e.g., 'crate', 'wood', 'metal', 'stone', 'high quality metal')
+        if (farmMatch && !attackMatch) {
+            item = farmMatch[1].toLowerCase();
             cooldownType = 'farm';
             cooldownDuration = COOLDOWN_DURATIONS_MS['farming'];
             console.log(`[Cooldown Notifier - Debug] Farm Regex Match Result:`, farmMatch);
             console.log(`[Cooldown Notifier - Debug] Detected farm: Item=${item}.`);
             
-            // --- NEW: Fetch previous message to get player ID ---
             try {
                 const messages = await message.channel.messages.fetch({ limit: 2 });
-                const previousMessage = messages.last(); // The message before the current one
+                const previousMessage = messages.last();
                 
-                if (previousMessage && !previousMessage.author.bot && previousMessage.content.toLowerCase().startsWith('t-farm')) { // Check for 't-farm'
+                if (previousMessage && !previousMessage.author.bot && previousMessage.content.toLowerCase().startsWith('t-farm')) {
                     playerId = previousMessage.author.id;
                     console.log(`[Cooldown Notifier - Debug] Farm Player ID from previous message: ${playerId}`);
                 } else {
-                    console.warn(`[Cooldown Notifier - Debug] Previous message not a 't-farm' command or sent by a bot. Cannot determine farm player. Using game bot ID as fallback.`);
-                    playerId = message.author.id; // Fallback to game bot ID if player not found
+                    console.warn(`[Cooldown Notifier - Debug] Previous message not a 't-farm' command or sent by a bot. Cannot determine farm player.`);
+                    // No fallback needed, playerId remains null and the check below will handle it.
                 }
             } catch (error) {
                 console.error(`[Cooldown Notifier - Debug] Error fetching previous message for farm cooldown:`, error);
-                playerId = message.author.id; // Fallback to game bot ID on error
             }
-            // --- END NEW Fetch previous message ---
-
             debugMessage = `Cooldown Type: Farm - User: <@${playerId}> - Activity: ${item} - Cooldown: ${cooldownDuration / 60000} mins`;
         }
 
-        // --- Attempt to match Med Message (only if not attack or farm) ---
+        // --- Attempt to match Med Message ---
         const medMatch = message.content.match(MED_MESSAGE_REGEX);
         if (medMatch && !attackMatch && !farmMatch) {
-            item = medMatch[1].toLowerCase(); // Med item name
+            item = medMatch[1].toLowerCase();
             cooldownType = 'med';
             cooldownDuration = COOLDOWN_DURATIONS_MS[item];
             console.log(`[Cooldown Notifier - Debug] Med Regex Match Result:`, medMatch);
             console.log(`[Cooldown Notifier - Debug] Detected med usage: Item=${item}.`);
             
-            // --- NEW: Fetch previous message to get player ID for Med ---
             try {
                 const messages = await message.channel.messages.fetch({ limit: 2 });
-                const previousMessage = messages.last(); // The message before the current one
+                const previousMessage = messages.last();
                 
-                // Check if previous message is from a user and starts with 't-use'
                 if (previousMessage && !previousMessage.author.bot && previousMessage.content.toLowerCase().startsWith('t-use')) {
                     playerId = previousMessage.author.id;
                     console.log(`[Cooldown Notifier - Debug] Med Player ID from previous message: ${playerId}`);
                 } else {
-                    console.warn(`[Cooldown Notifier - Debug] Previous message not a 't-use' command or sent by a bot. Cannot determine med player. Using game bot ID as fallback.`);
-                    playerId = message.author.id; // Fallback to game bot ID on error
+                    console.warn(`[Cooldown Notifier - Debug] Previous message not a 't-use' command or sent by a bot. Cannot determine med player.`);
                 }
             } catch (error) {
                 console.error(`[Cooldown Notifier - Debug] Error fetching previous message for med cooldown:`, error);
-                playerId = message.author.id; // Fallback to game bot ID on error
             }
-            // --- END NEW Fetch previous message ---
-
             debugMessage = `Cooldown Type: Med - User: <@${playerId}> - Item: ${item} - Cooldown: ${cooldownDuration / 60000} mins`;
         }
 
-        // --- Attempt to match Vote Message (only if not attack, farm, or med) ---
-        const voteMatch = message.embeds.length > 0 && message.embeds[0].title === 'Voting rewards';
+        // --- NEW Vote Message Logic ---
+        const voteMatch = VOTE_MESSAGE_REGEX.test(message.content.toLowerCase());
         if (voteMatch && !attackMatch && !farmMatch && !medMatch) {
-            const votePlayerIdMatch = message.content.match(/\*\*<@(\d+)>\*\* received rewards for voting!/);
-            if (votePlayerIdMatch && votePlayerIdMatch[1]) {
-                playerId = votePlayerIdMatch[1];
-                item = 'voting'; // Generic item for vote cooldown
-                cooldownType = 'vote';
-                cooldownDuration = COOLDOWN_DURATIONS_MS['voting'];
-                console.log(`[Cooldown Notifier - Debug] Vote Regex Match Result:`, votePlayerIdMatch);
-                console.log(`[Cooldown Notifier - Debug] Detected vote: Player ID=${playerId}, Item=${item}.`);
-                debugMessage = `Cooldown Type: Vote - User: <@${playerId}> - Activity: ${item} - Cooldown: ${cooldownDuration / 3600000} hours`;
-            } else {
-                console.warn(`[Cooldown Notifier - Debug] Vote rewards embed found, but player ID not found in content.`);
+            item = 'voting';
+            cooldownType = 'vote';
+            cooldownDuration = COOLDOWN_DURATIONS_MS['voting'];
+            console.log(`[Cooldown Notifier - Debug] Detected vote message based on content.`);
+            
+            try {
+                const messages = await message.channel.messages.fetch({ limit: 2 });
+                const previousMessage = messages.last();
+                
+                if (previousMessage && !previousMessage.author.bot) {
+                    playerId = previousMessage.author.id;
+                    console.log(`[Cooldown Notifier - Debug] Vote Player ID from previous message: ${playerId}`);
+                } else {
+                    console.warn(`[Cooldown Notifier - Debug] Previous message not from a user. Cannot determine vote player.`);
+                }
+            } catch (error) {
+                console.error(`[Cooldown Notifier - Debug] Error fetching previous message for vote cooldown:`, error);
             }
+            debugMessage = `Cooldown Type: Vote - User: <@${playerId}> - Activity: ${item} - Cooldown: ${cooldownDuration / 3600000} hours`;
         }
 
-        // --- Attempt to match Repair Message (only if not attack, farm, med, or vote) ---
+        // --- Attempt to match Repair Message ---
         const repairMatch = message.content.match(REPAIR_MESSAGE_REGEX);
         if (repairMatch && !attackMatch && !farmMatch && !medMatch && !voteMatch) {
-            item = repairMatch[1].toLowerCase(); // Repair item name (wood, stone, metal, high quality metal)
+            item = repairMatch[1].toLowerCase();
             cooldownType = 'repair';
             cooldownDuration = COOLDOWN_DURATIONS_MS[item];
             console.log(`[Cooldown Notifier - Debug] Repair Regex Match Result:`, repairMatch);
             console.log(`[Cooldown Notifier - Debug] Detected repair: Item=${item}.`);
             
-            // --- NEW: Fetch previous message to get player ID for Repair ---
             try {
                 const messages = await message.channel.messages.fetch({ limit: 2 });
-                const previousMessage = messages.last(); // The message before the current one
+                const previousMessage = messages.last();
                 
-                // Check if previous message is from a user and starts with 't-clan repair'
                 if (previousMessage && !previousMessage.author.bot && previousMessage.content.toLowerCase().startsWith('t-clan repair')) {
                     playerId = previousMessage.author.id;
                     console.log(`[Cooldown Notifier - Debug] Repair Player ID from previous message: ${playerId}`);
                 } else {
-                    console.warn(`[Cooldown Notifier - Debug] Previous message not a 't-clan repair' command or sent by a bot. Cannot determine repair player. Using game bot ID as fallback.`);
-                    playerId = message.author.id; // Fallback to game bot ID on error
+                    console.warn(`[Cooldown Notifier - Debug] Previous message not a 't-clan repair' command or sent by a bot. Cannot determine repair player.`);
                 }
             } catch (error) {
                 console.error(`[Cooldown Notifier - Debug] Error fetching previous message for repair cooldown:`, error);
-                playerId = message.author.id; // Fallback to game bot ID on error
             }
-            // --- END NEW Fetch previous message ---
-
             debugMessage = `Cooldown Type: Repair - User: <@${playerId}> - Item: ${item} - Cooldown: ${cooldownDuration / 60000} mins`;
         }
 
 
         if (playerId && item && cooldownType && cooldownDuration !== undefined) {
-            // --- NEW: Detailed Debug Notification to COOLDOWN_DEBUG_CHANNEL_ID ---
             const debugChannel = client.channels.cache.get(COOLDOWN_DEBUG_CHANNEL_ID);
             if (debugChannel && debugChannel.isTextBased()) {
                 try {
@@ -331,8 +318,6 @@ module.exports = {
             } else {
                 console.warn(`Cooldown Notifier: Debug channel with ID ${COOLDOWN_DEBUG_CHANNEL_ID} not found or not a text channel.`);
             }
-            // --- END NEW Debug Notification ---
-
 
             if (cooldownDuration === undefined) {
                 console.log(`Cooldown Notifier: Unknown item "${item}" used for ${cooldownType}. No cooldown to track.`);
@@ -340,18 +325,17 @@ module.exports = {
             }
 
             const cooldownEndsAt = Date.now() + cooldownDuration;
-            // Cooldown Doc ID now includes type to differentiate cooldowns for the same player/channel
             const cooldownDocId = `${playerId}_${message.channel.id}_${cooldownType}`;
 
-            const activeCooldownsRef = collection(db, `ActiveCooldowns`); // Using a more generic collection name
+            const activeCooldownsRef = collection(db, `ActiveCooldowns`);
             const cooldownDocRef = doc(activeCooldownsRef, cooldownDocId);
 
             try {
                 await setDoc(cooldownDocRef, {
                     userId: playerId,
                     channelId: message.channel.id,
-                    type: cooldownType, // Store type
-                    item: item, // Store item/weapon/activity
+                    type: cooldownType,
+                    item: item,
                     cooldownEndsAt: cooldownEndsAt,
                     originalMessageId: message.id,
                     guildId: message.guild.id,
@@ -375,5 +359,5 @@ module.exports = {
             console.log(`[Cooldown Notifier - Debug] Message did not match any known cooldown regex. Content: "${message.content}"`);
         }
     },
-    sendCooldownPing // Export sendCooldownPing for startupChecks
+    sendCooldownPing
 };
