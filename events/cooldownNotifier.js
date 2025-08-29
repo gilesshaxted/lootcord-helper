@@ -16,7 +16,7 @@ const COOLDOWN_DURATIONS_MS = {
     'chain saw': 52 * 60 * 1000 + 12 * 1000,
     'long sword': 36 * 60 * 1000 + 2 * 1000,
     'mace': 34 * 60 * 1000 + 3 * 1000,
-    'machete': 25 * 60 * 1000 + 23 * 1000,
+    'machete': 25 * 60 * 1000 + 23 * 1000, // Corrected to 25 minutes 23 seconds
     'pickaxe': 11 * 60 * 1000 + 38 * 1000,
     'pitchfork': 42 * 60 * 1000 + 32 * 1000,
     'rock': 9 * 60 * 1000 + 14 * 1000,
@@ -64,8 +64,8 @@ const COOLDOWN_DURATIONS_MS = {
     // Vote Cooldown
     'voting': 12 * 60 * 60 * 1000, // 12 hours
     
-    // NEW: Generic Gambling Cooldown (e.g., for coinflip, blackjack, etc.)
-    'gambling': 5 * 60 * 1000, // 5 minutes
+    // Generic Gambling Cooldown (e.g., for coinflip, blackjack, etc.)
+    'gambling': 5 * 60 * 1000, // 5 minutes (default for most gambling)
 
     // Repair Cooldowns
     'wood': 2 * 60 * 1000, // 2 minutes
@@ -89,8 +89,11 @@ const VOTE_MESSAGE_REGEX = /^You received \d+x\s.+ for voting on/i;
 // Regex to capture repair item and player ID for clan repair messages
 const REPAIR_MESSAGE_REGEX = /^✅ You used \*\*1x\*\* <a?:.+?:\d+>\s+`([^`]+)` to repair the clan!/s;
 
-// NEW: Regex to detect generic gambling messages (like coinflip)
-const GAMBLING_MESSAGE_REGEX = /^You chose \*\*(heads|tails)\*\* and the coin landed on \*\*(heads|tails)\*\*$/i;
+// Corrected Regex to detect generic gambling messages (like coinflip)
+const GAMBLING_MESSAGE_REGEX = /^You chose \*\*(heads|tails)\*\* (?:and|but) the coin landed on \*\*(heads|tails)\*\*.*$/is;
+
+// NEW: Regex to detect Blackjack embed titles
+const BLACKJACK_EMBED_TITLE_REGEX = /blackjack$/i;
 
 
 /**
@@ -133,7 +136,7 @@ async function sendCooldownPing(client, db, userId, channelId, type, item, coold
             notificationType = 'repairCooldown';
             pingMessage = `<@${userId}> your **clan repair (${item})** cooldown is over!`;
             break;
-        case 'gambling': // NEW: Gambling case
+        case 'gambling': // Gambling case
             notificationType = 'gamblingCooldown';
             pingMessage = `<@${userId}> your **${item}** cooldown is over!`; // Generic message for gambling
             break;
@@ -269,9 +272,46 @@ module.exports = {
             debugMessage = `Cooldown Type: Med - User: <@${playerId}> - Item: ${item} - Cooldown: ${cooldownDuration / 60000} mins`;
         }
         
+        // --- Attempt to match Gambling Message (e.g., coinflip) ---
+        const gamblingMatch = message.content.match(GAMBLING_MESSAGE_REGEX);
+        // NEW: Attempt to match Blackjack Embed Message
+        const blackjackEmbedMatch = message.embeds.length > 0 && message.embeds[0].title && BLACKJACK_EMBED_TITLE_REGEX.test(message.embeds[0].title);
+
+        if ((gamblingMatch || blackjackEmbedMatch) && !attackMatch && !farmMatch && !medMatch) {
+            item = 'gambling'; // Use a generic item name for gambling cooldowns
+            cooldownType = 'gambling';
+            cooldownDuration = COOLDOWN_DURATIONS_MS['gambling'];
+            
+            if (gamblingMatch) {
+                console.log(`[Cooldown Notifier - Debug] Detected gambling message (coinflip) based on content.`);
+            } else if (blackjackEmbedMatch) {
+                console.log(`[Cooldown Notifier - Debug] Detected gambling message (blackjack) based on embed title.`);
+            }
+            
+            try {
+                const messages = await message.channel.messages.fetch({ limit: 2 });
+                const previousMessage = messages.last();
+                
+                // Check if previous message is a gambling command (e.g., t-cf, t-coinflip, t-bj)
+                if (previousMessage && !previousMessage.author.bot && 
+                   (previousMessage.content.toLowerCase().startsWith('t-cf') || 
+                    previousMessage.content.toLowerCase().startsWith('t-coinflip') ||
+                    previousMessage.content.toLowerCase().startsWith('t-bj'))) { // Added t-bj
+                    playerId = previousMessage.author.id;
+                    console.log(`[Cooldown Notifier - Debug] Gambling Player ID from previous message: ${playerId}`);
+                } else {
+                    console.warn(`[Cooldown Notifier - Debug] Previous message not a gambling command or sent by a bot. Cannot determine gambling player.`);
+                }
+            } catch (error) {
+                console.error(`[Cooldown Notifier - Debug] Error fetching previous message for gambling cooldown:`, error);
+            }
+            debugMessage = `Cooldown Type: Gambling - User: <@${playerId}> - Activity: ${item} - Cooldown: ${cooldownDuration / 60000} mins`;
+        }
+
         // --- Attempt to match Vote Message ---
         const voteMatch = message.content.match(VOTE_MESSAGE_REGEX);
-        if (voteMatch && !attackMatch && !farmMatch && !medMatch) {
+        // Exclude gamblingMatch OR blackjackEmbedMatch
+        if (voteMatch && !attackMatch && !farmMatch && !medMatch && !gamblingMatch && !blackjackEmbedMatch) { 
             item = 'voting';
             cooldownType = 'vote';
             cooldownDuration = COOLDOWN_DURATIONS_MS['voting'];
@@ -293,37 +333,10 @@ module.exports = {
             debugMessage = `Cooldown Type: Vote - User: <@${playerId}> - Activity: ${item} - Cooldown: ${cooldownDuration / 3600000} hours`;
         }
 
-        // --- NEW: Attempt to match Gambling Message (e.g., coinflip) ---
-        const gamblingMatch = message.content.match(GAMBLING_MESSAGE_REGEX);
-        if (gamblingMatch && !attackMatch && !farmMatch && !medMatch && !voteMatch) {
-            item = 'gambling'; // Use a generic item name for gambling cooldowns
-            cooldownType = 'gambling';
-            cooldownDuration = COOLDOWN_DURATIONS_MS['gambling'];
-            console.log(`[Cooldown Notifier - Debug] Detected gambling message based on content.`);
-            
-            try {
-                const messages = await message.channel.messages.fetch({ limit: 2 });
-                const previousMessage = messages.last();
-                
-                // Check if previous message is a gambling command (e.g., t-cf, t-coinflip)
-                if (previousMessage && !previousMessage.author.bot && 
-                   (previousMessage.content.toLowerCase().startsWith('t-cf') || 
-                    previousMessage.content.toLowerCase().startsWith('t-coinflip'))) {
-                    playerId = previousMessage.author.id;
-                    console.log(`[Cooldown Notifier - Debug] Gambling Player ID from previous message: ${playerId}`);
-                } else {
-                    console.warn(`[Cooldown Notifier - Debug] Previous message not a gambling command or sent by a bot. Cannot determine gambling player.`);
-                }
-            } catch (error) {
-                console.error(`[Cooldown Notifier - Debug] Error fetching previous message for gambling cooldown:`, error);
-            }
-            debugMessage = `Cooldown Type: Gambling - User: <@${playerId}> - Activity: ${item} - Cooldown: ${cooldownDuration / 60000} mins`;
-        }
-
         // --- Attempt to match Repair Message ---
         const repairMatch = message.content.match(REPAIR_MESSAGE_REGEX);
         // Ensure repairMatch is checked only if no other matches occurred
-        if (repairMatch && !attackMatch && !farmMatch && !medMatch && !voteMatch && !gamblingMatch) { 
+        if (repairMatch && !attackMatch && !farmMatch && !medMatch && !voteMatch && !gamblingMatch && !blackjackEmbedMatch) { 
             item = repairMatch[1].toLowerCase();
             cooldownType = 'repair';
             cooldownDuration = COOLDOWN_DURATIONS_MS[item];
