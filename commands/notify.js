@@ -22,7 +22,8 @@ module.exports = {
             const farmPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'farmCooldown');
             const medPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'medCooldown');
             const votePrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'voteCooldown');
-            const repairPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'repairCooldown'); // NEW: Repair preferences ref
+            const repairPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'repairCooldown');
+            const gamblingPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), 'gamblingCooldown'); // NEW: Gambling preferences ref
 
             // Fetch current preferences
             const attackPrefSnap = await getDoc(attackPrefsRef);
@@ -37,8 +38,11 @@ module.exports = {
             const votePrefSnap = await getDoc(votePrefsRef);
             const isVoteCooldownEnabled = votePrefSnap.exists() ? votePrefSnap.data().enabled : false;
 
-            const repairPrefSnap = await getDoc(repairPrefsRef); // NEW: Fetch repair preference
+            const repairPrefSnap = await getDoc(repairPrefsRef);
             const isRepairCooldownEnabled = repairPrefSnap.exists() ? repairPrefSnap.data().enabled : false;
+
+            const gamblingPrefSnap = await getDoc(gamblingPrefsRef); // NEW: Fetch gambling preference
+            const isGamblingCooldownEnabled = gamblingPrefSnap.exists() ? gamblingPrefSnap.data().enabled : false;
 
 
             // Create the embed
@@ -59,10 +63,12 @@ module.exports = {
                     `**Vote Cooldown Notifications:**\n` +
                     `Status: **${isVoteCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
                     `You'll be pinged when your **voting cooldown** is over.\n\n` +
-                    // NEW: Repair Cooldown Description
                     `**Repair Cooldown Notifications:**\n` +
                     `Status: **${isRepairCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
-                    `You'll be pinged when your **clan repair cooldown** is over.`
+                    `You'll be pinged when your **clan repair cooldown** is over.\n\n` +
+                    `**Gambling Cooldown Notifications:**\n` + // Updated description
+                    `Status: **${isGamblingCooldownEnabled ? 'ON ✅' : 'OFF ❌'}**\n` +
+                    `You'll be pinged when your **gambling cooldowns** are over.` // Updated description
                 )
                 .setFooter({ text: 'Use the buttons to toggle your notifications.' });
 
@@ -87,15 +93,22 @@ module.exports = {
                 .setLabel('Vote')
                 .setStyle(isVoteCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
 
-            const repairButton = new ButtonBuilder() // NEW: Repair Cooldown Button
+            const repairButton = new ButtonBuilder()
                 .setCustomId('toggle_repair_notifications')
                 .setLabel('Repair')
                 .setStyle(isRepairCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
+            
+            const gamblingButton = new ButtonBuilder() // NEW: Gambling Button
+                .setCustomId('toggle_gambling_notifications')
+                .setLabel('Gambling')
+                .setStyle(isGamblingCooldownEnabled ? ButtonStyle.Success : ButtonStyle.Danger);
 
+            // First row for individual cooldowns
+            const row1 = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton, voteButton, repairButton);
+            // Second row for gambling-related cooldowns
+            const row2 = new ActionRowBuilder().addComponents(gamblingButton); // Only one gambling button
 
-            const row = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton, voteButton, repairButton); // Add all five buttons to the row
-
-            await interaction.editReply({ embeds: [embed], components: [row], ephemeral: true });
+            await interaction.editReply({ embeds: [embed], components: [row1, row2], ephemeral: true });
             console.log(`[Notify Command] Displayed notification preferences for ${interaction.user.tag}.`);
 
         } catch (error) {
