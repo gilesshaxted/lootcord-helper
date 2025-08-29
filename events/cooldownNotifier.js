@@ -77,8 +77,8 @@ const ATTACK_MESSAGE_REGEX = /^(?:<a?:.+?:\d+>|\S+)\s+\*\*<@(\d+)>\*\* hit the \
 // Regex to capture player ID for farm messages
 const FARM_MESSAGE_REGEX = /^You decide to\s+(?:scavenge for loot|go :axe: chop some trees|go :pick: mining).*and (?:find|receive|bring back).*`([^`]+)`!/;
 
-// --- REVISED MED_MESSAGE_REGEX to fix the space issue before the final health number ---
-const MED_MESSAGE_REGEX = /^You use your(?:<a:.+?:\d+>|<:.+?:\d+>|:.*?:)?\s+`([^`]+)` to heal for \*\*(?:\d+)\*\* health! You now have(?:<a?:.+?:\d+>)*\s*\*\*(\d+)\*\* health\./;
+// --- REWRITTEN MED_MESSAGE_REGEX for maximum reliability ---
+const MED_MESSAGE_REGEX = /^You use your.*`([^`]+)` to heal for \*\*(\d+)\*\* health! You now have.*\*\*(\d+)\*\* health\.?$/i;
 
 
 // --- Corrected Vote Message Regex ---
