@@ -384,10 +384,15 @@ client.on('interactionCreate', async interaction => {
             };
 
             try {
-                let newStates = {};
-                let targetCooldownType = interaction.customId.replace('toggle_', '').replace('_notifications', '');
+                let targetCooldownType;
+                // Correctly map customId to the preference key
+                if (interaction.customId === 'toggle_gambling_notifications') {
+                    targetCooldownType = 'gamblingCooldown';
+                } else {
+                    targetCooldownType = interaction.customId.replace('toggle_', '').replace('_notifications', '');
+                }
                 
-                const currentPrefSnap = await getDoc(prefsRefs[targetCooldownType]);
+                const currentPrefSnap = await getDoc(prefsRefs[targetCooldownType]); 
                 newStates[targetCooldownType] = ! (currentPrefSnap.exists() ? currentPrefSnap.data().enabled : false);
                 console.log(`[Notify Button] User ${userId} toggled ${targetCooldownType} notifications to: ${newStates[targetCooldownType]}`);
 
@@ -453,7 +458,7 @@ client.on('interactionCreate', async interaction => {
                     .setLabel('Repair')
                     .setStyle(currentPrefs.repairCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
                 
-                const gamblingButton = new ButtonBuilder() // Renamed and updated
+                const gamblingButton = new ButtonBuilder() // NEW: Gambling Button
                     .setCustomId('toggle_gambling_notifications')
                     .setLabel('Gambling')
                     .setStyle(currentPrefs.gamblingCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
@@ -463,7 +468,6 @@ client.on('interactionCreate', async interaction => {
                 // Second row for gambling-related cooldowns
                 const row2 = new ActionRowBuilder().addComponents(gamblingButton); // Only one gambling button
 
-                // Edit the original message with the updated embed and button state
                 await interaction.editReply({ embeds: [embed], components: [row1, row2] });
                 console.log(`[Notify Button] Updated original message with new notification status for ${userId}.`);
 
