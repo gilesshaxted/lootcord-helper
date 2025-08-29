@@ -77,10 +77,9 @@ const ATTACK_MESSAGE_REGEX = /^(?:<a?:.+?:\d+>|\S+)\s+\*\*<@(\d+)>\*\* hit the \
 // Regex to capture player ID for farm messages
 const FARM_MESSAGE_REGEX = /^You decide to\s+(?:scavenge for loot|go :axe: chop some trees|go :pick: mining).*and (?:find|receive|bring back).*`([^`]+)`!/;
 
-// --- FIXED MED_MESSAGE_REGEX: Adjusted for flexibility in matching health bar emojis ---
-// Captures: 1: Med Item Name (e.g., 'bandage', 'medical syringe', 'large medkit')
-// Player ID is derived from message.author.id
-const MED_MESSAGE_REGEX = /^You use your(?:<a?:.+?:\d+>)?\s+`([^`]+)` to heal for \*\*(?:\d+)\*\* health! You now have(?:<a?:.+?:\d+>)*\s+\*\*(\d+)\*\* health\./;
+// --- CORRECTED MED_MESSAGE_REGEX to handle both custom and standard emojis ---
+const MED_MESSAGE_REGEX = /^You use your(?:<a?:.+?:\d+>|:.*?:)?\s+`([^`]+)` to heal for \*\*(?:\d+)\*\* health! You now have(?:<a?:.+?:\d+>)*\s+\*\*(\d+)\*\* health\./;
+
 
 // --- Corrected Vote Message Regex ---
 const VOTE_MESSAGE_REGEX = /^You received \d+x\s.+ for voting on/i;
@@ -350,7 +349,7 @@ module.exports = {
                 } else {
                     sendCooldownPing(client, db, playerId, message.channel.id, cooldownType, item, cooldownDocId, APP_ID_FOR_FIRESTORE);
                 }
-                statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTore);
+                statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
             } catch (error) {
                 console.error(`Cooldown Notifier: Error storing/scheduling ${cooldownType} cooldown for ${playerId}/${item}:`, error);
             }
