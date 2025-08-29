@@ -81,8 +81,9 @@ const FARM_MESSAGE_REGEX = /^You decide to\s+(?:scavenge for loot|go :axe: chop 
 const MED_MESSAGE_REGEX = /^You use your.*`([^`]+)` to heal for \*\*(\d+)\*\* health! You now have.*\*\*(\d+)\*\* health\.?$/i;
 
 
-// --- Corrected Vote Message Regex ---
+// --- Corrected Vote Message Regex to handle double spaces ---
 const VOTE_MESSAGE_REGEX = /^You received \d+x\s.+ for voting on/i;
+
 
 // Regex to capture repair item and player ID for clan repair messages
 const REPAIR_MESSAGE_REGEX = /^✅ You used \*\*1x\*\* <a?:.+?:\d+>\s+`([^`]+)` to repair the clan!/s;
@@ -261,7 +262,7 @@ module.exports = {
         }
 
         // --- NEW Vote Message Logic ---
-        const voteMatch = VOTE_MESSAGE_REGEX.test(message.content.toLowerCase());
+        const voteMatch = message.content.match(VOTE_MESSAGE_REGEX);
         if (voteMatch && !attackMatch && !farmMatch && !medMatch) {
             item = 'voting';
             cooldownType = 'vote';
