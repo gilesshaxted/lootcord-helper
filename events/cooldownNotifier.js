@@ -223,7 +223,6 @@ module.exports = {
                     console.log(`[Cooldown Notifier - Debug] Farm Player ID from previous message: ${playerId}`);
                 } else {
                     console.warn(`[Cooldown Notifier - Debug] Previous message not a 't-farm' command or sent by a bot. Cannot determine farm player.`);
-                    // No fallback needed, playerId remains null and the check below will handle it.
                 }
             } catch (error) {
                 console.error(`[Cooldown Notifier - Debug] Error fetching previous message for farm cooldown:`, error);
@@ -351,7 +350,7 @@ module.exports = {
                 } else {
                     sendCooldownPing(client, db, playerId, message.channel.id, cooldownType, item, cooldownDocId, APP_ID_FOR_FIRESTORE);
                 }
-                statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
+                statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTore);
             } catch (error) {
                 console.error(`Cooldown Notifier: Error storing/scheduling ${cooldownType} cooldown for ${playerId}/${item}:`, error);
             }
