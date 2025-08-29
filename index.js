@@ -635,8 +635,12 @@ client.login(TOKEN);
 // --- Web Server for Platforms (e.g., Render) ---
 const app = express();
 
+// Serve static files from the 'public' directory
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Route to serve your index.html for the web dashboard
 app.get('/', (req, res) => {
-    res.send('Discord bot is running and listening for commands!');
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.listen(PORT, () => {
