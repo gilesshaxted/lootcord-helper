@@ -120,7 +120,7 @@ module.exports = {
             const currentStyle = interaction.component.style;
             const bleedingBuffActive = currentStyle === ButtonStyle.Danger; // If current is Danger, new will be Success (ON)
             const newStyle = bleedingBuffActive ? ButtonStyle.Success : ButtonStyle.Danger;
-            const newLabel = bleedingBuffActive ? 'Bleeding Buff: ON ✅' : 'Bleeding Buff: OFF ❌';
+            const newLabel = newStyle === ButtonStyle.Success ? 'Bleeding Buff: ON ✅' : 'Bleeding Buff: OFF ❌';
 
             const updatedBleedingButton = ButtonBuilder.from(interaction.component)
                 .setLabel(newLabel)
