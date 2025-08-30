@@ -1,9 +1,10 @@
-const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle, ModalBuilder, ButtonBuilder, ButtonStyle, MessageFlags, Client, GatewayIntentBits, Collection, AttachmentBuilder } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 // Import Firebase modules
 const { initializeApp } = require('firebase/app');
@@ -18,7 +19,7 @@ const startupChecks = require('./utils/startupChecks');
 const wordleHelpers = require('./utils/wordleHelpers');
 const stickyMessageManager = require('./utils/stickyMessageManager');
 const { sendCooldownPing } = require('./events/cooldownNotifier');
-const interactionHandler = require('./events/interactionHandler'); // NEW: Import the interaction handler
+const interactionHandler = require('./events/interactionHandler');
 
 // Load environment variables from a custom .env file
 require('dotenv').config({ path: path.resolve(__dirname, 'lootcord-helper.env') });
@@ -364,4 +365,3 @@ client.on('interactionCreate', async interaction => {
                         `**Repair Cooldown Notifications:**\n` +
                         `Status: **${currentPrefs.repairCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
                         `You
-`
