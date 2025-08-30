@@ -4,10 +4,9 @@ const { WEAPON_DATA } = require('../utils/damageData'); // Import the weapon dat
 // Custom IDs for interaction components
 const WEAPON_SELECT_ID = 'damage_calc_weapon_select';
 const AMMO_SELECT_ID = 'damage_calc_ammo_select';
-const STRENGTH_INPUT_ID = 'damage_calc_strength_input';
 const BLEEDING_BUFF_TOGGLE_ID = 'damage_calc_bleeding_toggle';
-const CALCULATE_BUTTON_ID = 'damage_calc_calculate_button';
-const MODAL_SUBMIT_ID = 'damage_calc_modal_submit'; // Define modal custom ID
+const STRENGTH_INPUT_ID = 'damage_calc_strength_input'; // Used in modal
+const MODAL_SUBMIT_ID = 'damage_calc_modal_submit';
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -15,10 +14,8 @@ module.exports = {
         .setDescription('Calculates potential damage for a chosen weapon and ammo.'),
 
     async execute(interaction) {
-        // Defer reply to prevent timeout, and make it visible (not ephemeral)
-        await interaction.deferReply({ flags: 0 }); // Changed to flags: 0 for visible message
+        await interaction.deferReply({ flags: 0 }); // Visible reply
 
-        // Create the initial weapon selection dropdown
         const weaponOptions = Object.keys(WEAPON_DATA).map(weaponName => ({
             label: weaponName,
             value: weaponName,
@@ -39,19 +36,18 @@ module.exports = {
         await interaction.editReply({
             embeds: [embed],
             components: [row],
-            flags: 0, // Changed to flags: 0 for visible message
+            flags: 0,
         });
     },
 
-    // This function will be called by index.js to handle subsequent interactions
     async handleInteraction(interaction) {
         // Helper function to safely extract state from a customId
+        // Format: PREFIX:weapon:ammo:bleeding
         const extractState = (customId, prefix) => {
             const parts = customId.split(':');
             if (!customId.startsWith(prefix) || parts.length < 4) {
                 return { weapon: null, ammo: null, bleeding: false };
             }
-            // Assuming format: PREFIX:weapon:ammo:bleeding
             return {
                 weapon: parts[1],
                 ammo: parts[2],
@@ -60,7 +56,7 @@ module.exports = {
         };
 
         if (interaction.customId === WEAPON_SELECT_ID) {
-            await interaction.deferUpdate(); // Acknowledge the select menu interaction
+            await interaction.deferUpdate();
 
             const selectedWeapon = interaction.values[0];
             const ammoTypes = WEAPON_DATA[selectedWeapon];
@@ -70,7 +66,7 @@ module.exports = {
                     .setColor(0xff0000)
                     .setTitle('Damage Calculator Error')
                     .setDescription(`No ammo data found for **${selectedWeapon}**. Please select another weapon.`);
-                return await interaction.editReply({ embeds: [embed], components: [], flags: 0 }); // Visible error
+                return await interaction.editReply({ embeds: [embed], components: [], flags: 0 });
             }
 
             const ammoOptions = Object.keys(ammoTypes).map(ammoName => ({
@@ -79,97 +75,78 @@ module.exports = {
             }));
 
             const ammoSelect = new StringSelectMenuBuilder()
-                .setCustomId(`${AMMO_SELECT_ID}:${selectedWeapon}`) // Use colon for state separation
+                .setCustomId(`${AMMO_SELECT_ID}:${selectedWeapon}:NO_AMMO_SELECTED:false`) // Encode weapon, placeholder ammo, default bleeding
                 .setPlaceholder('Select ammo type...')
                 .addOptions(ammoOptions);
-
-            // Initial state for bleeding buff button
-            const bleedingBuffToggle = new ButtonBuilder()
-                .setCustomId(BLEEDING_BUFF_TOGGLE_ID)
-                .setLabel('Bleeding Buff: OFF ❌')
-                .setStyle(ButtonStyle.Danger);
-
-            const calculateButton = new ButtonBuilder()
-                .setCustomId(`${CALCULATE_BUTTON_ID}:${selectedWeapon}:NO_AMMO_SELECTED:false`) // Use colon for state separation
-                .setLabel('Calculate Damage')
-                .setStyle(ButtonStyle.Primary)
-                .setDisabled(true); // Initially disabled
-
-            const row1 = new ActionRowBuilder().addComponents(ammoSelect);
-            const row2 = new ActionRowBuilder().addComponents(bleedingBuffToggle, calculateButton);
 
             const embed = new EmbedBuilder()
                 .setColor(0x0099ff)
                 .setTitle('Damage Calculator')
-                .setDescription(`Weapon: **${selectedWeapon}**\n\nPlease select your ammo, enter your strength, and toggle bleeding buff if active.`);
+                .setDescription(`Weapon: **${selectedWeapon}**\n\nPlease select your ammo type.`);
 
             await interaction.editReply({
                 embeds: [embed],
-                components: [row1, row2], // Display ammo select, toggle, and calculate button
-                flags: 0, // Visible message
+                components: [new ActionRowBuilder().addComponents(ammoSelect)],
+                flags: 0,
             });
-        } else if (interaction.customId === BLEEDING_BUFF_TOGGLE_ID) {
+        } else if (interaction.customId.startsWith(AMMO_SELECT_ID)) {
             await interaction.deferUpdate();
+
+            const selectedAmmo = interaction.values[0];
+            const { weapon: selectedWeapon } = extractState(interaction.customId, AMMO_SELECT_ID);
+
+            // Initial state for bleeding buff button
+            const bleedingBuffToggle = new ButtonBuilder()
+                .setCustomId(`${BLEEDING_BUFF_TOGGLE_ID}:${selectedWeapon}:${selectedAmmo}:false`) // Encode weapon, ammo, default bleeding
+                .setLabel('Bleeding Buff: OFF ❌')
+                .setStyle(ButtonStyle.Danger);
+
+            const embed = new EmbedBuilder()
+                .setColor(0x0099ff)
+                .setTitle('Damage Calculator')
+                .setDescription(`Weapon: **${selectedWeapon}**\nAmmo: **${selectedAmmo}**\n\nPlease toggle bleeding buff if active.`);
+
+            await interaction.editReply({
+                embeds: [embed],
+                components: [
+                    ActionRowBuilder.from(interaction.message.components[0]), // Keep weapon select row
+                    new ActionRowBuilder().addComponents(bleedingBuffToggle) // New row for bleeding toggle
+                ],
+                flags: 0,
+            });
+        } else if (interaction.customId.startsWith(BLEEDING_BUFF_TOGGLE_ID)) {
+            await interaction.deferUpdate();
+
             const currentStyle = interaction.component.style;
-            const newStyle = currentStyle === ButtonStyle.Danger ? ButtonStyle.Success : ButtonStyle.Danger;
-            const newLabel = newStyle === ButtonStyle.Success ? 'Bleeding Buff: ON ✅' : 'Bleeding Buff: OFF ❌';
+            const bleedingBuffActive = currentStyle === ButtonStyle.Danger; // If current is Danger, new will be Success (ON)
+            const newStyle = bleedingBuffActive ? ButtonStyle.Success : ButtonStyle.Danger;
+            const newLabel = bleedingBuffActive ? 'Bleeding Buff: ON ✅' : 'Bleeding Buff: OFF ❌';
 
             const updatedBleedingButton = ButtonBuilder.from(interaction.component)
                 .setLabel(newLabel)
                 .setStyle(newStyle);
 
-            // Extract existing state from the calculate button's customId using helper
-            const calculateButtonComponent = interaction.message.components[1].components[1];
-            const { weapon: selectedWeapon, ammo: selectedAmmo } = extractState(calculateButtonComponent.customId, CALCULATE_BUTTON_ID);
-            
-            const updatedCalculateButton = ButtonBuilder.from(calculateButtonComponent)
-                .setCustomId(`${CALCULATE_BUTTON_ID}:${selectedWeapon}:${selectedAmmo}:${newStyle === ButtonStyle.Success}`); // Update bleeding state
+            // Extract weapon and ammo from the button's customId
+            const { weapon: selectedWeapon, ammo: selectedAmmo } = extractState(interaction.customId, BLEEDING_BUFF_TOGGLE_ID);
 
-            // Rebuild the action row with the updated button, keeping the calculate button
-            const updatedRow = new ActionRowBuilder().addComponents(updatedBleedingButton, updatedCalculateButton);
+            // Update the button's customId with the new bleeding state
+            updatedBleedingButton.setCustomId(`${BLEEDING_BUFF_TOGGLE_ID}:${selectedWeapon}:${selectedAmmo}:${newStyle === ButtonStyle.Success}`);
 
-            await interaction.editReply({
-                components: [interaction.message.components[0], updatedRow], // Keep weapon/ammo select row
-                flags: 0, // Visible message
-            });
-        } else if (interaction.customId.startsWith(AMMO_SELECT_ID)) {
-            await interaction.deferUpdate();
-            const selectedAmmo = interaction.values[0];
-            
-            // Extract selected weapon from the ammo select customId using helper
-            const { weapon: selectedWeapon } = extractState(interaction.customId, AMMO_SELECT_ID);
-
-            // Extract current bleeding state from the bleeding buff toggle button
-            const bleedingBuffButton = interaction.message.components[1].components[0];
-            const bleedingBuffActive = bleedingBuffButton.label.includes('ON ✅');
-
-            // Enable the calculate button and update its customId with selected weapon and ammo
-            const updatedCalculateButton = ButtonBuilder.from(interaction.message.components[1].components[1])
-                .setCustomId(`${CALCULATE_BUTTON_ID}:${selectedWeapon}:${selectedAmmo}:${bleedingBuffActive}`)
-                .setDisabled(false);
-
-            // Rebuild the action row with the updated calculate button
-            const updatedRow2 = new ActionRowBuilder().addComponents(bleedingBuffButton, updatedCalculateButton);
+            // Rebuild the action row with the updated button
+            const updatedRow = new ActionRowBuilder().addComponents(updatedBleedingButton);
 
             await interaction.editReply({
-                components: [interaction.message.components[0], updatedRow2],
-                flags: 0, // Visible message
+                components: [
+                    ActionRowBuilder.from(interaction.message.components[0]), // Keep weapon select row
+                    updatedRow // Updated bleeding toggle row
+                ],
+                flags: 0,
             });
 
-        } else if (interaction.customId.startsWith(CALCULATE_BUTTON_ID)) {
-            await interaction.deferUpdate(); // Defer the button click
-
-            // --- Extract state from button customId using helper ---
-            const { weapon: selectedWeapon, ammo: selectedAmmo, bleeding: bleedingBuffActive } = extractState(interaction.customId, CALCULATE_BUTTON_ID);
-
-            if (!selectedWeapon || selectedAmmo === 'NO_AMMO_SELECTED') {
-                 return await interaction.followUp({ content: 'Error: Weapon or Ammo selection is missing or invalid. Please select both a weapon and an ammo type.', flags: MessageFlags.Ephemeral });
-            }
-
-            // --- Show Modal for Strength Input ---
+            // --- Immediately show modal for Strength Input after final selection ---
             const modal = new ModalBuilder()
-                .setCustomId(`${MODAL_SUBMIT_ID}:${selectedWeapon}:${selectedAmmo}:${bleedingBuffActive}`) // Encode state in modal customId
-                .setTitle('Finalize Damage Calculation');
+                .setCustomId(`${MODAL_SUBMIT_ID}:${selectedWeapon}:${selectedAmmo}:${(newStyle === ButtonStyle.Success)}`) // Encode all state
+                .setTitle('Enter Strength Skill');
 
             const strengthInput = new TextInputBuilder()
                 .setCustomId(STRENGTH_INPUT_ID)
@@ -182,6 +159,7 @@ module.exports = {
             modal.addComponents(firstActionRow);
 
             await interaction.showModal(modal);
+
         } else if (interaction.isModalSubmit() && interaction.customId.startsWith(MODAL_SUBMIT_ID)) {
             await interaction.deferReply({ flags: 0 }); // Visible reply for calculation result
 
