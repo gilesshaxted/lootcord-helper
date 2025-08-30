@@ -54,19 +54,6 @@ module.exports = {
     },
 
     async handleInteraction(interaction, db, client, APP_ID_FOR_FIRESTORE) {
-        const extractState = (customId, prefix) => {
-            const parts = customId.split(':');
-            if (!customId.startsWith(prefix) || parts.length < 4) {
-                return { strength: null, weapon: null, ammo: null, bleeding: null };
-            }
-            return {
-                strength: parseFloat(parts[1]),
-                weapon: parts[2],
-                ammo: parts[3],
-                bleeding: parts[4]
-            };
-        };
-
         if (interaction.customId.startsWith(WEAPON_SELECT_ID)) {
             await interaction.deferUpdate();
             const selectedWeapon = interaction.values[0];
@@ -87,7 +74,7 @@ module.exports = {
             }));
 
             const ammoSelect = new StringSelectMenuBuilder()
-                .setCustomId(`${AMMO_SELECT_ID}:${strengthSkill}:${selectedWeapon}:NO_AMMO_SELECTED:false`)
+                .setCustomId(`${AMMO_SELECT_ID}:${strengthSkill}:${selectedWeapon}:false`)
                 .setPlaceholder('Select ammo type...')
                 .addOptions(ammoOptions);
 
