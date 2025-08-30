@@ -364,3 +364,4 @@ client.on('interactionCreate', async interaction => {
                         `**Repair Cooldown Notifications:**\n` +
                         `Status: **${currentPrefs.repairCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
                         `You
+`
