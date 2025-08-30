@@ -1,7 +1,6 @@
-// Import necessary classes from the discord.js library
-const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle, ModalBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { REST } = require('@discordjs/rest');
-const { Routes } = require('discord-api-types/v10'); // Corrected import for Routes
+const { Routes } = require('discord-api-types/v10');
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -371,7 +370,7 @@ client.on('interactionCreate', async interaction => {
             const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage);
             await interaction.editReply({ content, components, flags: 0 });
         } else if (interaction.customId.startsWith('toggle_attack_notifications') ||
-                   interaction.customId.startsWith('toggle_farm_notifications') || // Corrected customId from CustomId
+                   interaction.customId.startsWith('toggle_farm_notifications') ||
                    interaction.customId.startsWith('toggle_med_notifications') ||
                    interaction.customId.startsWith('toggle_vote_notifications') ||
                    interaction.customId.startsWith('toggle_repair_notifications') ||
@@ -549,8 +548,6 @@ client.on('interactionCreate', async interaction => {
                 await interaction.deferReply({ flags: 0 });
                 const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, 0);
                 await interaction.editReply({ content, components, flags: 0 });
-            } else if (command.data.name === 'damage-calc') { // NEW: Handle /damage-calc slash command
-                await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
             } else {
                 await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
             }
@@ -565,20 +562,74 @@ client.on('interactionCreate', async interaction => {
                 await interaction.followUp({ content: 'There was an error while executing this command!', flags: 0 });
             }
         }
-    } else if (interaction.isMessageComponent() || interaction.isModalSubmit()) { // Handle message components (buttons, select menus) and modal submissions
-        const damageCalcCommand = client.commands.get('damage-calc');
-        if (damageCalcCommand && damageCalcCommand.handleInteraction) {
-            const damageCalcInteractionIds = [
-                'damage_calc_weapon_select',
-                'damage_calc_ammo_select',
-                'damage_calc_bleeding_select',
-            ];
-            const isDamageCalcInteraction = damageCalcInteractionIds.some(id => interaction.customId.startsWith(id));
+    }
 
-            if (isDamageCalcInteraction) {
-                await damageCalcCommand.handleInteraction(interaction, db, client, APP_ID_FOR_FIRESTORE);
-                return;
+    // Handle String Select Menu Interactions (for channel selection)
+    if (interaction.isStringSelectMenu()) {
+        if (interaction.customId.startsWith('select-channels-to-set_page_')) {
+            await interaction.deferUpdate();
+
+            const selectedChannelIds = interaction.values;
+            const guild = interaction.guild;
+            const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
+
+            if (!guild) {
+                return await interaction.followUp({ content: 'This action can only be performed in a guild.', flags: 0 });
             }
+
+            const guildCollectionRef = collection(db, `Guilds`);
+            const guildDocRef = doc(guildCollectionRef, guild.id);
+
+            let successCount = 0;
+            let failureCount = 0;
+            let successMessages = [];
+
+            for (const channelId of selectedChannelIds) {
+                const channel = guild.channels.cache.get(channelId);
+                if (!channel) {
+                    console.warn(`Selected channel ID ${channelId} not found in guild cache.`);
+                    failureCount++;
+                    continue;
+                }
+
+                const channelsSubCollectionRef = collection(guildDocRef, 'channels');
+                const channelDocRef = doc(channelsSubCollectionRef, channel.id);
+
+                try {
+                    await setDoc(guildDocRef, {
+                        guildId: guild.id,
+                        guildName: guild.name,
+                        guildOwnerId: guild.ownerId,
+                        lastUpdated: new Date().toISOString()
+                    }, { merge: true });
+
+                    await setDoc(channelDocRef, {
+                        channelId: channel.id,
+                        channelName: channel.name,
+                        originalChannelName: channel.name,
+                        setType: 'manual',
+                        setByUserId: interaction.user.id,
+                        setByUsername: interaction.user.tag,
+                        timestamp: new Date().toISOString()
+                    });
+                    successCount++;
+                    successMessages.push(`<#${channel.id}>`);
+                    statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
+                } catch (error) {
+                    console.error(`Error saving channel ${channel.name} (${channel.id}) to Firestore:`, error);
+                    failureCount++;
+                }
+            }
+
+            let replyContent = `Successfully set ${successCount} channel(s).`;
+            if (successMessages.length > 0) {
+                replyContent += `\nChannels: ${successMessages.join(', ')}`;
+            }
+            if (failureCount > 0) {
+                replyContent += `\nFailed to set ${failureCount} channel(s). Check logs for details.`;
+            }
+
+            await interaction.editReply({ content: replyContent, components: [], flags: 0 });
         }
     }
 });
@@ -589,10 +640,6 @@ client.login(TOKEN);
 // --- Web Server for Platforms (e.g., Render) ---
 const app = express();
 
-// Serve static files from the 'public' directory
-app.use(express.static(path.join(__dirname, 'public')));
-
-// Route to serve your index.html for the web dashboard
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
