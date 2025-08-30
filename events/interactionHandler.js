@@ -1,10 +1,6 @@
 const { doc, collection, getDoc, setDoc } = require('firebase/firestore');
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { WEAPON_DATA } = require('../utils/damageData');
-const paginationHelpers = require('../utils/pagination');
-const damageCalcCommand = require('../commands/damage-calc.js');
-
-const TRIVIA_EXPLANATION_BUTTON = 'show_trivia_explanation_';
 
 module.exports = {
     name: 'interactionCreate',
@@ -12,16 +8,8 @@ module.exports = {
     async execute(interaction, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
         if (!isFirestoreReady) {
             console.error('Firestore is not yet ready to process interactions. Skipping interaction.');
-            if (interaction.isMessageComponent() || interaction.isModalSubmit() && !interaction.replied && !interaction.deferred) {
+            if (!interaction.replied && !interaction.deferred) {
                 await interaction.reply({ content: 'The bot is still starting up. Please try again in a moment.', flags: MessageFlags.Ephemeral });
-            }
-            return;
-        }
-
-        // --- Handle /damage-calc interactions ---
-        if (interaction.customId.startsWith('damage_calc_')) {
-            if (damageCalcCommand && damageCalcCommand.handleInteraction) {
-                await damageCalcCommand.handleInteraction(interaction, db, client, APP_ID_FOR_FIRESTORE);
             }
             return;
         }
@@ -103,75 +91,6 @@ module.exports = {
             } catch (error) {
                 console.error(`[Notify Button] Error toggling notification preference for ${userId}:`, error);
                 await interaction.followUp({ content: '❌ An error occurred while updating your notification settings. Please check logs.', flags: MessageFlags.Ephemeral });
-            }
-        }
-        
-        // --- Pagination Logic ---
-        if (interaction.isButton() && (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_'))) {
-            await interaction.deferUpdate();
-
-            const parts = interaction.customId.split('_');
-            const action = parts[1];
-            const currentPage = parseInt(parts[2], 10);
-
-            let newPage = currentPage;
-            if (action === 'prev') {
-                newPage--;
-            } else if (action === 'next') {
-                newPage++;
-            }
-            
-            const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage);
-            await interaction.editReply({ content, components, flags: 0 });
-        }
-        
-        // --- Trivia Explanation Logic ---
-        if (interaction.isButton() && interaction.customId.startsWith(TRIVIA_EXPLANATION_BUTTON)) {
-             await interaction.deferUpdate();
-
-            const parts = interaction.customId.split('_');
-            const originalMessageId = parts[3];
-
-            const triviaExplanationRef = doc(collection(db, `TriviaExplanations`), originalMessageId);
-
-            try {
-                const docSnap = await getDoc(triviaExplanationRef);
-
-                if (docSnap.exists()) {
-                    const explanationData = docSnap.data();
-                    const explanations = explanationData.explanations;
-                    const optionLetters = ['A', 'B', 'C', 'D'];
-
-                    let explanationContent = `**Explanation for Trivia Question:** \`${explanationData.question}\`\n\n`;
-                    explanationContent += `\`\`\`\n`;
-                    optionLetters.forEach(letter => {
-                        if (explanations[letter]) {
-                            explanationContent += `${letter}: ${explanations[letter]}\n`;
-                        }
-                    });
-                    explanationContent += `\`\`\``;
-
-                    const originalMessage = interaction.message;
-                    if (originalMessage) {
-                        const newComponents = originalMessage.components.map(row => {
-                            return new ActionRowBuilder().addComponents(
-                                row.components.map(button => {
-                                    return ButtonBuilder.from(button).setDisabled(true);
-                                })
-                            );
-                        });
-                        await originalMessage.edit({ embeds: [originalMessage.embeds[0]], components: newComponents });
-                    }
-
-                    await interaction.followUp({ content: explanationContent, flags: 0 });
-                    console.log(`Trivia Solver: Posted explanation for message ID ${originalMessageId} in #${interaction.channel.name}.`);
-                } else {
-                    await interaction.followUp({ content: 'Could not find explanation for this trivia question.', flags: 0 });
-                    console.warn(`Trivia Solver: Explanation not found for message ID ${originalMessageId}.`);
-                }
-            } catch (error) {
-                console.error(`Trivia Solver: Error fetching explanation for message ID ${originalMessageId}:`, error);
-                await interaction.followUp({ content: 'An error occurred while fetching the explanation. Please check logs.', flags: MessageFlags.Ephemeral });
             }
         }
     }
