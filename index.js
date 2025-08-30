@@ -1,7 +1,7 @@
 // Import necessary classes from the discord.js library
 const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder, EmbedBuilder } = require('discord.js');
 const { REST } = require('@discordjs/rest');
-const { Routes } = require('@discordjs/rest');
+const { Routes } = require('discord-api-types/v10'); // Corrected import for Routes
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -165,14 +165,21 @@ const slashCommandsToRegister = [];
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 
+console.log(`[Command Loader] Found ${commandFiles.length} potential command files: ${commandFiles.join(', ')}`); // NEW LOG
+
 for (const file of commandFiles) {
     const filePath = path.join(commandsPath, file);
-    const command = require(filePath);
-    if ('data' in command && 'execute' in command) {
-        client.commands.set(command.data.name, command);
-        slashCommandsToRegister.push(command.data.toJSON());
-    } else {
-        console.warn(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
+    try { // Added try-catch for individual command loading
+        const command = require(filePath);
+        if ('data' in command && 'execute' in command) {
+            client.commands.set(command.data.name, command);
+            slashCommandsToRegister.push(command.data.toJSON());
+            console.log(`[Command Loader] Successfully loaded command: ${command.data.name}`); // NEW LOG
+        } else {
+            console.warn(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property. Skipping.`);
+        }
+    } catch (error) {
+        console.error(`[ERROR] Failed to load command file ${filePath}:`, error); // NEW LOG
     }
 }
 
@@ -254,7 +261,7 @@ client.once('clientReady', async () => { // Changed 'ready' to 'clientReady'
     const activeCooldownsRef = collection(db, `ActiveCooldowns`); // Use generic collection name
     try {
         const querySnapshot = await getDocs(activeCooldownsRef);
-        const now = Date.now();
+        const now = Date.Now();
         let rescheduledCount = 0;
         for (const docSnap of querySnapshot.docs) {
             const cooldownData = docSnap.data();
@@ -365,7 +372,7 @@ client.on('interactionCreate', async interaction => {
             const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage);
             await interaction.editReply({ content, components, flags: 0 });
         } else if (interaction.customId.startsWith('toggle_attack_notifications') ||
-                   interaction.customId.startsWith('toggle_farm_notifications') ||
+                   interaction.CustomId.startsWith('toggle_farm_notifications') ||
                    interaction.customId.startsWith('toggle_med_notifications') ||
                    interaction.customId.startsWith('toggle_vote_notifications') ||
                    interaction.customId.startsWith('toggle_repair_notifications') ||
