@@ -1,7 +1,6 @@
-// Import necessary classes from the discord.js library
-const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle, ModalBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { REST } = require('@discordjs/rest');
-const { Routes } = require('discord-api-types/v10'); // Corrected import for Routes
+const { Routes } = require('discord-api-types/v10');
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -165,21 +164,21 @@ const slashCommandsToRegister = [];
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 
-console.log(`[Command Loader] Found ${commandFiles.length} potential command files: ${commandFiles.join(', ')}`); // NEW LOG
+console.log(`[Command Loader] Found ${commandFiles.length} potential command files: ${commandFiles.join(', ')}`);
 
 for (const file of commandFiles) {
     const filePath = path.join(commandsPath, file);
-    try { // Added try-catch for individual command loading
+    try {
         const command = require(filePath);
         if ('data' in command && 'execute' in command) {
             client.commands.set(command.data.name, command);
             slashCommandsToRegister.push(command.data.toJSON());
-            console.log(`[Command Loader] Successfully loaded command: ${command.data.name}`); // NEW LOG
+            console.log(`[Command Loader] Successfully loaded command: ${command.data.name}`);
         } else {
             console.warn(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property. Skipping.`);
         }
     } catch (error) {
-        console.error(`[ERROR] Failed to load command file ${filePath}:`, error); // NEW LOG
+        console.error(`[ERROR] Failed to load command file ${filePath}:`, error);
     }
 }
 
@@ -200,7 +199,7 @@ for (const file of eventFiles) {
 
 // --- Discord Event Handlers (main ones remaining in index.js) ---
 
-client.once('clientReady', async () => { // Changed 'ready' to 'clientReady'
+client.once('clientReady', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
     console.log('------');
 
@@ -212,7 +211,6 @@ client.once('clientReady', async () => { // Changed 'ready' to 'clientReady'
     }
 
     await initializeFirebase();
-    // Removed: await setupFirestoreListeners(); // This call is now handled by onAuthStateChanged
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
@@ -261,7 +259,7 @@ client.once('clientReady', async () => { // Changed 'ready' to 'clientReady'
     const activeCooldownsRef = collection(db, `ActiveCooldowns`); // Use generic collection name
     try {
         const querySnapshot = await getDocs(activeCooldownsRef);
-        const now = Date.now(); // Corrected from Date.Now()
+        const now = Date.now();
         let rescheduledCount = 0;
         for (const docSnap of querySnapshot.docs) {
             const cooldownData = docSnap.data();
@@ -372,7 +370,7 @@ client.on('interactionCreate', async interaction => {
             const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage);
             await interaction.editReply({ content, components, flags: 0 });
         } else if (interaction.customId.startsWith('toggle_attack_notifications') ||
-                   interaction.customId.startsWith('toggle_farm_notifications') || // Corrected customId from CustomId
+                   interaction.customId.startsWith('toggle_farm_notifications') ||
                    interaction.customId.startsWith('toggle_med_notifications') ||
                    interaction.customId.startsWith('toggle_vote_notifications') ||
                    interaction.customId.startsWith('toggle_repair_notifications') ||
@@ -550,8 +548,6 @@ client.on('interactionCreate', async interaction => {
                 await interaction.deferReply({ flags: 0 });
                 const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, 0);
                 await interaction.editReply({ content, components, flags: 0 });
-            } else if (command.data.name === 'damage-calc') { // NEW: Handle /damage-calc slash command
-                await command.execute(interaction); // Execute the initial command logic
             } else {
                 await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
             }
@@ -566,28 +562,75 @@ client.on('interactionCreate', async interaction => {
                 await interaction.followUp({ content: 'There was an error while executing this command!', flags: 0 });
             }
         }
-    } else if (interaction.isMessageComponent() || interaction.isModalSubmit()) { // Handle message components (buttons, select menus) and modal submissions
-        // Check if the interaction is related to the damage calculator
-        const damageCalcCommand = client.commands.get('damage-calc');
-        if (damageCalcCommand && damageCalcCommand.handleInteraction) {
-            // Check if the customId starts with any of the damage calc IDs
-            const damageCalcInteractionIds = [
-                'damage_calc_weapon_select',
-                'damage_calc_ammo_select',
-                'damage_calc_strength_input', // This is for the modal, but the customId is used in the modal's text input
-                'damage_calc_bleeding_toggle',
-                'damage_calc_calculate_button',
-                'damage_calc_modal_submit'
-            ];
-            const isDamageCalcInteraction = damageCalcInteractionIds.some(id => interaction.customId.startsWith(id));
+    }
 
-            if (isDamageCalcInteraction) {
-                await damageCalcCommand.handleInteraction(interaction);
-                return; // Stop further processing as this interaction is handled
+    // Handle String Select Menu Interactions (for channel selection)
+    if (interaction.isStringSelectMenu()) {
+        if (interaction.customId.startsWith('select-channels-to-set_page_')) {
+            await interaction.deferUpdate();
+
+            const selectedChannelIds = interaction.values;
+            const guild = interaction.guild;
+            const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
+
+            if (!guild) {
+                return await interaction.followUp({ content: 'This action can only be performed in a guild.', flags: 0 });
             }
+
+            const guildCollectionRef = collection(db, `Guilds`);
+            const guildDocRef = doc(guildCollectionRef, guild.id);
+
+            let successCount = 0;
+            let failureCount = 0;
+            let successMessages = [];
+
+            for (const channelId of selectedChannelIds) {
+                const channel = guild.channels.cache.get(channelId);
+                if (!channel) {
+                    console.warn(`Selected channel ID ${channelId} not found in guild cache.`);
+                    failureCount++;
+                    continue;
+                }
+
+                const channelsSubCollectionRef = collection(guildDocRef, 'channels');
+                const channelDocRef = doc(channelsSubCollectionRef, channel.id);
+
+                try {
+                    await setDoc(guildDocRef, {
+                        guildId: guild.id,
+                        guildName: guild.name,
+                        guildOwnerId: guild.ownerId,
+                        lastUpdated: new Date().toISOString()
+                    }, { merge: true });
+
+                    await setDoc(channelDocRef, {
+                        channelId: channel.id,
+                        channelName: channel.name,
+                        originalChannelName: channel.name,
+                        setType: 'manual',
+                        setByUserId: interaction.user.id,
+                        setByUsername: interaction.user.tag,
+                        timestamp: new Date().toISOString()
+                    });
+                    successCount++;
+                    successMessages.push(`<#${channel.id}>`);
+                    statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
+                } catch (error) {
+                    console.error(`Error saving channel ${channel.name} (${channel.id}) to Firestore:`, error);
+                    failureCount++;
+                }
+            }
+
+            let replyContent = `Successfully set ${successCount} channel(s).`;
+            if (successMessages.length > 0) {
+                replyContent += `\nChannels: ${successMessages.join(', ')}`;
+            }
+            if (failureCount > 0) {
+                replyContent += `\nFailed to set ${failureCount} channel(s). Check logs for details.`;
+            }
+
+            await interaction.editReply({ content: replyContent, components: [], flags: 0 });
         }
-        // If not a damage-calc interaction, continue with other component handlers if any
-        // ... existing button/select menu logic for other commands would go here if not already in the main interactionCreate
     }
 });
 
@@ -597,10 +640,6 @@ client.login(TOKEN);
 // --- Web Server for Platforms (e.g., Render) ---
 const app = express();
 
-// Serve static files from the 'public' directory
-app.use(express.static(path.join(__dirname, 'public')));
-
-// Route to serve your index.html for the web dashboard
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
