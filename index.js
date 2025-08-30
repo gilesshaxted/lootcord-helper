@@ -1,16 +1,15 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle, ModalBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle, ModalBuilder, ButtonBuilder, ButtonStyle, MessageFlags, Client, GatewayIntentBits, Collection, AttachmentBuilder } = require('discord.js');
 const { REST } = require('@discordjs/rest');
-const { Client, GatewayIntentBits } = require('discord.js');
 const { Routes } = require('discord-api-types/v10');
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-
+const crypto = require('crypto'); // <-- FIXED: Import crypto module
 
 // Import Firebase modules
 const { initializeApp } = require('firebase/app');
 const { getAuth, signInAnonymously, onAuthStateChanged } = require('firebase/auth');
-const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, getDoc, query, where } = require('firebase/firestore');
+const { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, getDoc, query, where, deleteDoc } = require('firebase/firestore'); // <-- FIXED: Import deleteDoc
 
 // Import Utilities
 const statsTracker = require('./utils/statsTracker');
@@ -19,12 +18,10 @@ const paginationHelpers = require('./utils/pagination');
 const startupChecks = require('./utils/startupChecks');
 const wordleHelpers = require('./utils/wordleHelpers');
 const stickyMessageManager = require('./utils/stickyMessageManager');
-const { sendCooldownPing } = require('./events/cooldownNotifier'); // Import sendCooldownPing from renamed file
+const { sendCooldownPing } = require('./events/cooldownNotifier');
 
 // Load environment variables from a custom .env file
-// Assumes lootcord-helper.env is in the same directory as index.js
 require('dotenv').config({ path: path.resolve(__dirname, 'lootcord-helper.env') });
-
 
 // --- Configuration Variables ---
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -40,7 +37,6 @@ const firebaseConfig = {
     storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
     messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
     appId: process.env.FIREBASE_APP_ID,
-    // measurementId: process.env.MEASUREMENT_ID // Uncomment if you use Measurement ID
 };
 
 // --- Firestore App ID for data paths ---
@@ -63,7 +59,6 @@ if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.proj
     console.error('  - FIREBASE_APP_ID');
     process.exit(1);
 }
-
 
 // --- Firebase Initialization ---
 let firebaseApp;
@@ -91,7 +86,7 @@ async function initializeFirebase() {
             isFirestoreReady = true;
             console.log("Firestore client initialized and ready.");
             // Call setupFirestoreListeners ONLY after auth is ready
-            await setupFirestoreListeners(); 
+            await setupFirestoreListeners();
         });
 
         await signInAnonymously(auth);
@@ -146,7 +141,6 @@ async function setupFirestoreListeners() {
         console.error("Stats Tracker: Error listening to botStats:", error);
     });
 }
-
 
 // --- Discord Client Setup ---
 const client = new Client({
@@ -376,10 +370,10 @@ client.on('interactionCreate', async interaction => {
                    interaction.customId.startsWith('toggle_med_notifications') ||
                    interaction.customId.startsWith('toggle_vote_notifications') ||
                    interaction.customId.startsWith('toggle_repair_notifications') ||
-                   interaction.customId.startsWith('toggle_gambling_notifications')) { // Updated to generic gambling button
+                   interaction.customId.startsWith('toggle_gambling_notifications')) {
             
             console.log(`[Notify Button - Debug] Button click received by ${interaction.user.tag} for customId: ${interaction.customId}`);
-            await interaction.deferUpdate(); // Acknowledge button click immediately
+            await interaction.deferUpdate();
 
             const userId = interaction.user.id;
             const prefsRefs = {
@@ -388,34 +382,30 @@ client.on('interactionCreate', async interaction => {
                 medCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'medCooldown'),
                 voteCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'voteCooldown'),
                 repairCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'repairCooldown'),
-                gamblingCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'gamblingCooldown'), // NEW: Generic gambling preference
+                gamblingCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'gamblingCooldown'),
             };
 
             try {
                 let targetCooldownType;
-                // Correctly map customId to the preference key
                 if (interaction.customId === 'toggle_gambling_notifications') {
                     targetCooldownType = 'gamblingCooldown';
                 } else {
                     targetCooldownType = interaction.customId.replace('toggle_', '').replace('_notifications', '');
                 }
                 
-                const currentPrefSnap = await getDoc(prefsRefs[targetCooldownType]); 
-                let newStates = {}; // Declare newStates here
+                const currentPrefSnap = await getDoc(prefsRefs[targetCooldownType]);
+                let newStates = {};
                 newStates[targetCooldownType] = ! (currentPrefSnap.exists() ? currentPrefSnap.data().enabled : false);
                 console.log(`[Notify Button] User ${userId} toggled ${targetCooldownType} notifications to: ${newStates[targetCooldownType]}`);
 
-                // Apply updates to Firestore
                 await setDoc(prefsRefs[targetCooldownType], { enabled: newStates[targetCooldownType] }, { merge: true });
 
-                // Fetch all current states to rebuild the embed
                 const currentPrefs = {};
                 for (const type in prefsRefs) {
                     const snap = await getDoc(prefsRefs[type]);
                     currentPrefs[type] = snap.exists() ? snap.data().enabled : false;
                 }
 
-                // Re-create the embed and buttons to reflect the new state
                 const embed = new EmbedBuilder()
                     .setColor(0x0099ff)
                     .setTitle('Lootcord Helper Notifications')
@@ -436,9 +426,9 @@ client.on('interactionCreate', async interaction => {
                         `**Repair Cooldown Notifications:**\n` +
                         `Status: **${currentPrefs.repairCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
                         `You'll be pinged when your **clan repair cooldown** is over.\n\n` +
-                        `**Gambling Cooldown Notifications:**\n` + // Updated description
+                        `**Gambling Cooldown Notifications:**\n` +
                         `Status: **${currentPrefs.gamblingCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
-                        `You'll be pinged when your **gambling cooldowns** are over.` // Updated description
+                        `You'll be pinged when your **gambling cooldowns** are over.`
                     )
                     .setFooter({ text: 'Use the buttons to toggle your notifications.' });
 
@@ -467,15 +457,13 @@ client.on('interactionCreate', async interaction => {
                     .setLabel('Repair')
                     .setStyle(currentPrefs.repairCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
                 
-                const gamblingButton = new ButtonBuilder() // NEW: Gambling Button
+                const gamblingButton = new ButtonBuilder()
                     .setCustomId('toggle_gambling_notifications')
                     .setLabel('Gambling')
                     .setStyle(currentPrefs.gamblingCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
 
-                // First row for individual cooldowns
                 const row1 = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton, voteButton, repairButton);
-                // Second row for gambling-related cooldowns
-                const row2 = new ActionRowBuilder().addComponents(gamblingButton); // Only one gambling button
+                const row2 = new ActionRowBuilder().addComponents(gamblingButton);
 
                 await interaction.editReply({ embeds: [embed], components: [row1, row2] });
                 console.log(`[Notify Button] Updated original message with new notification status for ${userId}.`);
@@ -484,11 +472,11 @@ client.on('interactionCreate', async interaction => {
                 console.error(`[Notify Button] Error toggling notification preference for ${userId}:`, error);
                 await interaction.followUp({ content: '❌ An error occurred while updating your notification settings. Please check logs.', flags: MessageFlags.Ephemeral });
             }
-        } else if (interaction.customId.startsWith('show_trivia_explanation_')) { // Handle trivia explanation button
-            await interaction.deferUpdate(); // Acknowledge button click
+        } else if (interaction.customId.startsWith('show_trivia_explanation_')) {
+            await interaction.deferUpdate();
 
             const parts = interaction.customId.split('_');
-            const originalMessageId = parts[3]; // Extract original message ID
+            const originalMessageId = parts[3];
 
             const triviaExplanationRef = doc(collection(db, `TriviaExplanations`), originalMessageId);
 
@@ -506,24 +494,22 @@ client.on('interactionCreate', async interaction => {
                         if (explanations[letter]) {
                             explanationContent += `${letter}: ${explanations[letter]}\n`;
                         }
-                        // No need for else here, just don't add if no explanation
                     });
                     explanationContent += `\`\`\``;
 
-                    // Fetch the original message to edit its components
                     const originalMessage = interaction.message;
                     if (originalMessage) {
                         const newComponents = originalMessage.components.map(row => {
                             return new ActionRowBuilder().addComponents(
                                 row.components.map(button => {
-                                    return ButtonBuilder.from(button).setDisabled(true); // Disable all buttons
+                                    return ButtonBuilder.from(button).setDisabled(true);
                                 })
                             );
                         });
-                        await originalMessage.edit({ embeds: [originalMessage.embeds[0]], components: newComponents }); // Keep original embed, just update components
+                        await originalMessage.edit({ embeds: [originalMessage.embeds[0]], components: newComponents });
                     }
 
-                    await interaction.followUp({ content: explanationContent, flags: 0 }); // Send publicly
+                    await interaction.followUp({ content: explanationContent, flags: 0 });
                     console.log(`Trivia Solver: Posted explanation for message ID ${originalMessageId} in #${interaction.channel.name}.`);
                 } else {
                     await interaction.followUp({ content: 'Could not find explanation for this trivia question.', flags: 0 });
