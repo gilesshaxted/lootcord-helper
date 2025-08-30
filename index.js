@@ -769,19 +769,13 @@ client.on('interactionCreate', async interaction => {
 
         try {
             if (command.data.name === 'damage-calc') {
-                await interaction.deferReply({
-                    flags: 0
-                });
                 await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
             } else if (command.data.name === 'channel-set') {
-                await interaction.deferReply({
-                    ephemeral: true
-                });
                 const {
                     content,
                     components
                 } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, 0);
-                await interaction.editReply({
+                await interaction.reply({
                     content,
                     components,
                     ephemeral: true
@@ -794,15 +788,15 @@ client.on('interactionCreate', async interaction => {
             }
         } catch (error) {
             console.error(`Error executing command ${interaction.commandName}:`, error);
-            if (interaction.deferred || interaction.replied) {
-                await interaction.followUp({
-                    content: 'There was an error while executing this command!',
-                    ephemeral: true
-                });
-            } else {
+            if (!interaction.replied && !interaction.deferred) {
                 await interaction.reply({
                     content: 'There was an error while executing this command!',
-                    ephemeral: true
+                    flags: 0
+                });
+            } else if (interaction.deferred) {
+                await interaction.followUp({
+                    content: 'There was an error while executing this command!',
+                    flags: 0
                 });
             }
         }
