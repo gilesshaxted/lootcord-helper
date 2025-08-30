@@ -1,5 +1,5 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle, ModalBuilder, ButtonBuilder, ButtonStyle, MessageFlags, AttachmentBuilder } = require('discord.js');
-const { getFirestore, doc, getDoc } = require('firebase/firestore'); // Import Firestore functions
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle, ModalBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const { getFirestore, doc, getDoc } = require('firebase/firestore');
 const { WEAPON_DATA } = require('../utils/damageData');
 
 // Custom IDs for interaction components
@@ -139,7 +139,7 @@ module.exports = {
 
             const regex = /(\d+)\s*-\s*(\d+)\s*(?:\(x(\d+)\))?/;
             const match = damageRangeStr.match(regex);
-
+            
             if (!match) {
                 const embed = new EmbedBuilder()
                     .setColor(0xff0000)
@@ -147,15 +147,15 @@ module.exports = {
                     .setDescription('Error parsing damage range. Please try again with `/damage-calc`.');
                 return await interaction.editReply({ embeds: [embed], components: [], flags: 0 });
             }
-
-            let minDamage = parseInt(match[1], 10);
-            let maxDamage = parseInt(match[2], 10);
+            
+            const baseMinDamage = parseInt(match[1], 10);
+            const baseMaxDamage = parseInt(match[2], 10);
             const hits = match[3] ? parseInt(match[3], 10) : 1;
 
             const buffMultiplier = selectedBleedingBuff === 'true' ? 1.5 : 1;
 
-            const finalMinDamage = Math.round(minDamage * strengthSkill * buffMultiplier);
-            const finalMaxDamage = Math.round(maxDamage * strengthSkill * buffMultiplier);
+            const finalMinDamage = Math.round(baseMinDamage * strengthSkill * buffMultiplier);
+            const finalMaxDamage = Math.round(baseMaxDamage * strengthSkill * buffMultiplier);
 
             const totalMinDamage = Math.round(finalMinDamage * hits);
             const totalMaxDamage = Math.round(finalMaxDamage * hits);
