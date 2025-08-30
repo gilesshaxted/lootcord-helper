@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle, ModalBuilder, ButtonBuilder, ButtonStyle, MessageFlags, Client, GatewayIntentBits, Collection, AttachmentBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, InteractionType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder, EmbedBuilder } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 const express = require('express');
@@ -19,7 +19,7 @@ const startupChecks = require('./utils/startupChecks');
 const wordleHelpers = require('./utils/wordleHelpers');
 const stickyMessageManager = require('./utils/stickyMessageManager');
 const { sendCooldownPing } = require('./events/cooldownNotifier');
-const interactionHandler = require('./events/interactionHandler');
+const interactionHandler = require('./events/interactionHandler'); // NEW: Import the interaction handler
 
 // Load environment variables from a custom .env file
 require('dotenv').config({ path: path.resolve(__dirname, 'lootcord-helper.env') });
@@ -297,71 +297,22 @@ client.on('interactionCreate', async interaction => {
         }
         return;
     }
-    if (interaction.isButton()) {
-        if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
-            await interaction.deferUpdate();
-            const parts = interaction.customId.split('_');
-            const action = parts[1];
-            const currentPage = parseInt(parts[2], 10);
-            let newPage = currentPage;
-            if (action === 'prev') {
-                newPage--;
-            } else if (action === 'next') {
-                newPage++;
-            }
-            const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage);
-            await interaction.editReply({ content, components, flags: 0 });
-        } else if (interaction.customId.startsWith('toggle_attack_notifications') ||
-                   interaction.customId.startsWith('toggle_farm_notifications') ||
-                   interaction.customId.startsWith('toggle_med_notifications') ||
-                   interaction.customId.startsWith('toggle_vote_notifications') ||
-                   interaction.customId.startsWith('toggle_repair_notifications') ||
-                   interaction.customId.startsWith('toggle_gambling_notifications')) {
-            console.log(`[Notify Button - Debug] Button click received by ${interaction.user.tag} for customId: ${interaction.customId}`);
-            await interaction.deferUpdate();
-            const userId = interaction.user.id;
-            const prefsRefs = {
-                attackCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'attackCooldown'),
-                farmCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'farmCooldown'),
-                medCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'medCooldown'),
-                voteCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'voteCooldown'),
-                repairCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'repairCooldown'),
-                gamblingCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'gamblingCooldown'),
-            };
-            try {
-                let targetCooldownType;
-                if (interaction.customId === 'toggle_gambling_notifications') {
-                    targetCooldownType = 'gamblingCooldown';
-                } else {
-                    targetCooldownType = interaction.customId.replace('toggle_', '').replace('_notifications', '');
-                }
-                const currentPrefSnap = await getDoc(prefsRefs[targetCooldownType]);
-                let newStates = {};
-                newStates[targetCooldownType] = !(currentPrefSnap.exists() ? currentPrefSnap.data().enabled : false);
-                console.log(`[Notify Button] User ${userId} toggled ${targetCooldownType} notifications to: ${newStates[targetCooldownType]}`);
-                await setDoc(prefsRefs[targetCooldownType], { enabled: newStates[targetCooldownType] }, { merge: true });
-                const currentPrefs = {};
-                for (const type in prefsRefs) {
-                    const snap = await getDoc(prefsRefs[type]);
-                    currentPrefs[type] = snap.exists() ? snap.data().enabled : false;
-                }
-                const embed = new EmbedBuilder()
-                    .setColor(0x0099ff)
-                    .setTitle('Lootcord Helper Notifications')
-                    .setDescription(
-                        `Here you can manage your personal notification settings for Lootcord Helper.\n\n` +
-                        `**Attack Cooldown Notifications:**\n` +
-                        `Status: **${currentPrefs.attackCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
-                        `You'll be pinged when your weapon cooldowns are over.\n\n` +
-                        `**Farm Cooldown Notifications:**\n` +
-                        `Status: **${currentPrefs.farmCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
-                        `You'll be pinged when your farming cooldowns are over.\n\n` +
-                        `**Med Cooldown Notifications:**\n` +
-                        `Status: **${currentPrefs.medCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
-                        `You'll be pinged when your medical item cooldowns are over.\n\n` +
-                        `**Vote Cooldown Notifications:**\n` +
-                        `Status: **${currentPrefs.voteCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
-                        `You'll be pinged when your **voting cooldown** is over.\n\n` +
-                        `**Repair Cooldown Notifications:**\n` +
-                        `Status: **${currentPrefs.repairCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
-                        `You
+    // New interaction handler logic
+    interactionHandler.execute(interaction, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE);
+});
+
+// Log in to Discord with your bot's token.
+client.login(TOKEN);
+
+// --- Web Server for Platforms (e.g., Render) ---
+const app = express();
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.listen(PORT, () => {
+    console.log(`Web server listening on port ${PORT}`);
+});
