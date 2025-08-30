@@ -261,7 +261,7 @@ client.once('clientReady', async () => { // Changed 'ready' to 'clientReady'
     const activeCooldownsRef = collection(db, `ActiveCooldowns`); // Use generic collection name
     try {
         const querySnapshot = await getDocs(activeCooldownsRef);
-        const now = Date.Now();
+        const now = Date.now(); // Corrected from Date.Now()
         let rescheduledCount = 0;
         for (const docSnap of querySnapshot.docs) {
             const cooldownData = docSnap.data();
@@ -372,7 +372,7 @@ client.on('interactionCreate', async interaction => {
             const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage);
             await interaction.editReply({ content, components, flags: 0 });
         } else if (interaction.customId.startsWith('toggle_attack_notifications') ||
-                   interaction.CustomId.startsWith('toggle_farm_notifications') ||
+                   interaction.customId.startsWith('toggle_farm_notifications') || // Corrected customId from CustomId
                    interaction.customId.startsWith('toggle_med_notifications') ||
                    interaction.customId.startsWith('toggle_vote_notifications') ||
                    interaction.customId.startsWith('toggle_repair_notifications') ||
