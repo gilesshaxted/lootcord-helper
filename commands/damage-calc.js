@@ -45,6 +45,20 @@ module.exports = {
 
     // This function will be called by index.js to handle subsequent interactions
     async handleInteraction(interaction) {
+        // Helper function to safely extract state from a customId
+        const extractState = (customId, prefix) => {
+            const parts = customId.split(':');
+            if (!customId.startsWith(prefix) || parts.length < 4) {
+                return { weapon: null, ammo: null, bleeding: false };
+            }
+            // Assuming format: PREFIX:weapon:ammo:bleeding
+            return {
+                weapon: parts[1],
+                ammo: parts[2],
+                bleeding: parts[3] === 'true'
+            };
+        };
+
         if (interaction.customId === WEAPON_SELECT_ID) {
             await interaction.deferUpdate(); // Acknowledge the select menu interaction
 
@@ -104,11 +118,9 @@ module.exports = {
                 .setLabel(newLabel)
                 .setStyle(newStyle);
 
-            // Extract existing state from the calculate button's customId using colon split
+            // Extract existing state from the calculate button's customId using helper
             const calculateButtonComponent = interaction.message.components[1].components[1];
-            const calculateButtonCustomIdParts = calculateButtonComponent.customId.split(':');
-            const selectedWeapon = calculateButtonCustomIdParts[1]; // Corrected index
-            const selectedAmmo = calculateButtonCustomIdParts[2];   // Corrected index
+            const { weapon: selectedWeapon, ammo: selectedAmmo } = extractState(calculateButtonComponent.customId, CALCULATE_BUTTON_ID);
             
             const updatedCalculateButton = ButtonBuilder.from(calculateButtonComponent)
                 .setCustomId(`${CALCULATE_BUTTON_ID}:${selectedWeapon}:${selectedAmmo}:${newStyle === ButtonStyle.Success}`); // Update bleeding state
@@ -124,9 +136,8 @@ module.exports = {
             await interaction.deferUpdate();
             const selectedAmmo = interaction.values[0];
             
-            // Extract selected weapon from the ammo select customId using colon split
-            const ammoSelectCustomIdParts = interaction.customId.split(':');
-            const selectedWeapon = ammoSelectCustomIdParts[1]; // Corrected index
+            // Extract selected weapon from the ammo select customId using helper
+            const { weapon: selectedWeapon } = extractState(interaction.customId, AMMO_SELECT_ID);
 
             // Extract current bleeding state from the bleeding buff toggle button
             const bleedingBuffButton = interaction.message.components[1].components[0];
@@ -148,18 +159,11 @@ module.exports = {
         } else if (interaction.customId.startsWith(CALCULATE_BUTTON_ID)) {
             await interaction.deferUpdate(); // Defer the button click
 
-            // --- Defensive checks and correct state extraction from button customId using colon split ---
-            const calculateButtonCustomIdParts = interaction.customId.split(':');
-            if (calculateButtonCustomIdParts.length < 4) { // Expecting e.g., ['damage_calc_calculate_button', 'WeaponName', 'AmmoName', 'true/false']
-                return await interaction.followUp({ content: 'Error: Could not retrieve selections from the button. Please restart the calculation with `/damage-calc`.', flags: MessageFlags.Ephemeral });
-            }
+            // --- Extract state from button customId using helper ---
+            const { weapon: selectedWeapon, ammo: selectedAmmo, bleeding: bleedingBuffActive } = extractState(interaction.customId, CALCULATE_BUTTON_ID);
 
-            const selectedWeapon = calculateButtonCustomIdParts[1]; // Corrected index
-            const selectedAmmo = calculateButtonCustomIdParts[2];   // Corrected index
-            const bleedingBuffActive = calculateButtonCustomIdParts[3] === 'true'; // Convert string to boolean
-
-            if (selectedAmmo === 'NO_AMMO_SELECTED') {
-                 return await interaction.followUp({ content: 'Error: Ammo selection is missing or invalid. Please select an ammo type.', flags: MessageFlags.Ephemeral });
+            if (!selectedWeapon || selectedAmmo === 'NO_AMMO_SELECTED') {
+                 return await interaction.followUp({ content: 'Error: Weapon or Ammo selection is missing or invalid. Please select both a weapon and an ammo type.', flags: MessageFlags.Ephemeral });
             }
 
             // --- Show Modal for Strength Input ---
@@ -183,11 +187,8 @@ module.exports = {
 
             const strengthSkill = parseInt(interaction.fields.getTextInputValue(STRENGTH_INPUT_ID), 10);
             
-            // Extract state from modal's customId using colon split
-            const modalCustomIdParts = interaction.customId.split(':');
-            const selectedWeapon = modalCustomIdParts[1]; // Corrected index
-            const selectedAmmo = modalCustomIdParts[2];   // Corrected index
-            const bleedingBuffActive = modalCustomIdParts[3] === 'true'; // Convert string to boolean
+            // Extract state from modal's customId using helper
+            const { weapon: selectedWeapon, ammo: selectedAmmo, bleeding: bleedingBuffActive } = extractState(interaction.customId, MODAL_SUBMIT_ID);
 
             if (isNaN(strengthSkill) || strengthSkill <= 0) {
                 return await interaction.editReply({ content: 'Please enter a valid positive number for Strength Skill.', flags: 0 }); // Visible error
