@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle, ModalBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
-const { getFirestore, doc, getDoc } = require('firebase/firestore');
+const { getFirestore, doc, getDoc } = require('firebase/firestore'); // Import Firestore functions
 const { WEAPON_DATA } = require('../utils/damageData');
 
 // Custom IDs for interaction components
@@ -74,19 +74,15 @@ module.exports = {
             }));
 
             const ammoSelect = new StringSelectMenuBuilder()
-                .setCustomId(`${AMMO_SELECT_ID}:${strengthSkill}:${selectedWeapon}:false`)
+                .setCustomId(`${AMMO_SELECT_ID}:${strengthSkill}:${selectedWeapon}`)
                 .setPlaceholder('Select ammo type...')
                 .addOptions(ammoOptions);
 
             const embed = new EmbedBuilder()
                 .setColor(0x0099ff)
                 .setTitle('Damage Calculator')
-                .setDescription(
-                    `Your Strength Skill is currently - **${strengthSkill}x**\n` +
-                    `Weapon: **${selectedWeapon}**\n\n` +
-                    `Please select your ammo type.`
-                );
-
+                .setDescription(`Your Strength Skill is currently - **${strengthSkill}x**\nWeapon: **${selectedWeapon}**\n\nPlease select your ammo type.`);
+            
             await interaction.editReply({
                 embeds: [embed],
                 components: [new ActionRowBuilder().addComponents(ammoSelect)],
@@ -137,45 +133,33 @@ module.exports = {
                 return await interaction.editReply({ embeds: [embed], components: [], flags: 0 });
             }
 
-            const regex = /(\d+)\s*-\s*(\d+)\s*(?:\(x(\d+)\))?/;
-            const match = damageRangeStr.match(regex);
-            
-            if (!match) {
+            const [minDamageStr, maxDamageStr] = damageRangeStr.split(' - ').map(s => s.replace(' (x2)', '').replace(' (x3)', ''));
+            let minDamage = parseInt(minDamageStr, 10);
+            let maxDamage = parseInt(maxDamageStr, 10);
+
+            if (isNaN(minDamage) || isNaN(maxDamage)) {
                 const embed = new EmbedBuilder()
                     .setColor(0xff0000)
                     .setTitle('Damage Calculator Error')
                     .setDescription('Error parsing damage range. Please try again with `/damage-calc`.');
                 return await interaction.editReply({ embeds: [embed], components: [], flags: 0 });
             }
-            
-            const baseMinDamage = parseInt(match[1], 10);
-            const baseMaxDamage = parseInt(match[2], 10);
-            const hits = match[3] ? parseInt(match[3], 10) : 1;
 
             const buffMultiplier = selectedBleedingBuff === 'true' ? 1.5 : 1;
 
-            const finalMinDamage = Math.round(baseMinDamage * strengthSkill * buffMultiplier);
-            const finalMaxDamage = Math.round(baseMaxDamage * strengthSkill * buffMultiplier);
-
-            const totalMinDamage = Math.round(finalMinDamage * hits);
-            const totalMaxDamage = Math.round(finalMaxDamage * hits);
-
-            let description = 
-                `**Strength Skill:** ${strengthSkill}x\n` +
-                `**Weapon:** ${selectedWeapon}\n` +
-                `**Ammo:** ${selectedAmmo}\n` +
-                `**Bleeding Buff:** ${selectedBleedingBuff === 'true' ? 'ON ✅ (x1.5)' : 'OFF ❌ (x1.0)'}\n\n`;
-
-            description += `**Damage per hit:** \`${finalMinDamage} - ${finalMaxDamage}\``;
-
-            if (hits > 1) {
-                description += `\n**Total damage over ${hits} hits:** \`${totalMinDamage} - ${totalMaxDamage}\``;
-            }
+            const finalMinDamage = Math.round(minDamage * strengthSkill * buffMultiplier);
+            const finalMaxDamage = Math.round(maxDamage * strengthSkill * buffMultiplier);
 
             const resultEmbed = new EmbedBuilder()
                 .setColor(0x00ff00)
                 .setTitle('Damage Calculation Result')
-                .setDescription(description)
+                .setDescription(
+                    `**Strength Skill:** ${strengthSkill}x\n` +
+                    `**Weapon:** ${selectedWeapon}\n` +
+                    `**Ammo:** ${selectedAmmo}\n` +
+                    `**Bleeding Buff:** ${selectedBleedingBuff === 'true' ? 'ON ✅ (x1.5)' : 'OFF ❌ (x1.0)'}\n\n` +
+                    `**Calculated Damage Range:** \`${finalMinDamage} - ${finalMaxDamage}\``
+                )
                 .setFooter({ text: 'Damage values are rounded to the nearest whole number.' });
 
             await interaction.editReply({ embeds: [resultEmbed], components: [], flags: 0 });
