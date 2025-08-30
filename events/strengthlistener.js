@@ -20,6 +20,7 @@ module.exports = {
         }
 
         console.log("[Strength Listener] Message detected from game bot with embed.");
+        console.log("[Strength Listener] Full Embed Object:", JSON.stringify(message.embeds[0], null, 2)); // NEW LOG: Log the entire embed object
 
         // Check the previous message to confirm it was a 't-p' command
         try {
@@ -33,6 +34,7 @@ module.exports = {
                 const upgradesField = message.embeds[0].fields.find(field => field.name.includes('Upgrades'));
                 
                 if (upgradesField) {
+                    console.log("[Strength Listener] Value of 'Upgrades' field:", upgradesField.value); // NEW LOG: Log the field's value
                     const strengthMatch = upgradesField.value.match(STRENGTH_REGEX);
                     
                     if (strengthMatch && strengthMatch[1]) {
