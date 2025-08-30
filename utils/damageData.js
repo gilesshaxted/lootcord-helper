@@ -10,7 +10,7 @@ const WEAPON_DATA = {
         "Fire Arrow": "24 - 39",
     },
     "F1 Grenade": {
-        "Basic Ammo": "13 - 20",
+        "Basic Ammo": "13 - 20 (x2)",
     },
     "Flame Thrower": {
         "Basic Ammo": "11 - 21",
