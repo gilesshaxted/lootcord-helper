@@ -3,7 +3,7 @@ const { EmbedBuilder } = require('discord.js');
 // --- Configuration ---
 const TARGET_GAME_BOT_ID = '493316754689359874'; // User ID of the game bot
 const DEBUG_CHANNEL_ID = '1307628841799254026'; // Your designated debug channel ID
-const STRENGTH_REGEX = /Strength:\s*(\d+\.\d+)x damage/i; // Regex to capture the strength value
+const STRENGTH_REGEX = /\*\*Strength:\*\* (\d+\.\d+)x damage/i; // Regex to capture the strength value
 
 module.exports = {
     name: 'messageCreate',
