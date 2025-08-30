@@ -65,7 +65,7 @@ module.exports = {
             }));
 
             const ammoSelect = new StringSelectMenuBuilder()
-                .setCustomId(`${AMMO_SELECT_ID}_${selectedWeapon}`) // Include weapon in customId for state
+                .setCustomId(`${AMMO_SELECT_ID}:${selectedWeapon}`) // Use colon for state separation
                 .setPlaceholder('Select ammo type...')
                 .addOptions(ammoOptions);
 
@@ -76,7 +76,7 @@ module.exports = {
                 .setStyle(ButtonStyle.Danger);
 
             const calculateButton = new ButtonBuilder()
-                .setCustomId(`${CALCULATE_BUTTON_ID}_${selectedWeapon}_${'NO_AMMO_SELECTED'}_${false}`) // Initially disabled, no ammo selected
+                .setCustomId(`${CALCULATE_BUTTON_ID}:${selectedWeapon}:NO_AMMO_SELECTED:false`) // Use colon for state separation
                 .setLabel('Calculate Damage')
                 .setStyle(ButtonStyle.Primary)
                 .setDisabled(true); // Initially disabled
@@ -104,14 +104,14 @@ module.exports = {
                 .setLabel(newLabel)
                 .setStyle(newStyle);
 
-            // Extract existing state from the calculate button's customId
+            // Extract existing state from the calculate button's customId using colon split
             const calculateButtonComponent = interaction.message.components[1].components[1];
-            const calculateButtonCustomIdParts = calculateButtonComponent.customId.split('_');
-            const selectedWeapon = calculateButtonCustomIdParts[2];
-            const selectedAmmo = calculateButtonCustomIdParts[3];
+            const calculateButtonCustomIdParts = calculateButtonComponent.customId.split(':');
+            const selectedWeapon = calculateButtonCustomIdParts[1]; // Corrected index
+            const selectedAmmo = calculateButtonCustomIdParts[2];   // Corrected index
             
             const updatedCalculateButton = ButtonBuilder.from(calculateButtonComponent)
-                .setCustomId(`${CALCULATE_BUTTON_ID}_${selectedWeapon}_${selectedAmmo}_${newStyle === ButtonStyle.Success}`); // Update bleeding state
+                .setCustomId(`${CALCULATE_BUTTON_ID}:${selectedWeapon}:${selectedAmmo}:${newStyle === ButtonStyle.Success}`); // Update bleeding state
 
             // Rebuild the action row with the updated button, keeping the calculate button
             const updatedRow = new ActionRowBuilder().addComponents(updatedBleedingButton, updatedCalculateButton);
@@ -124,9 +124,9 @@ module.exports = {
             await interaction.deferUpdate();
             const selectedAmmo = interaction.values[0];
             
-            // Extract selected weapon from the ammo select customId
-            const ammoSelectCustomIdParts = interaction.customId.split('_');
-            const selectedWeapon = ammoSelectCustomIdParts[4];
+            // Extract selected weapon from the ammo select customId using colon split
+            const ammoSelectCustomIdParts = interaction.customId.split(':');
+            const selectedWeapon = ammoSelectCustomIdParts[1]; // Corrected index
 
             // Extract current bleeding state from the bleeding buff toggle button
             const bleedingBuffButton = interaction.message.components[1].components[0];
@@ -134,7 +134,7 @@ module.exports = {
 
             // Enable the calculate button and update its customId with selected weapon and ammo
             const updatedCalculateButton = ButtonBuilder.from(interaction.message.components[1].components[1])
-                .setCustomId(`${CALCULATE_BUTTON_ID}_${selectedWeapon}_${selectedAmmo}_${bleedingBuffActive}`)
+                .setCustomId(`${CALCULATE_BUTTON_ID}:${selectedWeapon}:${selectedAmmo}:${bleedingBuffActive}`)
                 .setDisabled(false);
 
             // Rebuild the action row with the updated calculate button
@@ -145,18 +145,18 @@ module.exports = {
                 flags: 0, // Visible message
             });
 
-        } else if (interaction.customId.startsWith(CALCULATE_BUTTON_ID)) { // Changed to startsWith for robust state extraction
+        } else if (interaction.customId.startsWith(CALCULATE_BUTTON_ID)) {
             await interaction.deferUpdate(); // Defer the button click
 
-            // --- Defensive checks and correct state extraction from button customId ---
-            const calculateButtonCustomIdParts = interaction.customId.split('_');
-            if (calculateButtonCustomIdParts.length < 4) { // Expecting e.g., ['damage', 'calc', 'calculate', 'button', 'WeaponName', 'AmmoName', 'true/false']
+            // --- Defensive checks and correct state extraction from button customId using colon split ---
+            const calculateButtonCustomIdParts = interaction.customId.split(':');
+            if (calculateButtonCustomIdParts.length < 4) { // Expecting e.g., ['damage_calc_calculate_button', 'WeaponName', 'AmmoName', 'true/false']
                 return await interaction.followUp({ content: 'Error: Could not retrieve selections from the button. Please restart the calculation with `/damage-calc`.', flags: MessageFlags.Ephemeral });
             }
 
-            const selectedWeapon = calculateButtonCustomIdParts[4];
-            const selectedAmmo = calculateButtonCustomIdParts[5];
-            const bleedingBuffActive = calculateButtonCustomIdParts[6] === 'true'; // Convert string to boolean
+            const selectedWeapon = calculateButtonCustomIdParts[1]; // Corrected index
+            const selectedAmmo = calculateButtonCustomIdParts[2];   // Corrected index
+            const bleedingBuffActive = calculateButtonCustomIdParts[3] === 'true'; // Convert string to boolean
 
             if (selectedAmmo === 'NO_AMMO_SELECTED') {
                  return await interaction.followUp({ content: 'Error: Ammo selection is missing or invalid. Please select an ammo type.', flags: MessageFlags.Ephemeral });
@@ -164,7 +164,7 @@ module.exports = {
 
             // --- Show Modal for Strength Input ---
             const modal = new ModalBuilder()
-                .setCustomId(`${MODAL_SUBMIT_ID}_${selectedWeapon}_${selectedAmmo}_${bleedingBuffActive}`) // Encode state in modal customId
+                .setCustomId(`${MODAL_SUBMIT_ID}:${selectedWeapon}:${selectedAmmo}:${bleedingBuffActive}`) // Encode state in modal customId
                 .setTitle('Finalize Damage Calculation');
 
             const strengthInput = new TextInputBuilder()
@@ -183,11 +183,11 @@ module.exports = {
 
             const strengthSkill = parseInt(interaction.fields.getTextInputValue(STRENGTH_INPUT_ID), 10);
             
-            // Extract state from modal's customId
-            const modalCustomIdParts = interaction.customId.split('_');
-            const selectedWeapon = modalCustomIdParts[3];
-            const selectedAmmo = modalCustomIdParts[4];
-            const bleedingBuffActive = modalCustomIdParts[5] === 'true'; // Convert string to boolean
+            // Extract state from modal's customId using colon split
+            const modalCustomIdParts = interaction.customId.split(':');
+            const selectedWeapon = modalCustomIdParts[1]; // Corrected index
+            const selectedAmmo = modalCustomIdParts[2];   // Corrected index
+            const bleedingBuffActive = modalCustomIdParts[3] === 'true'; // Convert string to boolean
 
             if (isNaN(strengthSkill) || strengthSkill <= 0) {
                 return await interaction.editReply({ content: 'Please enter a valid positive number for Strength Skill.', flags: 0 }); // Visible error
