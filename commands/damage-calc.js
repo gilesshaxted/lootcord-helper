@@ -74,7 +74,7 @@ module.exports = {
             }));
 
             const ammoSelect = new StringSelectMenuBuilder()
-                .setCustomId(`${AMMO_SELECT_ID}:${strengthSkill}:${selectedWeapon}`)
+                .setCustomId(`${AMMO_SELECT_ID}:${strengthSkill}:${selectedWeapon}:false`)
                 .setPlaceholder('Select ammo type...')
                 .addOptions(ammoOptions);
 
