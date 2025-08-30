@@ -57,6 +57,13 @@ const {
 const {
     updateVoiceChannelNameOnDemand
 } = require('./utils/voiceChannelUpdater');
+const { WEAPON_DATA } = require('./utils/damageData');
+
+// Custom IDs for interaction components
+const WEAPON_SELECT_ID = 'damage_calc_weapon_select';
+const AMMO_SELECT_ID = 'damage_calc_ammo_select';
+const BLEEDING_SELECT_ID = 'damage_calc_bleeding_select';
+
 
 // Load environment variables from a custom .env file
 require('dotenv').config({
@@ -614,6 +621,139 @@ client.on('interactionCreate', async interaction => {
 
             await interaction.editReply({
                 content: replyContent,
+                components: [],
+                flags: 0
+            });
+        }
+    } else if (interaction.isStringSelectMenu()) {
+        const customId = interaction.customId;
+        if (customId.startsWith(WEAPON_SELECT_ID)) {
+            await interaction.deferUpdate();
+            const selectedWeapon = interaction.values[0];
+            const strengthSkill = parseFloat(customId.split(':')[1]);
+            const ammoTypes = WEAPON_DATA[selectedWeapon];
+
+            if (!ammoTypes || Object.keys(ammoTypes).length === 0) {
+                const embed = new EmbedBuilder()
+                    .setColor(0xff0000)
+                    .setTitle('Damage Calculator Error')
+                    .setDescription(`No ammo data found for **${selectedWeapon}**. Please select another weapon.`);
+                return await interaction.editReply({
+                    embeds: [embed],
+                    components: [],
+                    flags: 0
+                });
+            }
+
+            const ammoOptions = Object.keys(ammoTypes).map(ammoName => ({
+                label: ammoName,
+                value: ammoName,
+            }));
+
+            const ammoSelect = new StringSelectMenuBuilder()
+                .setCustomId(`${AMMO_SELECT_ID}:${strengthSkill}:${selectedWeapon}`)
+                .setPlaceholder('Select ammo type...')
+                .addOptions(ammoOptions);
+
+            const embed = new EmbedBuilder()
+                .setColor(0x0099ff)
+                .setTitle('Damage Calculator')
+                .setDescription(`Your Strength Skill is currently - **${strengthSkill}x**\nWeapon: **${selectedWeapon}**\n\nPlease select your ammo type.`);
+
+            await interaction.editReply({
+                embeds: [embed],
+                components: [new ActionRowBuilder().addComponents(ammoSelect)],
+                flags: 0,
+            });
+        } else if (customId.startsWith(AMMO_SELECT_ID)) {
+            await interaction.deferUpdate();
+            const selectedAmmo = interaction.values[0];
+            const [, strengthSkill, selectedWeapon] = customId.split(':');
+
+            const bleedingOptions = [{
+                label: 'ON ✅ (1.5x)',
+                value: 'true'
+            }, {
+                label: 'OFF ❌ (1.0x)',
+                value: 'false'
+            }, ];
+
+            const bleedingSelect = new StringSelectMenuBuilder()
+                .setCustomId(`${BLEEDING_SELECT_ID}:${strengthSkill}:${selectedWeapon}:${selectedAmmo}`)
+                .setPlaceholder('Bleeding Buff...')
+                .addOptions(bleedingOptions);
+
+            const embed = new EmbedBuilder()
+                .setColor(0x0099ff)
+                .setTitle('Damage Calculator')
+                .setDescription(
+                    `Your Strength Skill is currently - **${strengthSkill}x**\n` +
+                    `Weapon: **${selectedWeapon}**\n` +
+                    `Ammo: **${selectedAmmo}**\n\n` +
+                    `Please select bleeding buff status.`
+                );
+
+            await interaction.editReply({
+                embeds: [embed],
+                components: [new ActionRowBuilder().addComponents(bleedingSelect)],
+                flags: 0,
+            });
+        } else if (customId.startsWith(BLEEDING_SELECT_ID)) {
+            await interaction.deferUpdate();
+            const selectedBleedingBuff = interaction.values[0];
+            const [, strengthSkill, selectedWeapon, selectedAmmo] = customId.split(':');
+
+            const damageRangeStr = WEAPON_DATA[selectedWeapon]?.[selectedAmmo];
+
+            if (!damageRangeStr) {
+                const embed = new EmbedBuilder()
+                    .setColor(0xff0000)
+                    .setTitle('Damage Calculator Error')
+                    .setDescription('Could not find damage data for the selected weapon/ammo combination. Please restart with `/damage-calc`.');
+                return await interaction.editReply({
+                    embeds: [embed],
+                    components: [],
+                    flags: 0
+                });
+            }
+
+            const [minDamageStr, maxDamageStr] = damageRangeStr.split(' - ').map(s => s.replace(' (x2)', '').replace(' (x3)', ''));
+            let minDamage = parseInt(minDamageStr, 10);
+            let maxDamage = parseInt(maxDamageStr, 10);
+
+            if (isNaN(minDamage) || isNaN(maxDamage)) {
+                const embed = new EmbedBuilder()
+                    .setColor(0xff0000)
+                    .setTitle('Damage Calculator Error')
+                    .setDescription('Error parsing damage range. Please try again with `/damage-calc`.');
+                return await interaction.editReply({
+                    embeds: [embed],
+                    components: [],
+                    flags: 0
+                });
+            }
+
+            const buffMultiplier = selectedBleedingBuff === 'true' ? 1.5 : 1;
+
+            const finalMinDamage = Math.round(minDamage * strengthSkill * buffMultiplier);
+            const finalMaxDamage = Math.round(maxDamage * strengthSkill * buffMultiplier);
+
+            const resultEmbed = new EmbedBuilder()
+                .setColor(0x00ff00)
+                .setTitle('Damage Calculation Result')
+                .setDescription(
+                    `**Strength Skill:** ${strengthSkill}x\n` +
+                    `**Weapon:** ${selectedWeapon}\n` +
+                    `**Ammo:** ${selectedAmmo}\n` +
+                    `**Bleeding Buff:** ${selectedBleedingBuff === 'true' ? 'ON ✅ (x1.5)' : 'OFF ❌ (x1.0)'}\n\n` +
+                    `**Calculated Damage Range:** \`${finalMinDamage} - ${finalMaxDamage}\``
+                )
+                .setFooter({
+                    text: 'Damage values are rounded to the nearest whole number.'
+                });
+
+            await interaction.editReply({
+                embeds: [resultEmbed],
                 components: [],
                 flags: 0
             });
