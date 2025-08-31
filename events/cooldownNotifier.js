@@ -2,21 +2,15 @@ const { collection, doc, setDoc, getDoc, updateDoc, deleteDoc } = require('fireb
 const statsTracker = require('../utils/statsTracker');
 
 // --- Configuration ---
-const TARGET_GAME_BOT_ID = '493316754689359874'; // User ID of the game bot that sends attack/farm/med/vote/repair messages
-const NOTIFICATION_CHANNEL_ID = '1329235188907114506'; // Channel to send debug notifications
-const COOLDOWN_DEBUG_CHANNEL_ID = '1307628841799254026'; // Channel to send detailed cooldown debug info
-
-
-// Cooldown data in milliseconds [HH:MM:SS]
+const TARGET_GAME_BOT_ID = '493316754689359874';
 const COOLDOWN_DURATIONS_MS = {
-    // Melee Weapons
     'bone knife': 15 * 60 * 1000 + 45 * 1000,
     'butcher knife': 21 * 60 * 1000 + 45 * 1000,
     'candy cane': 22 * 60 * 1000 + 9 * 1000,
     'chain saw': 52 * 60 * 1000 + 12 * 1000,
     'long sword': 36 * 60 * 1000 + 2 * 1000,
     'mace': 34 * 60 * 1000 + 3 * 1000,
-    'machete': 25 * 60 * 1000 + 23 * 1000, // Corrected to 25 minutes 23 seconds
+    'machete': 25 * 60 * 1000 + 23 * 1000,
     'pickaxe': 11 * 60 * 1000 + 38 * 1000,
     'pitchfork': 42 * 60 * 1000 + 32 * 1000,
     'rock': 9 * 60 * 1000 + 14 * 1000,
@@ -26,8 +20,6 @@ const COOLDOWN_DURATIONS_MS = {
     'snowball': 39 * 60 * 1000 + 12 * 1000,
     'stone spear': 29 * 60 * 1000 + 13 * 1000,
     'wooden spear': 15 * 60 * 1000 + 20 * 1000,
-
-    // Ranged Weapons
     'bow': 26 * 60 * 1000 + 55 * 1000,
     'crossbow': 37 * 60 * 1000 + 12 * 1000,
     'f1 grenade': 39 * 60 * 1000 + 22 * 1000,
@@ -52,83 +44,37 @@ const COOLDOWN_DURATIONS_MS = {
     'l96': 3 * 60 * 60 * 1000 + 37 * 60 * 1000 + 0 * 1000,
     'grenade launcher': 1 * 60 * 60 * 1000 + 45 * 60 * 1000 + 0 * 1000,
     'rocket launcher': 2 * 60 * 60 * 1000 + 24 * 60 * 1000 + 0 * 1000,
-
-    // Med Cooldowns
     'bandage': 16 * 60 * 1000 + 7 * 1000,
     'medical syringe': 28 * 60 * 1000 + 16 * 1000,
     'large medkit': 44 * 60 * 1000 + 42 * 1000,
-
-    // Farm Cooldown
-    'farming': 60 * 60 * 1000, // 60 minutes
-
-    // Vote Cooldown
-    'voting': 12 * 60 * 60 * 1000, // 12 hours
-    
-    // Generic Gambling Cooldown (e.g., for coinflip, blackjack, slots, etc.)
-    'gambling': 5 * 60 * 1000, // 5 minutes (default for most gambling)
-    'wheel': 10 * 60 * 1000, // Wheel Roulette cooldown (10 minutes)
-    'jackpot': 9 * 60 * 1000, // Jackpot cooldown (9 minutes)
-    'roulette': 3 * 60 * 1000, // Roulette cooldown (3 minutes)
-
-    // Repair Cooldowns
-    'wood': 2 * 60 * 1000, // 2 minutes
-    'stone': 10 * 60 * 1000, // 10 minutes
-    'metal': 25 * 60 * 1000, // 25 minutes
-    'high quality metal': 60 * 60 * 1000 // 60 minutes
+    'farming': 60 * 60 * 1000,
+    'voting': 12 * 60 * 60 * 1000,
+    'gambling': 5 * 60 * 1000,
+    'wheel': 10 * 60 * 1000,
+    'jackpot': 9 * 60 * 1000,
+    'roulette': 3 * 60 * 1000,
+    'wood': 2 * 60 * 1000,
+    'stone': 10 * 60 * 1000,
+    'metal': 25 * 60 * 1000,
+    'high quality metal': 60 * 60 * 1000
 };
 
-// Regex to capture player ID, enemy type, and weapon name for attack messages
 const ATTACK_MESSAGE_REGEX = /^(?:<a?:.+?:\d+>|\S+)\s+\*\*<@(\d+)>\*\* hit the \*\*(.*?)\*\* for \*\*(?:\d+)\*\* damage using their\s+<a?:.+?:\d+>\s+`([^`]+)`/;
-
-// Regex to capture player ID for farm messages
 const FARM_MESSAGE_REGEX = /^You decide to\s+(?:scavenge for loot|go :axe: chop some trees|go :pick: mining).*and (?:find|receive|bring back).*`([^`]+)`!/;
-
-// REWRITTEN MED_MESSAGE_REGEX for maximum reliability
 const MED_MESSAGE_REGEX = /^You use your.*`([^`]+)` to heal for \*\*(\d+)\*\* health! You now have.*\*\*(\d+)\*\* health\.?$/i;
-
-// Corrected Vote Message Regex to handle double spaces
 const VOTE_MESSAGE_REGEX = /^You received \d+x\s.+ for voting on/i;
-
-// Regex to capture repair item and player ID for clan repair messages
 const REPAIR_MESSAGE_REGEX = /^✅ You used \*\*1x\*\* <a?:.+?:\d+>\s+`([^`]+)` to repair the clan!/s;
-
-// Corrected Regex to detect generic gambling messages (like coinflip)
 const GAMBLING_MESSAGE_REGEX = /^You chose \*\*(heads|tails)\*\* (?:and|but) the coin landed on \*\*(heads|tails)\*\*.*$/is;
-
-// Regex to detect Blackjack in embed author field
 const BLACKJACK_EMBED_AUTHOR_REGEX = /blackjack$/i;
-
-// Regex to detect Slots in embed title
 const SLOTS_EMBED_TITLE_REGEX = /slot machine$/i;
-
-// Regex to detect Wheel Roulette in embed title
 const WHEEL_EMBED_TITLE_REGEX = /wheel roulette$/i;
-
-// Regex to detect Jackpot message and capture user ID
 const JACKPOT_MESSAGE_REGEX = /^<@(\d+)> won the .* jackpot with a .*% chance of winning!$/i;
-
-// NEW: Regex to detect Roulette message
 const ROULETTE_MESSAGE_REGEX = /The gun(?: doesn't fire\.| blast)/i;
 
 
-/**
- * Pings a user when their cooldown is over.
- * @param {Client} client The Discord client instance.
- * @param {object} db The Firestore database instance.
- * @param {string} userId The ID of the user to ping.
- * @param {string} channelId The ID of the channel to ping in.
- * @param {string} type The type of cooldown ('attack', 'farm', 'med', 'vote', 'repair', 'gambling').
- * @param {string} item The name of the item/weapon/activity.
- * @param {string} cooldownDocId The Firestore document ID for this cooldown.
- * @param {string} APP_ID_FOR_FIRESTORE The application ID for Firestore path.
- */
 async function sendCooldownPing(client, db, userId, channelId, type, item, cooldownDocId, APP_ID_FOR_FIRESTORE) {
-    // Determine which preference to check based on type
     let notificationType;
     let pingMessage;
-
-    // --- NEW LOGGING: Start of the function
-    console.log(`Cooldown Notifier: Attempting to send ping for userId: ${userId}, channelId: ${channelId}, type: ${type}`);
 
     switch (type) {
         case 'attack':
@@ -151,43 +97,34 @@ async function sendCooldownPing(client, db, userId, channelId, type, item, coold
             notificationType = 'repairCooldown';
             pingMessage = `<@${userId}> your **clan repair (${item})** cooldown is over!`;
             break;
-        case 'gambling': // Gambling case
+        case 'gambling':
             notificationType = 'gamblingCooldown';
-            // The 'item' will now be the specific gambling game name (e.g., 'coinflip', 'blackjack')
             pingMessage = `<@${userId}> your **${item}** cooldown is over!`; 
             break;
         default:
-            console.warn(`Cooldown Notifier: Unknown cooldown type "${type}". Cannot send ping.`);
             await deleteDoc(doc(collection(db, `ActiveCooldowns`), cooldownDocId));
             return;
     }
 
     const userPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), notificationType);
     const prefSnap = await getDoc(userPrefsRef);
-    const isNotificationEnabled = prefSnap.exists() ? prefSnap.data().enabled : false; // Default to off
+    const isNotificationEnabled = prefSnap.exists() ? prefSnap.data().enabled : false;
 
     if (!isNotificationEnabled) {
-        console.log(`Cooldown Notifier: User ${userId} has opted out of ${type} cooldown pings. Not sending.`);
-        await deleteDoc(doc(collection(db, `ActiveCooldowns`), cooldownDocId)); // Still remove from Firestore
+        await deleteDoc(doc(collection(db, `ActiveCooldowns`), cooldownDocId));
         return;
     }
 
     const channel = client.channels.cache.get(channelId);
     if (!channel || !channel.isTextBased()) {
-        console.warn(`Cooldown Notifier: Channel ${channelId} not found or not text-based for ping. Removing cooldown entry.`);
         await deleteDoc(doc(collection(db, `ActiveCooldowns`), cooldownDocId));
         return;
     }
 
-    // --- NEW LOGGING: Before sending the message
-    console.log(`Cooldown Notifier: Channel found. Sending ping to #${channel.name}...`);
-
     try {
         await channel.send(pingMessage);
-        console.log(`Cooldown Notifier: Sent ${type} cooldown ping to ${userId} for ${item} in #${channel.name}.`);
         statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
-        await deleteDoc(doc(collection(db, `ActiveCooldowns`), cooldownDocId)); // Remove from Firestore after pinging
-        console.log(`Cooldown Notifier: Removed cooldown entry ${cooldownDocId} from Firestore.`);
+        await deleteDoc(doc(collection(db, `ActiveCooldowns`), cooldownDocId));
     } catch (error) {
         console.error(`Cooldown Notifier: Failed to send ${type} cooldown ping in #${channel.name} for ${userId}/${item}:`, error);
     }
@@ -197,53 +134,39 @@ module.exports = {
     name: 'messageCreate',
     once: false,
     async execute(message, db, client, APP_ID_FOR_FIRESTORE) {
-        console.log(`[Cooldown Notifier - Debug] Listener active. Message received from ${message.author.tag} (ID: ${message.author.id}) in #${message.channel.name}.`);
-
         if (message.author.id !== TARGET_GAME_BOT_ID) {
-            console.log(`[Cooldown Notifier - Debug] Ignoring message: Not from target game bot.`);
             return;
         }
         if (message.author.id === client.user.id) {
-            console.log(`[Cooldown Notifier - Debug] Ignoring message: From self.`);
             return;
         }
 
         if (!message.guild) {
-            console.log(`[Cooldown Notifier - Debug] Ignoring message: Not in a guild.`);
             return;
         }
 
         if (!db || !APP_ID_FOR_FIRESTORE) {
-            console.warn('Cooldown Notifier: Firestore DB or App ID not ready. Skipping message processing.');
             return;
         }
         
-        console.log(`[Cooldown Notifier - Debug] Message Content: \n\`\`\`\n${message.content}\n\`\`\``);
-
         let playerId = null;
         let item = null;
         let cooldownType = null;
         let cooldownDuration = undefined;
-        let debugMessage = '';
 
-        // --- Attempt to match Attack Message ---
         const attackMatch = message.content.match(ATTACK_MESSAGE_REGEX);
         if (attackMatch) {
             playerId = attackMatch[1];
             item = attackMatch[3].toLowerCase();
             cooldownType = 'attack';
             cooldownDuration = COOLDOWN_DURATIONS_MS[item];
-            console.log(`[Cooldown Notifier - Debug] Detected attack: Player ID=${playerId}, Weapon=${item}.`);
-            debugMessage = `Cooldown Type: Attack - User: <@${playerId}> - Weapon: ${item} - Cooldown: ${cooldownDuration / 60000} mins`;
         }
 
-        // --- Attempt to match Farm Message ---
         const farmMatch = message.content.match(FARM_MESSAGE_REGEX);
         if (farmMatch && !attackMatch) {
             item = farmMatch[1].toLowerCase();
             cooldownType = 'farm';
             cooldownDuration = COOLDOWN_DURATIONS_MS['farming'];
-            console.log(`[Cooldown Notifier - Debug] Detected farm: Item=${item}.`);
             
             try {
                 const messages = await message.channel.messages.fetch({ limit: 2 });
@@ -251,23 +174,17 @@ module.exports = {
                 
                 if (previousMessage && !previousMessage.author.bot && previousMessage.content.toLowerCase().startsWith('t-farm')) {
                     playerId = previousMessage.author.id;
-                    console.log(`[Cooldown Notifier - Debug] Farm Player ID from previous message: ${playerId}`);
-                } else {
-                    console.warn(`[Cooldown Notifier - Debug] Previous message not a 't-farm' command or sent by a bot. Cannot determine farm player.`);
                 }
             } catch (error) {
-                console.error(`[Cooldown Notifier - Debug] Error fetching previous message for farm cooldown:`, error);
+                console.error(`Cooldown Notifier: Error fetching previous message for farm cooldown:`, error);
             }
-            debugMessage = `Cooldown Type: Farm - User: <@${playerId}> - Activity: ${item} - Cooldown: ${cooldownDuration / 60000} mins`;
         }
 
-        // --- Attempt to match Med Message ---
         const medMatch = message.content.match(MED_MESSAGE_REGEX);
         if (medMatch && !attackMatch && !farmMatch) {
             item = medMatch[1].toLowerCase();
             cooldownType = 'med';
             cooldownDuration = COOLDOWN_DURATIONS_MS[item];
-            console.log(`[Cooldown Notifier - Debug] Detected med usage: Item=${item}.`);
             
             try {
                 const messages = await message.channel.messages.fetch({ limit: 2 });
@@ -275,17 +192,12 @@ module.exports = {
                 
                 if (previousMessage && !previousMessage.author.bot && previousMessage.content.toLowerCase().startsWith('t-use')) {
                     playerId = previousMessage.author.id;
-                    console.log(`[Cooldown Notifier - Debug] Med Player ID from previous message: ${playerId}`);
-                } else {
-                    console.warn(`[Cooldown Notifier - Debug] Previous message not a 't-use' command or sent by a bot. Cannot determine med player.`);
                 }
             } catch (error) {
-                console.error(`[Cooldown Notifier - Debug] Error fetching previous message for med cooldown:`, error);
+                console.error(`Cooldown Notifier: Error fetching previous message for med cooldown:`, error);
             }
-            debugMessage = `Cooldown Type: Med - User: <@${playerId}> - Item: ${item} - Cooldown: ${cooldownDuration / 60000} mins`;
         }
         
-        // --- Attempt to match Gambling Message (e.g., coinflip, blackjack, slots, wheel, jackpot, roulette) ---
         const gamblingMatch = message.content.match(GAMBLING_MESSAGE_REGEX);
         const blackjackEmbedMatch = message.embeds.length > 0 && message.embeds[0].author && message.embeds[0].author.name && BLACKJACK_EMBED_AUTHOR_REGEX.test(message.embeds[0].author.name);
         const slotsEmbedMatch = message.embeds.length > 0 && message.embeds[0].title && SLOTS_EMBED_TITLE_REGEX.test(message.embeds[0].title);
@@ -296,43 +208,33 @@ module.exports = {
         if ((gamblingMatch || blackjackEmbedMatch || slotsEmbedMatch || wheelEmbedMatch || jackpotMessageMatch || rouletteMessageMatch) && !attackMatch && !farmMatch && !medMatch) {
             cooldownType = 'gambling';
             
-            // Determine specific item and cooldown duration based on which gambling match occurred
             if (gamblingMatch) {
                 item = 'coinflip';
-                cooldownDuration = COOLDOWN_DURATIONS_MS['gambling']; // Coinflip uses generic gambling cooldown
-                console.log(`[Cooldown Notifier - Debug] Detected gambling message (coinflip) based on content.`);
+                cooldownDuration = COOLDOWN_DURATIONS_MS['gambling'];
             } else if (blackjackEmbedMatch) {
                 item = 'blackjack';
-                cooldownDuration = COOLDOWN_DURATIONS_MS['gambling']; // Blackjack uses generic gambling cooldown
-                console.log(`[Cooldown Notifier - Debug] Detected gambling message (blackjack) based on embed author name.`);
+                cooldownDuration = COOLDOWN_DURATIONS_MS['gambling'];
             } else if (slotsEmbedMatch) {
                 item = 'slots';
-                cooldownDuration = COOLDOWN_DURATIONS_MS['gambling']; // Slots uses generic gambling cooldown
-                console.log(`[Cooldown Notifier - Debug] Detected gambling message (slots) based on embed title.`);
+                cooldownDuration = COOLDOWN_DURATIONS_MS['gambling'];
             } else if (wheelEmbedMatch) {
                 item = 'wheel roulette';
-                cooldownDuration = COOLDOWN_DURATIONS_MS['wheel']; // Wheel uses specific wheel cooldown
-                console.log(`[Cooldown Notifier - Debug] Detected gambling message (wheel roulette) based on embed title.`);
+                cooldownDuration = COOLDOWN_DURATIONS_MS['wheel'];
             } else if (jackpotMessageMatch) {
                 item = 'jackpot';
-                cooldownDuration = COOLDOWN_DURATIONS_MS['jackpot']; // Jackpot uses specific jackpot cooldown
-                console.log(`[Cooldown Notifier - Debug] Detected gambling message (jackpot) based on content.`);
+                cooldownDuration = COOLDOWN_DURATIONS_MS['jackpot'];
             } else if (rouletteMessageMatch) {
                 item = 'roulette';
-                cooldownDuration = COOLDOWN_DURATIONS_MS['roulette']; // Roulette uses specific roulette cooldown
-                console.log(`[Cooldown Notifier - Debug] Detected gambling message (roulette) based on content.`);
+                cooldownDuration = COOLDOWN_DURATIONS_MS['roulette'];
             }
             
             try {
-                // For jackpot, player ID is in the message content, not previous message
                 if (jackpotMessageMatch) {
-                    playerId = jackpotMessageMatch[1]; // Capture group 1 is the user ID
-                    console.log(`[Cooldown Notifier - Debug] Jackpot Player ID from message content: ${playerId}`);
+                    playerId = jackpotMessageMatch[1];
                 } else {
                     const messages = await message.channel.messages.fetch({ limit: 2 });
                     const previousMessage = messages.last();
                     
-                    // Check if previous message is a gambling command (e.g., t-cf, t-coinflip, t-bj, t-slots, t-wheel, t-roulette)
                     if (previousMessage && !previousMessage.author.bot && 
                        (previousMessage.content.toLowerCase().startsWith('t-cf') || 
                         previousMessage.content.toLowerCase().startsWith('t-coinflip') ||
@@ -341,25 +243,18 @@ module.exports = {
                         previousMessage.content.toLowerCase().startsWith('t-wheel') ||
                         previousMessage.content.toLowerCase().startsWith('t-roulette'))) {
                         playerId = previousMessage.author.id;
-                        console.log(`[Cooldown Notifier - Debug] Gambling Player ID from previous message: ${playerId}`);
-                    } else {
-                        console.warn(`[Cooldown Notifier - Debug] Previous message not a gambling command or sent by a bot. Cannot determine gambling player.`);
                     }
                 }
             } catch (error) {
-                console.error(`[Cooldown Notifier - Debug] Error fetching previous message for gambling cooldown:`, error);
+                console.error(`Cooldown Notifier: Error fetching previous message for gambling cooldown:`, error);
             }
-            debugMessage = `Cooldown Type: Gambling - User: <@${playerId}> - Activity: ${item} - Cooldown: ${cooldownDuration / 60000} mins`;
         }
 
-        // --- Attempt to match Vote Message ---
         const voteMatch = message.content.match(VOTE_MESSAGE_REGEX);
-        // Exclude all gambling matches
-        if (voteMatch && !attackMatch && !farmMatch && !medMatch && !gamblingMatch && !blackjackEmbedMatch && !slotsEmbedMatch && !wheelEmbedMatch && !jackpotMessageMatch && !rouletteMessageMatch) { 
+        if (voteMatch && !attackMatch && !farmMatch && !medMatch && !gamblingMatch && !blackjackEmbedMatch && !slotsEmbedMatch && !wheelEmbedMatch && !jackpotMessageMatch && !rouletteMessageMatch) {
             item = 'voting';
             cooldownType = 'vote';
             cooldownDuration = COOLDOWN_DURATIONS_MS['voting'];
-            console.log(`[Cooldown Notifier - Debug] Detected vote message based on content.`);
             
             try {
                 const messages = await message.channel.messages.fetch({ limit: 2 });
@@ -367,24 +262,17 @@ module.exports = {
                 
                 if (previousMessage && !previousMessage.author.bot) {
                     playerId = previousMessage.author.id;
-                    console.log(`[Cooldown Notifier - Debug] Vote Player ID from previous message: ${playerId}`);
-                } else {
-                    console.warn(`[Cooldown Notifier - Debug] Previous message not from a user. Cannot determine vote player.`);
                 }
             } catch (error) {
-                console.error(`[Cooldown Notifier - Debug] Error fetching previous message for vote cooldown:`, error);
+                console.error(`Cooldown Notifier: Error fetching previous message for vote cooldown:`, error);
             }
-            debugMessage = `Cooldown Type: Vote - User: <@${playerId}> - Activity: ${item} - Cooldown: ${cooldownDuration / 3600000} hours`;
         }
 
-        // --- Attempt to match Repair Message ---
         const repairMatch = message.content.match(REPAIR_MESSAGE_REGEX);
-        // Ensure repairMatch is checked only if no other matches occurred
-        if (repairMatch && !attackMatch && !farmMatch && !medMatch && !voteMatch && !gamblingMatch && !blackjackEmbedMatch && !slotsEmbedMatch && !wheelEmbedMatch && !jackpotMessageMatch && !rouletteMessageMatch) { 
+        if (repairMatch && !attackMatch && !farmMatch && !medMatch && !voteMatch && !gamblingMatch && !blackjackEmbedMatch && !slotsEmbedMatch && !wheelEmbedMatch && !jackpotMessageMatch && !rouletteMessageMatch) {
             item = repairMatch[1].toLowerCase();
             cooldownType = 'repair';
             cooldownDuration = COOLDOWN_DURATIONS_MS[item];
-            console.log(`[Cooldown Notifier - Debug] Detected repair: Item=${item}.`);
             
             try {
                 const messages = await message.channel.messages.fetch({ limit: 2 });
@@ -392,32 +280,15 @@ module.exports = {
                 
                 if (previousMessage && !previousMessage.author.bot && previousMessage.content.toLowerCase().startsWith('t-clan repair')) {
                     playerId = previousMessage.author.id;
-                    console.log(`[Cooldown Notifier - Debug] Repair Player ID from previous message: ${playerId}`);
-                } else {
-                    console.warn(`[Cooldown Notifier - Debug] Previous message not a 't-clan repair' command or sent by a bot. Cannot determine repair player.`);
                 }
             } catch (error) {
-                console.error(`[Cooldown Notifier - Debug] Error fetching previous message for repair cooldown:`, error);
+                console.error(`Cooldown Notifier: Error fetching previous message for repair cooldown:`, error);
             }
-            debugMessage = `Cooldown Type: Repair - User: <@${playerId}> - Activity: ${item} - Cooldown: ${cooldownDuration / 60000} mins`;
         }
 
 
         if (playerId && item && cooldownType && cooldownDuration !== undefined) {
-            const debugChannel = client.channels.cache.get(COOLDOWN_DEBUG_CHANNEL_ID);
-            if (debugChannel && debugChannel.isTextBased()) {
-                try {
-                    await debugChannel.send(debugMessage);
-                    console.log(`Cooldown Notifier: Sent detailed debug notification to #${debugChannel.name}.`);
-                } catch (error) {
-                    console.error(`Cooldown Notifier: Failed to send detailed debug notification to #${debugChannel.name}:`, error);
-                }
-            } else {
-                console.warn(`Cooldown Notifier: Debug channel with ID ${COOLDOWN_DEBUG_CHANNEL_ID} not found or not a text channel.`);
-            }
-
             if (cooldownDuration === undefined) {
-                console.log(`Cooldown Notifier: Unknown item "${item}" used for ${cooldownType}. No cooldown to track.`);
                 return;
             }
 
@@ -438,11 +309,8 @@ module.exports = {
                     guildId: message.guild.id,
                     pinged: false
                 });
-                console.log(`Cooldown Notifier: Stored ${cooldownType} cooldown for ${playerId} (${item}) in #${message.channel.id}. Ends at ${new Date(cooldownEndsAt).toLocaleString()}.`);
                 
-                // --- NEW LOGGING: Confirming setTimeout
                 const delay = cooldownEndsAt - Date.now();
-                console.log(`Cooldown Notifier: Scheduling ping for ${delay / 1000} seconds.`);
 
                 if (delay > 0) {
                     setTimeout(() => {
@@ -455,8 +323,6 @@ module.exports = {
             } catch (error) {
                 console.error(`Cooldown Notifier: Error storing/scheduling ${cooldownType} cooldown for ${playerId}/${item}:`, error);
             }
-        } else {
-            console.log(`[Cooldown Notifier - Debug] Message did not match any known cooldown regex. Content: "${message.content}"`);
         }
     },
     sendCooldownPing
