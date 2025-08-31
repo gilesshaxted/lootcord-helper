@@ -45,7 +45,7 @@ module.exports = {
 
             try {
                 // Attempt to remove the solo sticky message for this channel
-                await stickyMessageManager.removeStickyMessage(message.channel.id, db);
+                await stickyMessageManager.removeStickyMessage(client, db, message.channel.id);
                 console.log(`[MobDetect] Successfully removed solo sticky message for channel ${message.channel.id}.`);
             } catch (error) {
                 console.error(`[MobDetect] Error removing solo sticky message for channel ${message.channel.id}:`, error);
