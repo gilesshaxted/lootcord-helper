@@ -1,12 +1,10 @@
 const { EmbedBuilder } = require('discord.js');
 const { collection, doc, setDoc, getDoc, updateDoc, deleteDoc } = require('firebase/firestore');
-const stickyMessageManager = require('../utils/stickyMessageManager'); // Import stickyMessageManager
+const stickyMessageManager = require('../utils/stickyMessageManager');
 
-// --- Configuration ---
-const TARGET_GAME_BOT_ID = '493316754689359874'; // User ID of the game bot that sends attack/farm/med/vote/repair messages
-const NOTIFICATION_CHANNEL_ID = '1329235188907114506'; // Channel to send debug notifications
+const TARGET_GAME_BOT_ID = '493316754689359874';
+const NOTIFICATION_CHANNEL_ID = '1329235188907114506';
 
-// Regex to detect mob spawn messages
 const MOB_MESSAGE_REGEX = /A \*\*(.*?)\*\* has spawned!/i;
 const MOB_KILLED_MESSAGE_REGEX = /You killed the \*\*(.*?)\*\*!/i;
 const MOB_ESCAPED_MESSAGE_REGEX = /The \*\*(.*?)\*\* has escaped!/i;
@@ -24,7 +22,7 @@ module.exports = {
         }
 
         console.log(`[MobDetect - Debug] Message received from game bot in #${message.channel.name}: ${message.content}`);
-        
+
         const guildId = message.guild.id;
         const channelId = message.channel.id;
         const guildChannelsRef = collection(db, `Guilds/${guildId}/channels`);
@@ -49,10 +47,11 @@ module.exports = {
 
             if (newName && message.channel.name !== newName) {
                 try {
+                    // Always save the current name as the original name before renaming
                     await setDoc(channelConfigDocRef, {
                         originalChannelName: message.channel.name
                     }, { merge: true });
-
+                    
                     await message.channel.setName(newName, `Automated rename due to mob spawn: ${mobName}.`);
                     console.log(`[MobDetect] Renamed channel ${message.channel.name} to ${newName} and saved original name.`);
                 } catch (error) {
