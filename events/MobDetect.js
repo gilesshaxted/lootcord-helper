@@ -42,7 +42,7 @@ module.exports = {
             const mobName = mobKilledMatch ? mobKilledMatch[1] : mobEscapedMatch[1];
             const eventType = mobKilledMatch ? 'killed' : 'escaped';
             console.log(`[MobDetect] Detected mob ${eventType}: ${mobName} in #${message.channel.name}. Attempting to remove solo sticky message.`);
-
+            
             try {
                 // Attempt to remove the solo sticky message for this channel
                 await stickyMessageManager.removeStickyMessage(client, db, message.channel.id);
@@ -50,6 +50,28 @@ module.exports = {
             } catch (error) {
                 console.error(`[MobDetect] Error removing solo sticky message for channel ${message.channel.id}:`, error);
             }
+
+            // --- ADDED LOGIC: Revert channel name ---
+            const guildChannelsRef = collection(db, `Guilds/${message.guild.id}/channels`);
+            const channelConfigDocRef = doc(guildChannelsRef, message.channel.id);
+            
+            try {
+                const channelConfigSnap = await getDoc(channelConfigDocRef);
+                if (channelConfigSnap.exists()) {
+                    const originalChannelName = channelConfigSnap.data().originalChannelName;
+                    if (message.channel.name !== originalChannelName) {
+                        await message.channel.setName(originalChannelName, `Automated revert: mob ${eventType}.`);
+                        console.log(`[MobDetect] Successfully reverted channel #${message.channel.name} to #${originalChannelName}.`);
+                    } else {
+                        console.log(`[MobDetect] Channel #${message.channel.name} is already at its original name.`);
+                    }
+                } else {
+                    console.warn(`[MobDetect] No original channel name found in Firestore for #${message.channel.name}. Skipping revert.`);
+                }
+            } catch (error) {
+                console.error(`[MobDetect] Error reverting channel name for #${message.channel.name}:`, error);
+            }
+            // --- END ADDED LOGIC ---
         }
     },
 };
