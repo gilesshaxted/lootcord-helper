@@ -24,37 +24,62 @@ module.exports = {
         }
 
         console.log(`[MobDetect - Debug] Message received from game bot in #${message.channel.name}: ${message.content}`);
+        
+        const guildId = message.guild.id;
+        const channelId = message.channel.id;
+        const guildChannelsRef = collection(db, `Guilds/${guildId}/channels`);
+        const channelConfigDocRef = doc(guildChannelsRef, channelId);
 
         // --- Detect Mob Spawn ---
         const mobSpawnMatch = message.content.match(MOB_MESSAGE_REGEX);
         if (mobSpawnMatch) {
             const mobName = mobSpawnMatch[1];
-            console.log(`[MobDetect] Detected mob spawn: ${mobName} in #${message.channel.name}`);
-            // You can add further logic here, e.g., send a notification to a specific channel
-            // For now, we'll just log it.
+            let newName = null;
+            if (mobName.includes('Heavy Scientist')) {
+                newName = '🐻╏heavy';
+            } else if (mobName.includes('Scientist')) {
+                newName = '🥼╏scientist';
+            } else if (mobName.includes('Tunnel Dweller')) {
+                newName = '🧟╏dweller';
+            } else if (mobName.includes('Patrol Helicopter')) {
+                newName = '🚁╏heli';
+            } else if (mobName.includes('Bradley APC')) {
+                newName = '🚨╏brad';
+            }
+
+            if (newName && message.channel.name !== newName) {
+                try {
+                    await setDoc(channelConfigDocRef, {
+                        originalChannelName: message.channel.name
+                    }, { merge: true });
+
+                    await message.channel.setName(newName, `Automated rename due to mob spawn: ${mobName}.`);
+                    console.log(`[MobDetect] Renamed channel ${message.channel.name} to ${newName} and saved original name.`);
+                } catch (error) {
+                    console.error(`[MobDetect] Failed to rename channel ${message.channel.name}:`, error);
+                    if (error.code === 50013) {
+                        console.error(`[MobDetect] Bot lacks 'Manage Channels' permission in #${message.channel.name}.`);
+                    }
+                }
+            }
         }
 
-        // --- Detect Mob Killed or Escaped (NEW LOGIC) ---
+        // --- Detect Mob Killed or Escaped ---
         const mobKilledMatch = message.content.match(MOB_KILLED_MESSAGE_REGEX);
         const mobEscapedMatch = message.content.match(MOB_ESCAPED_MESSAGE_REGEX);
 
         if (mobKilledMatch || mobEscapedMatch) {
             const mobName = mobKilledMatch ? mobKilledMatch[1] : mobEscapedMatch[1];
             const eventType = mobKilledMatch ? 'killed' : 'escaped';
-            console.log(`[MobDetect] Detected mob ${eventType}: ${mobName} in #${message.channel.name}. Attempting to remove solo sticky message.`);
+            console.log(`[MobDetect] Detected mob ${eventType}: ${mobName} in #${message.channel.name}. Attempting to remove solo sticky message and revert channel name.`);
             
             try {
-                // Attempt to remove the solo sticky message for this channel
                 await stickyMessageManager.removeStickyMessage(client, db, message.channel.id);
                 console.log(`[MobDetect] Successfully removed solo sticky message for channel ${message.channel.id}.`);
             } catch (error) {
                 console.error(`[MobDetect] Error removing solo sticky message for channel ${message.channel.id}:`, error);
             }
 
-            // --- ADDED LOGIC: Revert channel name ---
-            const guildChannelsRef = collection(db, `Guilds/${message.guild.id}/channels`);
-            const channelConfigDocRef = doc(guildChannelsRef, message.channel.id);
-            
             try {
                 const channelConfigSnap = await getDoc(channelConfigDocRef);
                 if (channelConfigSnap.exists()) {
@@ -71,7 +96,6 @@ module.exports = {
             } catch (error) {
                 console.error(`[MobDetect] Error reverting channel name for #${message.channel.name}:`, error);
             }
-            // --- END ADDED LOGIC ---
         }
     },
 };
