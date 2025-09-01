@@ -3,7 +3,6 @@ const { collection, doc, setDoc, getDoc, updateDoc, deleteDoc } = require('fireb
 const stickyMessageManager = require('../utils/stickyMessageManager');
 
 const TARGET_GAME_BOT_ID = '493316754689359874';
-const NOTIFICATION_CHANNEL_ID = '1329235188907114506';
 
 const MOB_MESSAGE_REGEX = /A \*\*(.*?)\*\* has spawned!/i;
 const MOB_KILLED_MESSAGE_REGEX = /You killed the \*\*(.*?)\*\*!/i;
@@ -17,11 +16,8 @@ module.exports = {
             return;
         }
         if (!isFirestoreReady) {
-            console.warn('MobDetect: Firestore DB not ready. Skipping message processing.');
             return;
         }
-
-        console.log(`[MobDetect - Debug] Message received from game bot in #${message.channel.name}: ${message.content}`);
 
         const guildId = message.guild.id;
         const channelId = message.channel.id;
@@ -47,17 +43,18 @@ module.exports = {
 
             if (newName && message.channel.name !== newName) {
                 try {
-                    // Always save the current name as the original name before renaming
-                    await setDoc(channelConfigDocRef, {
-                        originalChannelName: message.channel.name
-                    }, { merge: true });
-                    
+                    // Check if original name already exists to avoid overwriting
+                    const channelConfigSnap = await getDoc(channelConfigDocRef);
+                    if (!channelConfigSnap.exists() || !channelConfigSnap.data().originalChannelName) {
+                         // Save the current name as the original name if it doesn't exist
+                        await setDoc(channelConfigDocRef, {
+                            originalChannelName: message.channel.name
+                        }, { merge: true });
+                    }
                     await message.channel.setName(newName, `Automated rename due to mob spawn: ${mobName}.`);
-                    console.log(`[MobDetect] Renamed channel ${message.channel.name} to ${newName} and saved original name.`);
                 } catch (error) {
-                    console.error(`[MobDetect] Failed to rename channel ${message.channel.name}:`, error);
                     if (error.code === 50013) {
-                        console.error(`[MobDetect] Bot lacks 'Manage Channels' permission in #${message.channel.name}.`);
+                        console.error(`MobDetect: Bot lacks 'Manage Channels' permission in #${message.channel.name}.`);
                     }
                 }
             }
@@ -70,13 +67,11 @@ module.exports = {
         if (mobKilledMatch || mobEscapedMatch) {
             const mobName = mobKilledMatch ? mobKilledMatch[1] : mobEscapedMatch[1];
             const eventType = mobKilledMatch ? 'killed' : 'escaped';
-            console.log(`[MobDetect] Detected mob ${eventType}: ${mobName} in #${message.channel.name}. Attempting to remove solo sticky message and revert channel name.`);
             
             try {
                 await stickyMessageManager.removeStickyMessage(client, db, message.channel.id);
-                console.log(`[MobDetect] Successfully removed solo sticky message for channel ${message.channel.id}.`);
             } catch (error) {
-                console.error(`[MobDetect] Error removing solo sticky message for channel ${message.channel.id}:`, error);
+                console.error(`MobDetect: Error removing solo sticky message for channel ${message.channel.id}:`, error);
             }
 
             try {
@@ -85,15 +80,10 @@ module.exports = {
                     const originalChannelName = channelConfigSnap.data().originalChannelName;
                     if (message.channel.name !== originalChannelName) {
                         await message.channel.setName(originalChannelName, `Automated revert: mob ${eventType}.`);
-                        console.log(`[MobDetect] Successfully reverted channel #${message.channel.name} to #${originalChannelName}.`);
-                    } else {
-                        console.log(`[MobDetect] Channel #${message.channel.name} is already at its original name.`);
                     }
-                } else {
-                    console.warn(`[MobDetect] No original channel name found in Firestore for #${message.channel.name}. Skipping revert.`);
                 }
             } catch (error) {
-                console.error(`[MobDetect] Error reverting channel name for #${message.channel.name}:`, error);
+                console.error(`MobDetect: Error reverting channel name for #${message.channel.id}:`, error);
             }
         }
     },
