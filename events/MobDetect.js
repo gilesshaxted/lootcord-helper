@@ -18,8 +18,9 @@ async function sendDebugMessage(client, messageContent) {
 }
 
 const MOB_MESSAGE_REGEX = /A \*\*(.*?)\*\* has spawned!/i;
-const MOB_KILLED_MESSAGE_REGEX = /You killed the \*\*(.*?)\*\*!/i;
-const MOB_ESCAPED_MESSAGE_REGEX = /The \*\*(.*?)\*\* has escaped!/i;
+// Removed the old regex in favor of more flexible string includes
+// const MOB_KILLED_MESSAGE_REGEX = /You killed the \*\*(.*?)\*\*!/i;
+// const MOB_ESCAPED_MESSAGE_REGEX = /The \*\*(.*?)\*\* has escaped!/i;
 
 module.exports = {
     name: 'messageCreate',
@@ -29,12 +30,16 @@ module.exports = {
         console.log(`[MobDetect Debug] Listener active for message from ${message.author.tag} in #${message.channel.name}`);
 
         if (message.author.id !== TARGET_GAME_BOT_ID) {
-            console.log(`[MobDetect Debug] Ignoring message: Not from target game bot.`);
+            await sendDebugMessage(client, `Ignoring message from non-target bot: \`${message.author.tag}\`. Expected bot ID: \`${TARGET_GAME_BOT_ID}\``);
+            return;
+        }
+        if (message.author.id === client.user.id) {
+            await sendDebugMessage(client, `Ignoring message from self.`);
             return;
         }
 
         if (!isFirestoreReady) {
-            console.warn('MobDetect: Firestore DB not ready. Skipping message processing.');
+            await sendDebugMessage(client, `⚠️ **Firestore is not ready.** Skipping message processing for mob events.`);
             return;
         }
         
@@ -62,7 +67,7 @@ module.exports = {
 
             if (newName && message.channel.name !== newName) {
                 const oldChannelName = message.channel.name;
-                await sendDebugMessage(client, `Enemy spawned (${mobName}) in channel <#${channelId}>. Old name: \`${oldChannelName}\`. New name: \`${newName}\`.`);
+                await sendDebugMessage(client, `**Mob Spawn Detected:** \`${mobName}\` in channel <#${channelId}>. Attempting rename from \`${oldChannelName}\` to \`${newName}\`.`);
 
                 try {
                     const channelConfigSnap = await getDoc(channelConfigDocRef);
@@ -76,34 +81,31 @@ module.exports = {
                     }
                     
                     await message.channel.setName(newName, `Automated rename due to mob spawn: ${mobName}.`);
-                    await sendDebugMessage(client, `Channel name change successful.`);
+                    await sendDebugMessage(client, `✅ Channel name change successful. New name is \`${newName}\`.`);
                 } catch (error) {
                     if (error.code === 50013) {
-                        await sendDebugMessage(client, `❌ Failed to rename channel. Bot lacks **Manage Channels** permission.`);
+                        await sendDebugMessage(client, `❌ **Failed to rename channel.** Bot lacks **Manage Channels** permission in <#${channelId}>.`);
                     } else {
-                        await sendDebugMessage(client, `❌ Failed to rename channel due to an unexpected error: \`\`\`${error.message}\`\`\``);
+                        await sendDebugMessage(client, `❌ **Failed to rename channel.** Unexpected error: \`\`\`${error.message}\`\`\``);
                     }
                 }
             } else {
-                await sendDebugMessage(client, `Enemy spawned (${mobName}) in channel <#${channelId}>, but channel name is already correct or no new name was matched.`);
+                await sendDebugMessage(client, `Mob spawn detected (${mobName}) in <#${channelId}>, but name is already correct or no new name was matched.`);
             }
         }
 
-        // --- Detect Mob Killed or Escaped ---
-        const mobKilledMatch = message.content.match(MOB_KILLED_MESSAGE_REGEX);
-        const mobEscapedMatch = message.content.match(MOB_ESCAPED_MESSAGE_REGEX);
+        // --- Detect Mob Killed or Escaped (Updated Logic) ---
+        const embed = message.embeds.length > 0 ? message.embeds[0] : null;
+        const embedTitleRevert = embed && embed.title && embed.title.includes('left...');
+        const embedDescriptionKilledMobRevert = embed && embed.description && embed.description.includes('killed a mob');
+        const contentDiedRevert = message.content.includes(':deth: The **') && message.content.includes('DIED!**');
+        const embedDescriptionDiedRevert = embed && embed.description && embed.description.includes('DIED!');
+        const embedDescriptionDethRevert = embed && embed.description && embed.description.includes(':deth:');
+        const revertCondition = embedTitleRevert || embedDescriptionKilledMobRevert || contentDiedRevert || embedDescriptionDiedRevert || embedDescriptionDethRevert;
 
-        if (mobKilledMatch || mobEscapedMatch) {
-            const mobName = mobKilledMatch ? mobKilledMatch[1] : mobEscapedMatch[1];
-            const eventType = mobKilledMatch ? 'killed' : 'escaped';
-            await sendDebugMessage(client, `Detected mob ${eventType} (${mobName}) in channel <#${channelId}>. Attempting to revert channel name and remove sticky message.`);
-
-            try {
-                await stickyMessageManager.removeStickyMessage(client, db, message.channel.id);
-                await sendDebugMessage(client, `Sticky message removed successfully.`);
-            } catch (error) {
-                await sendDebugMessage(client, `❌ Failed to remove sticky message due to an unexpected error: \`\`\`${error.message}\`\`\``);
-            }
+        if (revertCondition) {
+            const eventType = embedTitleRevert ? 'left' : 'killed'; // Infer event type for debug message
+            await sendDebugMessage(client, `**Mob Revert Condition Met:** Detected a mob was killed or left in channel <#${channelId}>. Attempting to revert name and remove sticky message.`);
 
             try {
                 const channelConfigSnap = await getDoc(channelConfigDocRef);
@@ -112,19 +114,26 @@ module.exports = {
                     if (message.channel.name !== originalChannelName) {
                         const oldChannelName = message.channel.name;
                         await message.channel.setName(originalChannelName, `Automated revert: mob ${eventType}.`);
-                        await sendDebugMessage(client, `Channel reverted successfully: \`${oldChannelName}\` -> \`${originalChannelName}\`.`);
+                        await sendDebugMessage(client, `✅ Channel reverted successfully: \`${oldChannelName}\` -> \`${originalChannelName}\`.`);
                     } else {
                          await sendDebugMessage(client, `Channel name is already at its original name: \`${originalChannelName}\`. No revert needed.`);
                     }
                 } else {
-                    await sendDebugMessage(client, `⚠️ No original channel name found in Firestore for <#${channelId}>. Skipping revert.`);
+                    await sendDebugMessage(client, `⚠️ **No original channel name found** in Firestore for <#${channelId}>. Skipping revert.`);
                 }
             } catch (error) {
                 if (error.code === 50013) {
-                     await sendDebugMessage(client, `❌ Failed to revert channel name. Bot lacks **Manage Channels** permission.`);
+                     await sendDebugMessage(client, `❌ **Failed to revert channel name.** Bot lacks **Manage Channels** permission.`);
                 } else {
-                     await sendDebugMessage(client, `❌ Failed to revert channel name due to an unexpected error: \`\`\`${error.message}\`\`\``);
+                     await sendDebugMessage(client, `❌ **Failed to revert channel name.** Unexpected error: \`\`\`${error.message}\`\`\``);
                 }
+            }
+            
+            try {
+                await stickyMessageManager.removeStickyMessage(client, db, message.channel.id);
+                await sendDebugMessage(client, `✅ Sticky message removal attempted. Check channel for confirmation.`);
+            } catch (error) {
+                await sendDebugMessage(client, `❌ **Failed to remove sticky message.** Unexpected error: \`\`\`${error.message}\`\`\``);
             }
         }
     },
