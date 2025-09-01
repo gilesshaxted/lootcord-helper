@@ -354,7 +354,12 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.isButton()) {
         if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
-            await interaction.deferUpdate();
+            try {
+                await interaction.deferUpdate();
+            } catch (error) {
+                console.error('Error deferring button update:', error);
+                return;
+            }
 
             const parts = interaction.customId.split('_');
             const action = parts[1];
@@ -384,7 +389,12 @@ client.on('interactionCreate', async interaction => {
             interaction.customId.startsWith('toggle_gambling_notifications')) {
 
             console.log(`[Notify Button - Debug] Button click received by ${interaction.user.tag} for customId: ${interaction.customId}`);
-            await interaction.deferUpdate();
+            try {
+                await interaction.deferUpdate();
+            } catch (error) {
+                console.error('Error deferring button update:', error);
+                return;
+            }
 
             const userId = interaction.user.id;
             const prefsRefs = {
@@ -496,7 +506,12 @@ client.on('interactionCreate', async interaction => {
                 });
             }
         } else if (interaction.customId.startsWith('show_trivia_explanation_')) {
-            await interaction.deferUpdate();
+            try {
+                await interaction.deferUpdate();
+            } catch (error) {
+                console.error('Error deferring button update:', error);
+                return;
+            }
 
             const parts = interaction.customId.split('_');
             const originalMessageId = parts[3];
@@ -555,7 +570,12 @@ client.on('interactionCreate', async interaction => {
                 });
             }
         } else if (interaction.customId.startsWith('select-channels-to-set_page_')) {
-            await interaction.deferUpdate();
+            try {
+                await interaction.deferUpdate();
+            } catch (error) {
+                console.error('Error deferring menu update:', error);
+                return;
+            }
 
             const selectedChannelIds = interaction.values;
             const guild = interaction.guild;
@@ -631,7 +651,12 @@ client.on('interactionCreate', async interaction => {
     } else if (interaction.isStringSelectMenu()) {
         const customId = interaction.customId;
         if (customId.startsWith(WEAPON_SELECT_ID)) {
-            await interaction.deferUpdate();
+            try {
+                await interaction.deferUpdate();
+            } catch (error) {
+                console.error('Error deferring menu update:', error);
+                return;
+            }
             const selectedWeapon = interaction.values[0];
             const strengthSkill = parseFloat(customId.split(':')[1]);
             const ammoTypes = WEAPON_DATA[selectedWeapon];
@@ -669,7 +694,12 @@ client.on('interactionCreate', async interaction => {
                 flags: 0,
             });
         } else if (customId.startsWith(AMMO_SELECT_ID)) {
-            await interaction.deferUpdate();
+            try {
+                await interaction.deferUpdate();
+            } catch (error) {
+                console.error('Error deferring menu update:', error);
+                return;
+            }
             const selectedAmmo = interaction.values[0];
             const [, strengthSkill, selectedWeapon] = customId.split(':');
 
@@ -702,7 +732,12 @@ client.on('interactionCreate', async interaction => {
                 flags: 0,
             });
         } else if (customId.startsWith(BLEEDING_SELECT_ID)) {
-            await interaction.deferUpdate();
+            try {
+                await interaction.deferUpdate();
+            } catch (error) {
+                console.error('Error deferring menu update:', error);
+                return;
+            }
             const selectedBleedingBuff = interaction.values[0];
             const [, strengthSkill, selectedWeapon, selectedAmmo] = customId.split(':');
 
@@ -761,24 +796,27 @@ client.on('interactionCreate', async interaction => {
                 flags: 0
             });
         }
-    }
-
-    if (interaction.isChatInputCommand()) {
+    } else if (interaction.isChatInputCommand()) {
         const command = client.commands.get(interaction.commandName);
         if (!command) {
-            console.error(`No command matching ${interaction.commandName} was found.`);
             return;
         }
 
         try {
             if (command.data.name === 'damage-calc') {
+                await interaction.deferReply({
+                    flags: 0
+                });
                 await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
             } else if (command.data.name === 'channel-set') {
+                await interaction.deferReply({
+                    ephemeral: true
+                });
                 const {
                     content,
                     components
                 } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, 0);
-                await interaction.reply({
+                await interaction.editReply({
                     content,
                     components,
                     ephemeral: true
@@ -790,16 +828,15 @@ client.on('interactionCreate', async interaction => {
                 statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
             }
         } catch (error) {
-            console.error(`Error executing command ${interaction.commandName}:`, error);
-            if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({
-                    content: 'There was an error while executing this command!',
-                    flags: 0
-                });
-            } else if (interaction.deferred) {
+            if (interaction.deferred || interaction.replied) {
                 await interaction.followUp({
                     content: 'There was an error while executing this command!',
-                    flags: 0
+                    ephemeral: true
+                });
+            } else {
+                await interaction.reply({
+                    content: 'There was an error while executing this command!',
+                    ephemeral: true
                 });
             }
         }
