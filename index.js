@@ -174,7 +174,7 @@ async function setupFirestoreListeners() {
             statsTracker.initializeStats({});
         }
     }, (error) => {
-        console.error("Stats Tracker: Error listening to botStats:", error);
+        console.error("Error listening to botStats:", error);
     });
 }
 
@@ -354,12 +354,7 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.isButton()) {
         if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
-            try {
-                await interaction.deferUpdate();
-            } catch (error) {
-                console.error('Error deferring button update:', error);
-                return;
-            }
+            await interaction.deferUpdate();
 
             const parts = interaction.customId.split('_');
             const action = parts[1];
@@ -389,12 +384,7 @@ client.on('interactionCreate', async interaction => {
             interaction.customId.startsWith('toggle_gambling_notifications')) {
 
             console.log(`[Notify Button - Debug] Button click received by ${interaction.user.tag} for customId: ${interaction.customId}`);
-            try {
-                await interaction.deferUpdate();
-            } catch (error) {
-                console.error('Error deferring button update:', error);
-                return;
-            }
+            await interaction.deferUpdate();
 
             const userId = interaction.user.id;
             const prefsRefs = {
@@ -506,12 +496,7 @@ client.on('interactionCreate', async interaction => {
                 });
             }
         } else if (interaction.customId.startsWith('show_trivia_explanation_')) {
-            try {
-                await interaction.deferUpdate();
-            } catch (error) {
-                console.error('Error deferring button update:', error);
-                return;
-            }
+            await interaction.deferUpdate();
 
             const parts = interaction.customId.split('_');
             const originalMessageId = parts[3];
@@ -570,12 +555,7 @@ client.on('interactionCreate', async interaction => {
                 });
             }
         } else if (interaction.customId.startsWith('select-channels-to-set_page_')) {
-            try {
-                await interaction.deferUpdate();
-            } catch (error) {
-                console.error('Error deferring menu update:', error);
-                return;
-            }
+            await interaction.deferUpdate();
 
             const selectedChannelIds = interaction.values;
             const guild = interaction.guild;
@@ -651,12 +631,7 @@ client.on('interactionCreate', async interaction => {
     } else if (interaction.isStringSelectMenu()) {
         const customId = interaction.customId;
         if (customId.startsWith(WEAPON_SELECT_ID)) {
-            try {
-                await interaction.deferUpdate();
-            } catch (error) {
-                console.error('Error deferring menu update:', error);
-                return;
-            }
+            await interaction.deferUpdate();
             const selectedWeapon = interaction.values[0];
             const strengthSkill = parseFloat(customId.split(':')[1]);
             const ammoTypes = WEAPON_DATA[selectedWeapon];
@@ -694,12 +669,7 @@ client.on('interactionCreate', async interaction => {
                 flags: 0,
             });
         } else if (customId.startsWith(AMMO_SELECT_ID)) {
-            try {
-                await interaction.deferUpdate();
-            } catch (error) {
-                console.error('Error deferring menu update:', error);
-                return;
-            }
+            await interaction.deferUpdate();
             const selectedAmmo = interaction.values[0];
             const [, strengthSkill, selectedWeapon] = customId.split(':');
 
@@ -732,12 +702,7 @@ client.on('interactionCreate', async interaction => {
                 flags: 0,
             });
         } else if (customId.startsWith(BLEEDING_SELECT_ID)) {
-            try {
-                await interaction.deferUpdate();
-            } catch (error) {
-                console.error('Error deferring menu update:', error);
-                return;
-            }
+            await interaction.deferUpdate();
             const selectedBleedingBuff = interaction.values[0];
             const [, strengthSkill, selectedWeapon, selectedAmmo] = customId.split(':');
 
@@ -796,27 +761,24 @@ client.on('interactionCreate', async interaction => {
                 flags: 0
             });
         }
-    } else if (interaction.isChatInputCommand()) {
+    }
+
+    if (interaction.isChatInputCommand()) {
         const command = client.commands.get(interaction.commandName);
         if (!command) {
+            console.error(`No command matching ${interaction.commandName} was found.`);
             return;
         }
 
         try {
             if (command.data.name === 'damage-calc') {
-                await interaction.deferReply({
-                    flags: 0
-                });
                 await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
             } else if (command.data.name === 'channel-set') {
-                await interaction.deferReply({
-                    ephemeral: true
-                });
                 const {
                     content,
                     components
                 } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, 0);
-                await interaction.editReply({
+                await interaction.reply({
                     content,
                     components,
                     ephemeral: true
@@ -828,15 +790,16 @@ client.on('interactionCreate', async interaction => {
                 statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
             }
         } catch (error) {
-            if (interaction.deferred || interaction.replied) {
-                await interaction.followUp({
-                    content: 'There was an error while executing this command!',
-                    ephemeral: true
-                });
-            } else {
+            console.error(`Error executing command ${interaction.commandName}:`, error);
+            if (!interaction.replied && !interaction.deferred) {
                 await interaction.reply({
                     content: 'There was an error while executing this command!',
-                    ephemeral: true
+                    flags: 0
+                });
+            } else if (interaction.deferred) {
+                await interaction.followUp({
+                    content: 'There was an error while executing this command!',
+                    flags: 0
                 });
             }
         }
