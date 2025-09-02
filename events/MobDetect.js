@@ -98,16 +98,21 @@ module.exports = {
 
         // --- Detect Mob Killed or Escaped (Updated Logic) ---
         const embed = message.embeds.length > 0 ? message.embeds[0] : null;
-        const embedTitleRevert = embed && embed.title && embed.title.includes('left...');
-        const embedDescriptionKilledMobRevert = embed && embed.description && embed.description.includes('killed a mob');
-        const contentDiedRevert = message.content.includes(':deth: The **') && message.content.includes('DIED!**');
-        const embedDescriptionDiedRevert = embed && embed.description && embed.description.includes('DIED!');
-        const embedDescriptionDethRevert = embed && embed.description && embed.description.includes(':deth:');
-
-        const revertCondition = embedTitleRevert || embedDescriptionKilledMobRevert || contentDiedRevert || embedDescriptionDiedRevert || embedDescriptionDethRevert;
+        // The check for the death message has been made more robust
+        const deathRevertCondition = message.content.includes('DIED!');
+        // Conditions for an escaped mob or the "left..." message in the embed title
+        const escapeRevertCondition = message.content.includes('escaped!') || (embed && embed.title && embed.title.includes('left...'));
+        const revertCondition = deathRevertCondition || escapeRevertCondition;
 
         if (revertCondition) {
-            await sendDebugMessage(client, `**Revert Condition Met.** Conditions: TitleRevert=${embedTitleRevert}, DescKilledRevert=${embedDescriptionKilledMobRevert}, ContentDiedRevert=${contentDiedRevert}, DescDiedRevert=${embedDescriptionDiedRevert}, DescDethRevert=${embedDescriptionDethRevert}`);
+            let eventType;
+            if (deathRevertCondition) {
+                eventType = 'killed';
+            } else if (escapeRevertCondition) {
+                eventType = 'escaped';
+            }
+
+            await sendDebugMessage(client, `**Revert Condition Met.** Event Type: ${eventType}.`);
 
             try {
                 const channelConfigSnap = await getDoc(channelConfigDocRef);
