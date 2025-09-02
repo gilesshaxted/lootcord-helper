@@ -12,39 +12,36 @@ module.exports = {
         ),
 
     // The execute function now accepts the 'client' object as an argument.
-    async execute(interaction, db, client) { // db is passed but not used by this specific command
-        // Changed to non-ephemeral for testing
+    async execute(interaction, db, client) {
         await interaction.deferReply({ ephemeral: false });
 
         const messageLink = interaction.options.getString('link');
-
-        // Regex to parse Discord message links:
-        // Now handles both discord.com and discordapp.com domains
         const linkRegex = /discord(?:app)?\.com\/channels\/(\d+)\/(\d+)\/(\d+)/;
         const match = messageLink.match(linkRegex);
 
         if (!match) {
-            // Changed to non-ephemeral for testing
             return await interaction.editReply({ content: 'Invalid Discord message link provided. Please ensure it is a direct link to a message.', ephemeral: false });
         }
 
         const [, guildId, channelId, messageId] = match;
 
         try {
-            // client is passed as an argument to the execute function
             const guild = client.guilds.cache.get(guildId);
             if (!guild) {
-                // Changed to non-ephemeral for testing
                 return await interaction.editReply({ content: 'Could not find the guild specified in the link. Is the bot in that guild?', ephemeral: false });
             }
 
             const channel = guild.channels.cache.get(channelId);
             if (!channel) {
-                // Changed to non-ephemeral for testing
                 return await interaction.editReply({ content: 'Could not find the channel specified in the link. Is the bot in that channel?', ephemeral: false });
             }
 
             const targetMessage = await channel.messages.fetch(messageId);
+
+            // NEW: Log the entire message object to the console for debugging.
+            console.log('--- Message Read from /message-read command ---');
+            console.log(targetMessage);
+            console.log('--- End Message Log ---');
 
             let breakdown = `--- Breakdown of Message ID: \`${targetMessage.id}\` ---\n`;
             breakdown += `**Author:** <@${targetMessage.author.id}> (\`${targetMessage.author.tag}\`)\n`;
@@ -116,23 +113,17 @@ module.exports = {
                 breakdown += `**Reactions:** (None)\n`;
             }
 
-            // Discord has a message character limit of 2000.
-            // If the breakdown is too long, send it in multiple messages or truncate.
             if (breakdown.length > 2000) {
                 breakdown = breakdown.substring(0, 1990) + '...\n(Output truncated due to character limit)';
             }
 
-            // Changed to non-ephemeral for testing
             await interaction.editReply({ content: breakdown, ephemeral: false });
 
         } catch (error) {
             console.error('Error fetching or breaking down message:', error);
-            // Check if the error is due to unknown message/channel/guild
-            if (error.code === 10003 || error.code === 10008 || error.code === 50001) { // Unknown Channel, Unknown Message, Missing Access
-                // Changed to non-ephemeral for testing
+            if (error.code === 10003 || error.code === 10008 || error.code === 50001) {
                 await interaction.editReply({ content: 'Could not fetch the message. Please ensure the link is correct and the bot has access to the channel and message.', ephemeral: false });
             } else {
-                // Changed to non-ephemeral for testing
                 await interaction.editReply({ content: 'An unexpected error occurred while trying to read the message. Please check the bot\'s logs.', ephemeral: false });
             }
         }
