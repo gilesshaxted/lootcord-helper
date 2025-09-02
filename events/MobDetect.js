@@ -30,14 +30,8 @@ module.exports = {
     name: 'messageCreate',
     once: false,
     async execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
-        // Ignore messages in the debug channel or from this bot.
-        if (message.channel.id === COOLDOWN_DEBUG_CHANNEL_ID || message.author.id === BOT_ID) {
-            return;
-        }
-
-        // Check if the message is from a configured game bot.
-        if (!TARGET_GAME_BOT_IDS.includes(message.author.id)) {
-            await sendDebugMessage(client, `Ignoring message from non-target bot: \`${message.author.tag}\`. Expected bot ID: \`${TARGET_GAME_BOT_IDS.join(', ')}\``);
+        // Ignore messages from this bot, in the debug channel, or from a non-target bot.
+        if (message.channel.id === COOLDOWN_DEBUG_CHANNEL_ID || message.author.id === BOT_ID || !TARGET_GAME_BOT_IDS.includes(message.author.id)) {
             return;
         }
         
