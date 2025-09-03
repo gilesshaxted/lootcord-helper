@@ -502,9 +502,6 @@ client.on('interactionCreate', async interaction => {
 
         try {
             if (command.data.name === 'damage-calc') {
-                await interaction.deferReply({
-                    flags: 0
-                });
                 await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
             } else if (command.data.name === 'channel-set') {
                 await interaction.deferReply({
