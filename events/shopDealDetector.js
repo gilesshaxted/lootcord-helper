@@ -1,8 +1,8 @@
-const { collection, getDoc, doc } = require('firebase/firestore'); // For fetching config
-const statsTracker = require('../utils/statsTracker'); // For incrementing helps
+const { collection, getDoc, doc } = require('firebase/firestore');
+const statsTracker = require('../utils/statsTracker');
 
 // --- Configuration ---
-const TARGET_SHOP_BOT_ID = '1195112846976090322'; // User ID of the Lootcord Workshop bot
+const TARGET_SHOP_BOT_ID = '1195112846976090322';
 
 // Define item categories and their keywords (case-insensitive)
 const ITEM_CATEGORIES = {
@@ -13,8 +13,6 @@ const ITEM_CATEGORIES = {
     MEDS: ['medical syringe', 'large med kit']
 };
 
-// Regex to extract item names from the embed description
-// It looks for text within backticks (`) after an emoji or at the start of a line.
 const ITEM_NAME_REGEX = /`([^`]+)`/g;
 
 /**
@@ -24,20 +22,16 @@ module.exports = {
     name: 'messageCreate',
     once: false,
     async execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
-        // Ignore messages not from the target shop bot or from this bot itself
         if (message.author.id !== TARGET_SHOP_BOT_ID) return;
         if (message.author.id === client.user.id) return;
 
-        // Only process messages in guilds
         if (!message.guild) return;
 
-        // Crucial: Check if Firestore is ready before attempting any DB operations
         if (!isFirestoreReady) {
             console.warn('Shop Deal Detector: Firestore not ready. Skipping processing.');
             return;
         }
 
-        // Fetch bot configuration for the shop channel and ping roles
         const configDocRef = doc(collection(db, `BotConfigs`), 'mainConfig');
         const configSnap = await getDoc(configDocRef);
 
@@ -48,15 +42,12 @@ module.exports = {
 
         const botConfig = configSnap.data();
         const shopChannelId = botConfig.shopChannelId;
-        const pingRoleIds = botConfig.pingRoleIds || {}; // { RESOURCES: 'role_id', ... }
+        const pingRoleIds = botConfig.pingRoleIds || {};
 
-        // Only process messages in the configured shop channel
         if (message.channel.id !== shopChannelId) {
-            // console.log(`Shop Deal Detector: Ignoring message in non-shop channel #${message.channel.name}`); // Too verbose
             return;
         }
 
-        // Check if the message has an embed and a description (where items are listed)
         if (message.embeds.length > 0 && message.embeds[0].description) {
             const embed = message.embeds[0];
             const embedDescription = embed.description;
@@ -66,31 +57,33 @@ module.exports = {
             console.log(`Channel: #${message.channel.name} (ID: ${message.channel.id})`);
             console.log(`Embed Description: \n\`\`\`\n${embedDescription}\n\`\`\``);
 
-            const detectedCategories = new Set(); // Use a Set to store unique categories to ping
+            const detectedItemsAndCategories = new Map();
 
             let match;
-            ITEM_NAME_REGEX.lastIndex = 0; // Reset regex index for multiple matches
+            ITEM_NAME_REGEX.lastIndex = 0;
 
             while ((match = ITEM_NAME_REGEX.exec(embedDescription)) !== null) {
-                const itemName = match[1].toLowerCase(); // Extract item name and convert to lowercase
+                const itemName = match[1].toLowerCase();
 
-                // Check against each predefined category
                 for (const category in ITEM_CATEGORIES) {
                     if (ITEM_CATEGORIES[category].includes(itemName)) {
-                        detectedCategories.add(category);
+                        if (!detectedItemsAndCategories.has(category)) {
+                            detectedItemsAndCategories.set(category, []);
+                        }
+                        detectedItemsAndCategories.get(category).push(itemName);
                         console.log(`[Shop Deal Detector - Debug] Detected item "${itemName}" in category "${category}".`);
-                        break; // Found category for this item, move to next item
+                        break;
                     }
                 }
             }
 
-            // Ping roles for detected categories
-            if (detectedCategories.size > 0) {
+            if (detectedItemsAndCategories.size > 0) {
                 let pingMessageContent = '';
-                detectedCategories.forEach(category => {
+                detectedItemsAndCategories.forEach((items, category) => {
                     const roleId = pingRoleIds[category];
                     if (roleId) {
-                        pingMessageContent += `<@&${roleId}> `;
+                        const itemNames = items.map(item => `\`${item}\``).join(', ');
+                        pingMessageContent += `<@&${roleId}> **${category}**: ${itemNames}\n`;
                     } else {
                         console.warn(`Shop Deal Detector: No role ID configured for category: ${category}`);
                     }
@@ -99,8 +92,8 @@ module.exports = {
                 if (pingMessageContent.trim().length > 0) {
                     try {
                         await message.channel.send({ content: pingMessageContent.trim() });
-                        console.log(`Shop Deal Detector: Sent pings for categories: ${Array.from(detectedCategories).join(', ')}`);
-                        statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps for sending pings
+                        console.log(`Shop Deal Detector: Sent pings for categories: ${Array.from(detectedItemsAndCategories.keys()).join(', ')}`);
+                        statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
                     } catch (error) {
                         console.error(`Shop Deal Detector: Failed to send ping message in #${message.channel.name}:`, error);
                     }
