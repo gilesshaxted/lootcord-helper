@@ -1,13 +1,46 @@
 // This event listener will listen for messageCreate events
-// It will extract scrambled words from a specific bot's messages and find anagrams using a local dictionary file.
+// It will extract scrambled words from a specific bot's messages and use an LLM to find the most likely word.
 
-// Removed the import for findAnagramsFromDictionary as LLM is now used
-// const { findAnagramsFromDictionary } = require('../utils/dictionary');
 const { collection, getDocs } = require('firebase/firestore'); // Import Firestore functions needed
 const statsTracker = require('../utils/statsTracker'); // Import Stats Tracker
 
 // Configuration specific to this listener
 const TARGET_BOT_ID = '493316754689359874'; // User ID of the other bot to listen to
+
+/**
+ * Validates if a suggested word is a perfect anagram of the scrambled letters.
+ * Checks for exact length and character counts.
+ * @param {string} scrambled The original scrambled letters.
+ * @param {string} suggested The word suggested by the LLM.
+ * @returns {boolean} True if the suggested word is a valid anagram, false otherwise.
+ */
+function isValidAnagram(scrambled, suggested) {
+    if (scrambled.length !== suggested.length) {
+        return false;
+    }
+    const charCountScrambled = {};
+    for (const char of scrambled.toLowerCase()) {
+        charCountScrambled[char] = (charCountScrambled[char] || 0) + 1;
+    }
+    const charCountSuggested = {};
+    for (const char of suggested.toLowerCase()) {
+        charCountSuggested[char] = (charCountSuggested[char] || 0) + 1;
+    }
+
+    for (const char in charCountScrambled) {
+        if (charCountScrambled[char] !== charCountSuggested[char]) {
+            return false;
+        }
+    }
+    // Also check if suggested word has any extra characters not in scrambled
+    for (const char in charCountSuggested) {
+        if (!charCountScrambled[char]) { // If suggested has a char not in scrambled
+            return false;
+        }
+    }
+    return true;
+}
+
 
 module.exports = {
     name: 'messageCreate', // This event listener will also listen for messageCreate events
@@ -21,7 +54,7 @@ module.exports = {
         // Only process messages in guilds
         if (!message.guild) return;
 
-        // --- NEW: Ignore Logic for "You got it correct!" messages regardless of embed color ---
+        // --- Ignore Logic for "You got it correct!" messages regardless of embed color ---
         if (message.content.includes('You got it correct!')) {
             console.log('Unscrambler: Ignoring message with "You got it correct!" content.');
             return; // Ignore this message for unscrambling
@@ -75,43 +108,21 @@ module.exports = {
             if (newName && message.channel.name !== newName) {
                 try {
                     await message.channel.setName(newName, 'Automated rename due to enemy embed title.');
-                    console.log(`Renamed channel ${message.channel.name} to ${newName} in guild ${message.guild.name}`);
+                    console.log(`MobDetect: Renamed channel ${message.channel.name} to ${newName} in guild ${message.guild.name}`);
+                    statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
                 } catch (error) {
-                    console.error(`Failed to rename channel ${message.channel.name}:`, error);
+                    console.error(`MobDetect: Failed to rename channel ${message.channel.name}:`, error);
+                    if (error.code === 50013) { // Missing Permissions
+                        console.error(`MobDetect: Bot lacks 'Manage Channels' permission in #${message.channel.name}.`);
+                    }
                 }
-                // Important: If a rename occurs, we don't want to immediately check for revert conditions
-                // in the same message. The revert will happen on a subsequent message.
                 return;
             }
         }
 
-        // --- Logic for Reverting to original name (updated conditions) ---
-        // This block will only execute if the channel was NOT renamed in the current message.
-        if (message.embeds.length > 0 || message.content) { // Check if there's content or embeds
-            const embed = message.embeds.length > 0 ? message.embeds[0] : null;
+        // --- Logic for Reverting to original name has been removed from MobDetect.js ---
+        // This functionality is now handled by the /mob-off command and startup checks.
 
-            // Condition 1: Embed title includes 'left...'
-            const embedTitleRevert = embed && embed.title && embed.title.includes('left...');
-            
-            // Condition 2: Embed description includes 'killed a mob'
-            const embedDescriptionRevert = embed && embed.description && embed.description.includes('killed a mob');
-
-            // Condition 3: Message content contains ":deth: The **[Enemy Name] DIED!**"
-            const contentDiedRevert = message.content.includes(':deth: The **') && message.content.includes('DIED!**');
-
-            const revertCondition = embedTitleRevert || embedDescriptionRevert || contentDiedRevert;
-
-            if (revertCondition) {
-                if (originalChannelName && message.channel.name !== originalChannelName) {
-                    try {
-                        await message.channel.setName(originalChannelName, 'Automated revert to original name.');
-                        console.log(`Reverted channel ${message.channel.name} to ${originalChannelName} in guild ${message.guild.name}`);
-                    } catch (error) {
-                        console.error(`Failed to revert channel ${message.channel.name} to original name:`, error);
-                    }
-                }
-            }
-        }
 
         // --- Unscrambler Logic (now using LLM) ---
         let scrambledLetters = null;
@@ -133,16 +144,36 @@ module.exports = {
         }
 
         if (scrambledLetters) {
-            // Updated prompt to ask for most likely and 3 alternatives
-            const prompt = `Unscramble the following letters to form English words. Provide the single most likely word first, then provide 3 alternative words that can also be formed using all the given letters. Format your response as:
-Most Likely: [word]
-Alternatives: [word1], [word2], [word3]
-Letters: ${scrambledLetters}`;
+            // Refined prompt to emphasize word types and strict anagram rules
+            const prompt = `Unscramble the following jumbled letters to form a single, most likely English word.
+The unscrambled word MUST use ALL of the provided letters exactly once, and therefore MUST be the same length as the provided jumbled letters.
+Prioritize common English words. If no common English word is found, then consider proper nouns (like a person's name, country, or city), demonyms (e.g., British, French, American), languages, or common slang.
+
+Examples of desired output:
+- Jumbled: "tesnea" -> Word: "senate"
+- Jumbled: "nairt" -> Word: "train"
+- Jumbled: "sraeh" -> Word: "share"
+- Jumbled: "tihsrib" -> Word: "british"
+- Jumbled: "tworrak" -> Word: "artwork"
+- Jumbled: "nadole" -> Word: "london"
+- Jumbled: "ailartsu" -> Word: "australia"
+- Jumbled: "hcnref" -> Word: "french"
+- Jumbled: "yertuk" -> Word: "turkey"
+- Jumbled: "anacda" -> Word: "canada"
+- Jumbled: "sihnaps" -> Word: "spanish"
+- Jumbled: "olleh" -> Word: "hello"
+- Jumbled: "namreg" -> Word: "german"
+- Jumbled: "aind" -> Word: "india"
+
+Only provide the unscrambled word. Do not include any other text, explanations, or punctuation.
+
+Jumbled letters: ${scrambledLetters}`;
             let llmAnswer = null;
-            let mostLikelyWord = 'N/A';
-            let alternativeWords = [];
 
             try {
+                // --- Debugging: Log the prompt being sent ---
+                console.log(`Unscrambler: Sending prompt to LLM for '${scrambledLetters}':\n\`\`\`\n${prompt}\n\`\`\``);
+
                 // Call the LLM (Gemini API)
                 const chatHistory = [];
                 chatHistory.push({ role: "user", parts: [{ text: prompt }] });
@@ -167,18 +198,14 @@ Letters: ${scrambledLetters}`;
                 if (result.candidates && result.candidates.length > 0 &&
                     result.candidates[0].content && result.candidates[0].content.parts &&
                     result.candidates[0].content.parts.length > 0) {
-                    llmAnswer = result.candidates[0].content.parts[0].text.trim();
-
-                    // Parse the LLM's response
-                    const mostLikelyMatch = llmAnswer.match(/Most Likely:\s*([a-zA-Z]+)/i);
-                    const alternativesMatch = llmAnswer.match(/Alternatives:\s*(.*)/i);
-
-                    if (mostLikelyMatch && mostLikelyMatch[1]) {
-                        mostLikelyWord = mostLikelyMatch[1].toLowerCase();
+                    llmAnswer = result.candidates[0].content.parts[0].text.trim().toLowerCase();
+                    
+                    // NEW: Validate LLM's answer against anagram rules
+                    if (!isValidAnagram(scrambledLetters, llmAnswer)) {
+                        console.warn(`Unscrambler: LLM suggested word '${llmAnswer}' for '${scrambledLetters}' is NOT a valid anagram. Ignoring LLM answer.`);
+                        llmAnswer = null; // Invalidate if not a perfect anagram
                     }
-                    if (alternativesMatch && alternativesMatch[1]) {
-                        alternativeWords = alternativesMatch[1].split(',').map(word => word.trim().toLowerCase()).filter(word => word.length > 0);
-                    }
+
                 } else {
                     console.warn('Unscrambler: LLM response structure unexpected or empty for scrambled letters:', scrambledLetters);
                 }
@@ -189,14 +216,11 @@ Letters: ${scrambledLetters}`;
 
             let replyContent = `**Unscrambled word for \`${scrambledLetters}\`:**\n`;
 
-            if (mostLikelyWord !== 'N/A') {
-                replyContent += `Most likely word: \`${mostLikelyWord}\`\n`;
-                if (alternativeWords.length > 0) {
-                    replyContent += `Alternatives: ${alternativeWords.map(word => `\`${word}\``).join(', ')}`;
-                }
+            if (llmAnswer) {
+                replyContent += `Most likely word (from LLM): \`${llmAnswer}\``;
                 statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps for unscramble
             } else {
-                replyContent += `Could not determine any likely words using LLM.`;
+                replyContent += `Could not determine the most likely word using LLM.`;
             }
 
             if (replyContent.length > 2000) {

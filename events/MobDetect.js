@@ -1,128 +1,140 @@
-// This event listener will listen for messageCreate events
-// It handles mob spawn/death detection and channel renaming/role pings.
+const { EmbedBuilder } = require('discord.js');
+const { collection, doc, setDoc, getDoc, updateDoc, deleteDoc } = require('firebase/firestore');
+const stickyMessageManager = require('../utils/stickyMessageManager');
 
-const { collection, getDocs, doc, setDoc } = require('firebase/firestore');
-const statsTracker = require('../utils/statsTracker'); // Import Stats Tracker
+// --- Configuration ---
+const TARGET_GAME_BOT_IDS = ['493316754689359874'];
+const COOLDOWN_DEBUG_CHANNEL_ID = '1307628841799254026';
+const BOT_ID = '1393708735104422040';
 
-// Configuration specific to this listener
-const TARGET_BOT_ID = '493316754689359874'; // User ID of the other bot to listen to
+/**
+ * Sends a debug message to the configured debug channel.
+ * @param {Client} client The Discord client instance.
+ * @param {string} messageContent The content of the message to send.
+ */
+async function sendDebugMessage(client, messageContent) {
+    const debugChannel = client.channels.cache.get(COOLDOWN_DEBUG_CHANNEL_ID);
+    if (debugChannel && debugChannel.isTextBased()) {
+        try {
+            await debugChannel.send(`**MobDetect Debug:** ${messageContent}`);
+        } catch (error) {
+            console.error(`[MobDetect Debug] Failed to send debug message to channel #${debugChannel.name}:`, error);
+        }
+    }
+}
 
-// Role IDs for specific enemy spawns
-const ROLE_IDS = {
-    HEAVY_SCIENTIST: '1302995091128057930',
-    PATROL_HELICOPTER: '1302994990166835251',
-    BRADLEY_APC: '1192414247196573753',
-};
+// Regex to detect mob spawn messages
+const MOB_MESSAGE_REGEX = /A \*\*(.*?)\*\* has spawned!/i;
 
 module.exports = {
     name: 'messageCreate',
     once: false,
-    async execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) { // Added APP_ID_FOR_FIRESTORE
-        if (message.author.bot && message.author.id !== TARGET_BOT_ID) return;
-        if (message.author.id === client.user.id) return;
-
-        if (!message.guild) return;
-
+    async execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
+        // Ignore messages from this bot, in the debug channel, or from a non-target bot.
+        if (message.channel.id === COOLDOWN_DEBUG_CHANNEL_ID || message.author.id === BOT_ID || !TARGET_GAME_BOT_IDS.includes(message.author.id)) {
+            return;
+        }
+        
         if (!isFirestoreReady) {
-            console.warn('Firestore not ready for messageCreate event. Skipping processing.');
+            await sendDebugMessage(client, `⚠️ **Firestore is not ready.** Skipping message processing for mob events.`);
             return;
         }
 
         const guildId = message.guild.id;
         const channelId = message.channel.id;
-
         const guildChannelsRef = collection(db, `Guilds/${guildId}/channels`);
-        const channelDocs = await getDocs(guildChannelsRef);
-        const storedChannels = {};
-        channelDocs.forEach(d => {
-            storedChannels[d.id] = d.data();
-        });
+        const channelConfigDocRef = doc(guildChannelsRef, channelId);
 
-        if (!storedChannels[channelId]) {
-            return;
-        }
-
-        const currentChannelData = storedChannels[channelId];
-        const originalChannelName = currentChannelData.originalChannelName;
-
-        // --- Role Pinging Logic (ONLY if 'An enemy has spawned...' is in content) ---
-        if (message.content.includes('An enemy has spawned...') && message.embeds.length > 0) {
-            const embedTitle = message.embeds[0].title;
-            let roleToPingId = null;
-
-            if (embedTitle) {
-                if (embedTitle.includes('Heavy Scientist')) {
-                    roleToPingId = ROLE_IDS.HEAVY_SCIENTIST;
-                } else if (embedTitle.includes('Patrol Helicopter')) {
-                    roleToPingId = ROLE_IDS.PATROL_HELICOPTER;
-                } else if (embedTitle.includes('Bradley APC')) {
-                    roleToPingId = ROLE_IDS.BRADLEY_APC;
-                }
-            }
-
-            if (roleToPingId) {
-                try {
-                    await message.channel.send({ content: `<@&${roleToPingId}>` });
-                    console.log(`Pinged role ${roleToPingId} for ${embedTitle} in #${message.channel.name}`);
-                    statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps for ping
-                } catch (error) {
-                    console.error(`Failed to ping role ${roleToPingId} in #${message.channel.name}:`, error);
-                }
-            }
-        }
-
-
-        // --- Channel Renaming Logic (triggered by embed title alone for any message from target bot) ---
-        if (message.embeds.length > 0) {
-            const embedTitle = message.embeds[0].title;
+        // --- Detect Mob Spawn ---
+        const mobSpawnMatch = message.content.match(MOB_MESSAGE_REGEX);
+        if (mobSpawnMatch) {
+            const mobName = mobSpawnMatch[1];
             let newName = null;
-
-            if (embedTitle) {
-                if (embedTitle.includes('Heavy Scientist')) {
-                    newName = '🐻╏heavy';
-                } else if (embedTitle.includes('Scientist')) {
-                    newName = '🥼╏scientist';
-                } else if (embedTitle.includes('Tunnel Dweller')) {
-                    newName = '🧟╏dweller';
-                } else if (embedTitle.includes('Patrol Helicopter')) {
-                    newName = '🚁╏heli';
-                } else if (embedTitle.includes('Bradley APC')) {
-                    newName = '🚨╏brad';
-                }
+            if (mobName.includes('Heavy Scientist')) {
+                newName = '🐻╏heavy';
+            } else if (mobName.includes('Scientist')) {
+                newName = '🥼╏scientist';
+            } else if (mobName.includes('Tunnel Dweller')) {
+                newName = '🧟╏dweller';
+            } else if (mobName.includes('Patrol Helicopter')) {
+                newName = '🚁╏heli';
+            } else if (mobName.includes('Bradley APC')) {
+                newName = '🚨╏brad';
             }
 
             if (newName && message.channel.name !== newName) {
+                const oldChannelName = message.channel.name;
+                await sendDebugMessage(client, `**Mob Spawn Detected:** \`${mobName}\` in channel <#${channelId}>. Attempting rename from \`${oldChannelName}\` to \`${newName}\`.`);
                 try {
-                    await message.channel.setName(newName, 'Automated rename due to enemy embed title.');
-                    console.log(`Renamed channel ${message.channel.name} to ${newName} in guild ${message.guild.name}`);
-                    statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps for rename
+                    const channelConfigSnap = await getDoc(channelConfigDocRef);
+                    if (!channelConfigSnap.exists() || !channelConfigSnap.data().originalChannelName) {
+                        await setDoc(channelConfigDocRef, {
+                            originalChannelName: oldChannelName
+                        }, { merge: true });
+                        await sendDebugMessage(client, `Saved original name \`${oldChannelName}\` to Firestore.`);
+                    } else {
+                        await sendDebugMessage(client, `Original name already exists in Firestore: \`${channelConfigSnap.data().originalChannelName}\`. Not overwriting.`);
+                    }
+
+                    await message.channel.setName(newName, `Automated rename due to mob spawn: ${mobName}.`);
+                    await sendDebugMessage(client, `✅ Channel name change successful. New name is \`${newName}\`.`);
                 } catch (error) {
-                    console.error(`Failed to rename channel ${message.channel.name}:`, error);
+                    if (error.code === 50013) {
+                        await sendDebugMessage(client, `❌ **Failed to rename channel.** Bot lacks **Manage Channels** permission in <#${channelId}>.`);
+                    } else {
+                        await sendDebugMessage(client, `❌ **Failed to rename channel.** Unexpected error: \`\`\`${error.message}\`\`\``);
+                    }
                 }
-                return;
+            } else {
+                await sendDebugMessage(client, `Mob spawn detected (${mobName}) in <#${channelId}>, but name is already correct or no new name was matched.`);
             }
         }
 
-        // --- Logic for Reverting to original name (updated conditions) ---
-        if (message.embeds.length > 0 || message.content) {
-            const embed = message.embeds.length > 0 ? message.embeds[0] : null;
+        // --- Detect Mob Killed or Escaped (Updated Logic) ---
+        const embed = message.embeds.length > 0 ? message.embeds[0] : null;
+        // The check for the death message has been made more robust
+        const deathRevertCondition = message.content.includes('DIED!');
+        // Conditions for an escaped mob or the "left..." message in the embed title
+        const escapeRevertCondition = message.content.includes('escaped!') || (embed && embed.title && embed.title.includes('left...'));
+        const revertCondition = deathRevertCondition || escapeRevertCondition;
 
-            const embedTitleRevert = embed && embed.title && embed.title.includes('left...');
-            const embedDescriptionRevert = embed && embed.description && embed.description.includes('killed a mob');
-            const contentDiedRevert = message.content.includes(':deth: The **') && message.content.includes('DIED!**');
+        if (revertCondition) {
+            let eventType;
+            if (deathRevertCondition) {
+                eventType = 'killed';
+            } else if (escapeRevertCondition) {
+                eventType = 'escaped';
+            }
 
-            const revertCondition = embedTitleRevert || embedDescriptionRevert || contentDiedRevert;
+            await sendDebugMessage(client, `**Revert Condition Met.** Event Type: ${eventType}.`);
 
-            if (revertCondition) {
-                if (originalChannelName && message.channel.name !== originalChannelName) {
-                    try {
-                        await message.channel.setName(originalChannelName, 'Automated revert to original name.');
-                        console.log(`Reverted channel ${message.channel.name} to ${originalChannelName} in guild ${message.guild.name}`);
-                        statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps for revert
-                    } catch (error) {
-                        console.error(`Failed to revert channel ${message.channel.name} to original name:`, error);
+            try {
+                const channelConfigSnap = await getDoc(channelConfigDocRef);
+                if (channelConfigSnap.exists() && channelConfigSnap.data().originalChannelName) {
+                    const originalChannelName = channelConfigSnap.data().originalChannelName;
+                    if (message.channel.name !== originalChannelName) {
+                        const oldChannelName = message.channel.name;
+                        await message.channel.setName(originalChannelName, `Automated revert to original name.`);
+                        await sendDebugMessage(client, `✅ Channel reverted successfully: \`${oldChannelName}\` -> \`${originalChannelName}\`.`);
+                    } else {
+                         await sendDebugMessage(client, `Channel name is already at its original name: \`${originalChannelName}\`. No revert needed.`);
                     }
+                } else {
+                    await sendDebugMessage(client, `⚠️ **No original channel name found** in Firestore for <#${channelId}>. Skipping revert.`);
                 }
+            } catch (error) {
+                if (error.code === 50013) {
+                     await sendDebugMessage(client, `❌ **Failed to revert channel name.** Bot lacks **Manage Channels** permission.`);
+                } else {
+                     await sendDebugMessage(client, `❌ **Failed to revert channel name.** Unexpected error: \`\`\`${error.message}\`\`\``);
+                }
+            }
+            
+            try {
+                await stickyMessageManager.removeStickyMessage(client, db, message.channel.id);
+                await sendDebugMessage(client, `✅ Sticky message removal attempted. Check channel for confirmation.`);
+            } catch (error) {
+                await sendDebugMessage(client, `❌ **Failed to remove sticky message.** Unexpected error: \`\`\`${error.message}\`\`\``);
             }
         }
     },

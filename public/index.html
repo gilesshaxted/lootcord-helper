@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lootcord Helper Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="dashboard-container">
+        <header class="dashboard-header">
+            <h1>Lootcord Helper Dashboard 🍋</h1>
+        </header>
+
+        <main class="dashboard-main">
+            <section id="auth-section" class="card">
+                <h2>Login with Discord</h2>
+                <p>Access your bot's configurations securely.</p>
+                <a href="/auth/discord" class="discord-login-button">
+                    <img src="https://discord.com/assets/f83849de20023390c914.svg" alt="Discord Logo" class="discord-logo">
+                    Login with Discord
+                </a>
+            </section>
+
+            <section id="dashboard-content" class="hidden">
+                <div class="user-info card">
+                    <h3>Welcome, <span id="username"></span>!</h3>
+                    <button id="logout-button" class="btn-red">Logout</button>
+                </div>
+
+                <div class="server-selection card">
+                    <h3>Select a Server</h3>
+                    <select id="guild-select" class="select-input">
+                        <option value="">-- Select a Guild --</option>
+                    </select>
+                </div>
+
+                <div id="config-section" class="hidden">
+                    <h2 id="selected-guild-name"></h2>
+
+                    <!-- Channel Set Configuration -->
+                    <div id="channel-set-config" class="card">
+                        <h3>Channel Monitoring Setup (/channel-set)</h3>
+                        <p>Select channels where Lootcord Helper should monitor mob spawns and game events.</p>
+                        <form id="channel-set-form">
+                            <div id="available-channels-list" class="checkbox-group">
+                                <!-- Channels will be loaded here -->
+                                <p class="text-pale-blue">Loading channels...</p>
+                            </div>
+                            <button type="submit" class="btn-primary">Save Channel Settings</button>
+                        </form>
+                    </div>
+
+                    <!-- Shop Pings Configuration -->
+                    <div id="shop-pings-config" class="card">
+                        <h3>Shop Deal Notifications (/shop-pings)</h3>
+                        <p>Configure the shop channel and roles to ping for specific item categories.</p>
+                        <form id="shop-pings-form">
+                            <div class="form-group">
+                                <label for="shop-channel-select">Shop Channel:</label>
+                                <select id="shop-channel-select" class="select-input">
+                                    <option value="">-- Select Shop Channel --</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="resources-role-select">Resources Role:</label>
+                                <select id="resources-role-select" class="select-input">
+                                    <option value="">-- Select Role --</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="loot-role-select">Loot Role:</label>
+                                <select id="loot-role-select" class="select-input">
+                                    <option value="">-- Select Role --</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="weapons-role-select">Weapons Role:</label>
+                                <select id="weapons-role-select" class="select-input">
+                                    <option value="">-- Select Role --</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="ammo-role-select">Ammo Role:</label>
+                                <select id="ammo-role-select" class="select-input">
+                                    <option value="">-- Select Role --</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="meds-role-select">Meds Role:</label>
+                                <select id="meds-role-select" class="select-input">
+                                    <option value="">-- Select Role --</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn-primary">Save Shop Settings</button>
+                        </form>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="dashboard-footer">
+            <p>&copy; 2025 Lootcord Helper. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

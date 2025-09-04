@@ -1,0 +1,277 @@
+/* General Body and Font Styles */
+body {
+    font-family: 'Inter', sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f7e733; /* Primary Background: Yellow */
+    color: #333;
+    line-height: 1.6;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start; /* Align to top for longer content */
+    min-height: 100vh;
+    box-sizing: border-box;
+}
+
+/* Dashboard Container */
+.dashboard-container {
+    background-color: #222; /* Dark background for the main container */
+    color: #eee;
+    width: 100%;
+    max-width: 900px;
+    margin: 20px;
+    border-radius: 12px;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 40px); /* Adjust to viewport height minus margin */
+}
+
+/* Header */
+.dashboard-header {
+    background-color: #cc3333; /* Primary Highlight: Red */
+    padding: 25px 30px;
+    text-align: center;
+    color: #fff;
+    border-bottom: 3px solid #f7e733; /* Yellow accent */
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.dashboard-header h1 {
+    margin: 0;
+    font-size: 2.2em;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+
+/* Main Content Area */
+.dashboard-main {
+    flex-grow: 1; /* Allows main content to expand */
+    padding: 30px;
+}
+
+/* Card Styling */
+.card {
+    background-color: #333; /* Darker card background */
+    border-radius: 8px;
+    padding: 25px;
+    margin-bottom: 25px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    border: 1px solid #444;
+}
+
+.card h2, .card h3 {
+    color: #f7e733; /* Yellow for headings */
+    margin-top: 0;
+    border-bottom: 2px solid #cc3333; /* Red underline */
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+
+/* Auth Section */
+#auth-section {
+    text-align: center;
+}
+
+.discord-login-button {
+    display: inline-flex;
+    align-items: center;
+    background-color: #7289da; /* Discord Blue */
+    color: #fff;
+    padding: 12px 25px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 1.1em;
+    font-weight: 600;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.discord-login-button:hover {
+    background-color: #677bc4;
+    transform: translateY(-2px);
+}
+
+.discord-logo {
+    width: 24px;
+    height: 24px;
+    margin-right: 10px;
+}
+
+/* Dashboard Content (hidden by default) */
+#dashboard-content.hidden {
+    display: none;
+}
+
+/* User Info */
+.user-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #444; /* Slightly lighter dark for user info */
+}
+
+#username {
+    color: #f7e733;
+    font-weight: 700;
+}
+
+/* Form Groups */
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    color: #eee;
+    font-weight: 600;
+}
+
+/* Select Inputs */
+.select-input {
+    width: 100%;
+    padding: 10px 15px;
+    border-radius: 6px;
+    border: 1px solid #555;
+    background-color: #444;
+    color: #eee;
+    font-size: 1em;
+    appearance: none; /* Remove default select arrow */
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23eeeeee%22%20d%3D%22M287%2C197.3L159.3%2C69.7c-5.8-5.8-15.2-5.8-21%2C0L5.4%2C197.3c-5.8%2C5.8-5.8%2C15.2%2C0%2C21l11.3%2C11.3c5.8%2C5.8%2C15.2%2C5.8%2C21%2C0l110.1-110.1l110.1%2C110.1c5.8%2C5.8%2C15.2%2C5.8%2C21%2C0l11.3-11.3C292.8%2C212.5%2C292.8%2C203.1%2C287%2C197.3z%22%2F%3E%3C%2Fsvg%3E'); /* Custom arrow */
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 12px;
+    cursor: pointer;
+    transition: border-color 0.3s ease;
+}
+
+.select-input:focus {
+    outline: none;
+    border-color: #cc3333; /* Red highlight on focus */
+}
+
+/* Checkbox Group */
+.checkbox-group {
+    background-color: #444;
+    border: 1px solid #555;
+    border-radius: 6px;
+    padding: 15px;
+    max-height: 250px;
+    overflow-y: auto;
+    margin-bottom: 20px;
+}
+
+.checkbox-group label {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+    cursor: pointer;
+    font-weight: 400;
+}
+
+.checkbox-group input[type="checkbox"] {
+    margin-right: 10px;
+    width: 18px;
+    height: 18px;
+    accent-color: #cc3333; /* Red checkbox color */
+}
+
+/* Buttons */
+.btn-primary {
+    background-color: #cc3333; /* Red */
+    color: #fff;
+    padding: 12px 25px;
+    border: none;
+    border-radius: 6px;
+    font-size: 1em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.btn-primary:hover {
+    background-color: #b32b2b;
+    transform: translateY(-2px);
+}
+
+.btn-red {
+    background-color: #cc3333;
+    color: #fff;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.9em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+}
+
+.btn-red:hover {
+    background-color: #b32b2b;
+    transform: translateY(-2px);
+}
+
+
+/* Utility Classes */
+.hidden {
+    display: none !important;
+}
+
+.text-pale-blue {
+    color: #aaddff; /* Pale Blue */
+}
+
+.text-pale-green {
+    color: #aaffaa; /* Pale Green */
+}
+
+/* Footer */
+.dashboard-footer {
+    background-color: #1a1a1a; /* Even darker for footer */
+    padding: 15px 30px;
+    text-align: center;
+    color: #888;
+    font-size: 0.9em;
+    border-top: 1px solid #333;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .dashboard-container {
+        margin: 10px;
+        min-height: calc(100vh - 20px);
+    }
+
+    .dashboard-header h1 {
+        font-size: 1.8em;
+    }
+
+    .dashboard-main {
+        padding: 20px;
+    }
+
+    .card {
+        padding: 20px;
+    }
+}
+
+@media (max-width: 480px) {
+    .dashboard-header h1 {
+        font-size: 1.5em;
+    }
+
+    .discord-login-button {
+        padding: 10px 20px;
+        font-size: 1em;
+    }
+
+    .discord-logo {
+        width: 20px;
+        height: 20px;
+    }
+}
