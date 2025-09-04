@@ -25,6 +25,8 @@ module.exports = {
                     
                     if (strengthMatch && strengthMatch[1]) {
                         const newStrengthValue = parseFloat(strengthMatch[1]);
+                        
+                        // Use a more robust path construction
                         const userSkillsRef = doc(db, `artifacts/${APP_ID_FOR_FIRESTORE}/users/${userId}/skills`, 'main');
                         const docSnap = await getDoc(userSkillsRef);
 
