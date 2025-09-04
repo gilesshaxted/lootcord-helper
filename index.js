@@ -217,16 +217,8 @@ for (const file of commandFiles) {
         console.error(`[ERROR] Failed to load command file ${filePath}:`, error);
     }
 }
-// In notify.js, update the module.exports to include handleInteraction.
-module.exports = {
-    data: new SlashCommandBuilder()
-        .setName('notify')
-        .setDescription('Manage your personal notification preferences for Lootcord Helper.'),
-    execute: async (interaction, db) => {
-        // ... (your existing execute function) ...
-    },
-    handleInteraction, // <-- Add this line
-};
+
+
 // --- Event Handling Setup ---
 const eventsPath = path.join(__dirname, 'events');
 const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
@@ -281,8 +273,7 @@ client.once('clientReady', async () => {
     try {
         console.log(`Started refreshing ${slashCommandsToRegister.length} application (/) commands.`);
         const data = await rest.put(
-            Routes.applicationCommands(CLIENT_ID),
-            {
+            Routes.applicationCommands(CLIENT_ID), {
                 body: slashCommandsToRegister
             },
         );
