@@ -529,7 +529,7 @@ async function handleNotifyButton(interaction, db) {
         await interaction.deferUpdate(); // Acknowledge the interaction immediately to prevent it from expiring
 
         const userId = interaction.user.id;
-        const customId = interaction.customId;
+        const customId = interaction.customId; // Correctly declaring customId from the interaction object
 
         let notificationType;
         if (customId === 'toggle_attack_notifications') {
@@ -613,7 +613,7 @@ async function handleNotifyButton(interaction, db) {
         await interaction.editReply({ embeds: [embed], components: [row1, row2] });
 
     } catch (error) {
-        console.error(`[Notify Button] Error handling button click for ${customId}:`, error);
+        console.error(`[Notify Button] Error handling button click for ${interaction.customId}:`, error);
         await interaction.editReply({ content: '❌ An error occurred while updating your notification settings. Please try again later.' });
     }
 }
