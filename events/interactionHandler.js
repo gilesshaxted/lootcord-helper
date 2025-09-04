@@ -1,6 +1,8 @@
-const { doc, collection, getDoc, setDoc } = require('firebase/firestore');
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const { doc, collection, getDoc, setDoc, getDocs } = require('firebase/firestore');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, StringSelectMenuBuilder, ChannelType } = require('discord.js');
 const { WEAPON_DATA } = require('../utils/damageData');
+const paginationHelpers = require('../utils/pagination');
+const statsTracker = require('../utils/statsTracker');
 
 // Custom IDs for interaction components
 const WEAPON_SELECT_ID = 'damage_calc_weapon_select';
@@ -19,7 +21,7 @@ module.exports = {
             return;
         }
 
-        // Handle slash commands
+        // --- Handle Slash Commands ---
         if (interaction.isChatInputCommand()) {
             const command = client.commands.get(interaction.commandName);
             if (!command) {
@@ -27,16 +29,34 @@ module.exports = {
                 return;
             }
             try {
-                await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
+                // Special handling for commands that need specific deferral or reply logic
+                if (command.data.name === 'damage-calc') {
+                    await interaction.deferReply({ flags: 0 });
+                    await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
+                } else if (command.data.name === 'channel-set') {
+                    await interaction.deferReply({ ephemeral: true });
+                    const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, 0);
+                    await interaction.editReply({ content, components, flags: MessageFlags.Ephemeral });
+                } else if (command.data.name === 'notify') {
+                    await interaction.deferReply({ ephemeral: true });
+                    await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
+                } else {
+                    await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
+                }
+                
+                // Don't track `channel-set` as a help, it's a configuration command
+                if (command.data.name !== 'channel-set') {
+                    statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
+                }
             } catch (error) {
                 console.error(`Error executing command ${interaction.commandName}:`, error);
-                if (!interaction.replied && !interaction.deferred) {
-                    await interaction.reply({
+                if (interaction.deferred || interaction.replied) {
+                    await interaction.followUp({
                         content: 'There was an error while executing this command!',
                         flags: MessageFlags.Ephemeral
                     });
-                } else if (interaction.deferred) {
-                    await interaction.followUp({
+                } else {
+                    await interaction.reply({
                         content: 'There was an error while executing this command!',
                         flags: MessageFlags.Ephemeral
                     });
@@ -44,7 +64,7 @@ module.exports = {
             }
         }
         
-        // Handle button interactions
+        // --- Handle Button Interactions ---
         else if (interaction.isButton()) {
             if (interaction.customId.startsWith('toggle_')) {
                 console.log(`[Notify Button - Debug] Button click received by ${interaction.user.tag} for customId: ${interaction.customId}`);
@@ -137,16 +157,79 @@ module.exports = {
                     } else {
                         console.error(`[Notify Button] An unexpected error occurred in handleNotifyButton:`, error);
                         try {
-                            await interaction.followUp({ content: '❌ An error occurred while updating your notification settings. Please try again later.', ephemeral: true });
+                            await interaction.followUp({ content: '❌ An error occurred while updating your notification settings. Please try again later.', flags: MessageFlags.Ephemeral });
                         } catch (followUpError) {
                             console.error(`[Notify Button] Failed to send a follow-up reply.`, followUpError);
                         }
                     }
                 }
+            } else if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
+                await interaction.deferUpdate();
+
+                const parts = interaction.customId.split('_');
+                const action = parts[1];
+                const currentPage = parseInt(parts[2], 10);
+
+                let newPage = currentPage;
+                if (action === 'prev') {
+                    newPage--;
+                } else if (action === 'next') {
+                    newPage++;
+                }
+
+                const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage);
+                await interaction.editReply({ content, components, flags: MessageFlags.Ephemeral });
+            } else if (interaction.customId.startsWith('show_trivia_explanation_')) {
+                await interaction.deferUpdate();
+
+                const parts = interaction.customId.split('_');
+                const originalMessageId = parts[3];
+
+                const triviaExplanationRef = doc(collection(db, `TriviaExplanations`), originalMessageId);
+
+                try {
+                    const docSnap = await getDoc(triviaExplanationRef);
+
+                    if (docSnap.exists()) {
+                        const explanationData = docSnap.data();
+                        const explanations = explanationData.explanations;
+                        const optionLetters = ['A', 'B', 'C', 'D'];
+
+                        let explanationContent = `**Explanation for Trivia Question:** \`${explanationData.question}\`\n\n`;
+                        explanationContent += `\`\`\`\n`;
+                        optionLetters.forEach(letter => {
+                            if (explanations[letter]) {
+                                explanationContent += `${letter}: ${explanations[letter]}\n`;
+                            }
+                        });
+                        explanationContent += `\`\`\``;
+
+                        const originalMessage = interaction.message;
+                        if (originalMessage) {
+                            const newComponents = originalMessage.components.map(row => {
+                                return new ActionRowBuilder().addComponents(
+                                    row.components.map(button => {
+                                        return ButtonBuilder.from(button).setDisabled(true);
+                                    })
+                                );
+                            });
+                            await originalMessage.edit({ embeds: [originalMessage.embeds[0]], components: newComponents });
+                        }
+
+                        await interaction.followUp({ content: explanationContent, flags: 0 });
+                        console.log(`Trivia Solver: Posted explanation for message ID ${originalMessageId} in #${interaction.channel.name}.`);
+                    } else {
+                        await interaction.followUp({ content: 'Could not find explanation for this trivia question.', flags: 0 });
+                        console.warn(`Trivia Solver: Explanation not found for message ID ${originalMessageId}.`);
+                    }
+                } catch (error) {
+                    console.error(`Trivia Solver: Error fetching explanation for message ID ${originalMessageId}:`, error);
+                    await interaction.followUp({ content: 'An error occurred while fetching the explanation. Please check logs.', flags: MessageFlags.Ephemeral });
+                }
             }
         }
         
-        // Handle select menus
+        // --- Handle Select Menu Interactions ---
         else if (interaction.isStringSelectMenu()) {
             const customId = interaction.customId;
             if (customId.startsWith(WEAPON_SELECT_ID)) {
@@ -160,11 +243,7 @@ module.exports = {
                         .setColor(0xff0000)
                         .setTitle('Damage Calculator Error')
                         .setDescription(`No ammo data found for **${selectedWeapon}**. Please select another weapon.`);
-                    return await interaction.editReply({
-                        embeds: [embed],
-                        components: [],
-                        flags: 0
-                    });
+                    return await interaction.editReply({ embeds: [embed], components: [], flags: 0 });
                 }
 
                 const ammoOptions = Object.keys(ammoTypes).map(ammoName => ({
@@ -232,11 +311,7 @@ module.exports = {
                         .setColor(0xff0000)
                         .setTitle('Damage Calculator Error')
                         .setDescription('Could not find damage data for the selected weapon/ammo combination. Please restart with `/damage-calc`.');
-                    return await interaction.editReply({
-                        embeds: [embed],
-                        components: [],
-                        flags: 0
-                    });
+                    return await interaction.editReply({ embeds: [embed], components: [], flags: 0 });
                 }
 
                 const [minDamageStr, maxDamageStr] = damageRangeStr.split(' - ').map(s => s.replace(' (x2)', '').replace(' (x3)', ''));
@@ -248,11 +323,7 @@ module.exports = {
                         .setColor(0xff0000)
                         .setTitle('Damage Calculator Error')
                         .setDescription('Error parsing damage range. Please try again with `/damage-calc`.');
-                    return await interaction.editReply({
-                        embeds: [embed],
-                        components: [],
-                        flags: 0
-                    });
+                    return await interaction.editReply({ embeds: [embed], components: [], flags: 0 });
                 }
 
                 const buffMultiplier = selectedBleedingBuff === 'true' ? 1.5 : 1;
@@ -274,11 +345,7 @@ module.exports = {
                         text: 'Damage values are rounded to the nearest whole number.'
                     });
 
-                await interaction.editReply({
-                    embeds: [resultEmbed],
-                    components: [],
-                    flags: 0
-                });
+                await interaction.editReply({ embeds: [resultEmbed], components: [], flags: 0 });
             }
         }
     }
