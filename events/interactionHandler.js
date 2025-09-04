@@ -29,11 +29,8 @@ module.exports = {
                 return;
             }
             try {
-                // Special handling for commands that need a specific non-ephemeral deferral
-                if (command.data.name === 'damage-calc') {
-                    await interaction.deferReply({ flags: 0 });
-                }
-                
+                // All slash command deferrals are now handled within their respective command files.
+                // This centralized approach prevents duplicate deferrals and makes the logic cleaner.
                 await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
                 
                 // Don't track `channel-set` as a help, it's a configuration command
