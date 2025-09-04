@@ -72,6 +72,8 @@ module.exports = {
                         notificationType = 'repairCooldown';
                     } else if (customId === 'toggle_gambling_notifications') {
                         notificationType = 'gamblingCooldown';
+                    } else if (customId === 'toggle_loot_notifications') {
+                        notificationType = 'lootCooldown';
                     } else {
                         return;
                     }
@@ -92,6 +94,7 @@ module.exports = {
                         voteCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'voteCooldown'),
                         repairCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'repairCooldown'),
                         gamblingCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'gamblingCooldown'),
+                        lootCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'lootCooldown'),
                     };
         
                     for (const type in prefsRefs) {
@@ -105,9 +108,10 @@ module.exports = {
                     const voteButton = new ButtonBuilder().setCustomId('toggle_vote_notifications').setLabel('Vote').setStyle(currentPrefs.voteCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
                     const repairButton = new ButtonBuilder().setCustomId('toggle_repair_notifications').setLabel('Repair').setStyle(currentPrefs.repairCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
                     const gamblingButton = new ButtonBuilder().setCustomId('toggle_gambling_notifications').setLabel('Gambling').setStyle(currentPrefs.gamblingCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
-        
+                    const lootButton = new ButtonBuilder().setCustomId('toggle_loot_notifications').setLabel('Loot').setStyle(currentPrefs.lootCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
+
                     const row1 = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton, voteButton, repairButton);
-                    const row2 = new ActionRowBuilder().addComponents(gamblingButton);
+                    const row2 = new ActionRowBuilder().addComponents(gamblingButton, lootButton);
                         
                     const embed = new EmbedBuilder()
                         .setColor(0x0099ff)
@@ -131,7 +135,10 @@ module.exports = {
                             `You'll be pinged when your **clan repair cooldown** is over.\n\n` +
                             `**Gambling Cooldown Notifications:**\n` +
                             `Status: **${currentPrefs.gamblingCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
-                            `You'll be pinged when your **gambling cooldowns** are over.`
+                            `You'll be pinged when your **gambling cooldowns** are over.\n\n` +
+                            `**Loot Cooldown Notifications:**\n` +
+                            `Status: **${currentPrefs.lootCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
+                            `You'll be pinged for **trivia, scramble, and wordle** game cooldowns.`
                         )
                         .setFooter({ text: 'Use the buttons to toggle your notifications.' });
         
@@ -303,7 +310,7 @@ module.exports = {
                 // Regex to find optional multipliers like (x2) or (x3)
                 const multiplierMatch = damageRangeStr.match(/\(x(\d+)\)/);
                 const multiplier = multiplierMatch ? parseInt(multiplierMatch[1], 10) : 1;
-                const multiplierText = multiplierMatch ? `${multiplierMatch[0]}` : '';
+                const multiplierText = multiplierMatch ? multiplierMatch[0] : '';
 
                 // Get the base damage range string, removing the multiplier part if it exists
                 const baseDamageRangeStr = damageRangeStr.replace(/\(x\d+\)/, '').trim();
@@ -337,7 +344,7 @@ module.exports = {
                     const multipliedFinalMaxDamage = baseFinalMaxDamage * multiplier;
                     
                     descriptionText += 
-                        `**Your Damage Range:** \`${baseFinalMinDamage} - ${baseFinalMaxDamage}\`\n` +
+                        `**Your Damage Range (Normal):** \`${baseFinalMinDamage} - ${baseFinalMaxDamage}\`\n` +
                         `**Mob Damage Range ${multiplierText}:** \`${multipliedFinalMinDamage} - ${multipliedFinalMaxDamage}\``;
                 } else {
                     // If no multiplier, just show the single range

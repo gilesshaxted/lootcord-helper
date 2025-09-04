@@ -176,7 +176,7 @@ async function setupFirestoreListeners() {
             statsTracker.initializeStats({});
         }
     }, (error) => {
-        console.error("Stats Tracker: Error listening to botStats:", error);
+        console.error("Error listening to botStats:", error);
     });
 }
 

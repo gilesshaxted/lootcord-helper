@@ -53,6 +53,9 @@ const COOLDOWN_DURATIONS_MS = {
     'wheel': 10 * 60 * 1000,
     'jackpot': 9 * 60 * 1000,
     'roulette': 3 * 60 * 1000,
+    'trivia': 10 * 60 * 1000,
+    'scramble': 15 * 60 * 1000,
+    'wordle': 30 * 60 * 1000,
     'wood': 2 * 60 * 1000,
     'stone': 10 * 60 * 1000,
     'metal': 25 * 60 * 1000,
@@ -70,6 +73,9 @@ const SLOTS_EMBED_TITLE_REGEX = /slot machine$/i;
 const WHEEL_EMBED_TITLE_REGEX = /wheel roulette$/i;
 const JACKPOT_MESSAGE_REGEX = /^<@(\d+)> won the .* jackpot with a .*% chance of winning!$/i;
 const ROULETTE_MESSAGE_REGEX = /The gun(?: doesn't fire\.| blast)/i;
+const TRIVIA_EMBED_FIELD_REGEX = /Trivia Streak/;
+const SCRAMBLE_EMBED_DESCRIPTION_REGEX = /^Word:/;
+const WORDLE_MESSAGE_CONTENT_REGEX = /^Guess #1 \/ 6 · 6 guesses remaining/s;
 
 
 async function sendCooldownPing(client, db, userId, channelId, type, item, cooldownDocId, APP_ID_FOR_FIRESTORE) {
@@ -100,6 +106,10 @@ async function sendCooldownPing(client, db, userId, channelId, type, item, coold
         case 'gambling':
             notificationType = 'gamblingCooldown';
             pingMessage = `<@${userId}> your **${item}** cooldown is over!`; 
+            break;
+        case 'loot':
+            notificationType = 'lootCooldown';
+            pingMessage = `<@${userId}> your **${item}** cooldown is over!`;
             break;
         default:
             await deleteDoc(doc(collection(db, `ActiveCooldowns`), cooldownDocId));
@@ -154,6 +164,7 @@ module.exports = {
         let cooldownType = null;
         let cooldownDuration = undefined;
 
+        // --- Cooldowns already implemented (Attack, Farm, Med, Gambling, Vote, Repair) ---
         const attackMatch = message.content.match(ATTACK_MESSAGE_REGEX);
         if (attackMatch) {
             playerId = attackMatch[1];
@@ -283,6 +294,62 @@ module.exports = {
                 }
             } catch (error) {
                 console.error(`Cooldown Notifier: Error fetching previous message for repair cooldown:`, error);
+            }
+        }
+
+        // --- NEW: Loot (Trivia, Scramble, Wordle) Cooldown Logic ---
+        // Check for Trivia
+        if (!playerId && !cooldownType && message.embeds.length > 0) {
+            const embed = message.embeds[0];
+            const hasTriviaField = embed.fields?.some(field => TRIVIA_EMBED_FIELD_REGEX.test(field.name));
+            if (hasTriviaField) {
+                item = 'trivia';
+                cooldownType = 'loot';
+                cooldownDuration = COOLDOWN_DURATIONS_MS['trivia'];
+                try {
+                    const messages = await message.channel.messages.fetch({ limit: 2 });
+                    const previousMessage = messages.last();
+                    if (previousMessage && previousMessage.content.toLowerCase().startsWith('t-trivia')) {
+                        playerId = previousMessage.author.id;
+                    }
+                } catch (error) {
+                    console.error(`Cooldown Notifier: Error fetching previous message for trivia cooldown:`, error);
+                }
+            }
+        }
+
+        // Check for Scramble
+        if (!playerId && !cooldownType && message.embeds.length > 0) {
+            const embed = message.embeds[0];
+            if (embed.description && SCRAMBLE_EMBED_DESCRIPTION_REGEX.test(embed.description)) {
+                item = 'scramble';
+                cooldownType = 'loot';
+                cooldownDuration = COOLDOWN_DURATIONS_MS['scramble'];
+                try {
+                    const messages = await message.channel.messages.fetch({ limit: 2 });
+                    const previousMessage = messages.last();
+                    if (previousMessage && previousMessage.content.toLowerCase().startsWith('t-scramble')) {
+                        playerId = previousMessage.author.id;
+                    }
+                } catch (error) {
+                    console.error(`Cooldown Notifier: Error fetching previous message for scramble cooldown:`, error);
+                }
+            }
+        }
+        
+        // Check for Wordle (using message content)
+        if (!playerId && !cooldownType && WORDLE_MESSAGE_CONTENT_REGEX.test(message.content)) {
+            item = 'wordle';
+            cooldownType = 'loot';
+            cooldownDuration = COOLDOWN_DURATIONS_MS['wordle'];
+            try {
+                const messages = await message.channel.messages.fetch({ limit: 2 });
+                const previousMessage = messages.last();
+                if (previousMessage && previousMessage.content.toLowerCase().startsWith('t-wordle')) {
+                    playerId = previousMessage.author.id;
+                }
+            } catch (error) {
+                console.error(`Cooldown Notifier: Error fetching previous message for wordle cooldown:`, error);
             }
         }
 
