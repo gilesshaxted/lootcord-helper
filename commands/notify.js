@@ -40,7 +40,66 @@ module.exports = {
         }
     },
 };
+// Add this function to your notify.js file after the `execute` function.
+async function handleInteraction(interaction, db) {
+    if (!interaction.isButton()) {
+        return; // Only process button interactions
+    }
 
+    await interaction.deferUpdate();
+
+    const userId = interaction.user.id;
+    const customId = interaction.customId;
+
+    let notificationType;
+    if (customId === 'toggle_attack_notifications') {
+        notificationType = 'attackCooldown';
+    } else if (customId === 'toggle_farm_notifications') {
+        notificationType = 'farmCooldown';
+    } else if (customId === 'toggle_med_notifications') {
+        notificationType = 'medCooldown';
+    } else if (customId === 'toggle_vote_notifications') {
+        notificationType = 'voteCooldown';
+    } else if (customId === 'toggle_repair_notifications') {
+        notificationType = 'repairCooldown';
+    } else if (customId === 'toggle_gambling_notifications') {
+        notificationType = 'gamblingCooldown';
+    } else {
+        return; // Not a notification button, do nothing
+    }
+
+    try {
+        const docRef = doc(collection(db, `UserNotifications/${userId}/preferences`), notificationType);
+        const docSnap = await getDoc(docRef);
+
+        const isCurrentlyEnabled = docSnap.exists() ? docSnap.data().enabled : false;
+        const newStatus = !isCurrentlyEnabled;
+
+        await setDoc(docRef, { enabled: newStatus });
+
+        const currentPrefs = {};
+        const prefsRefs = {
+            attackCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'attackCooldown'),
+            farmCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'farmCooldown'),
+            medCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'medCooldown'),
+            voteCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'voteCooldown'),
+            repairCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'repairCooldown'),
+            gamblingCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'gamblingCooldown'),
+        };
+
+        for (const type in prefsRefs) {
+            const snap = await getDoc(prefsRefs[type]);
+            currentPrefs[type] = snap.exists() ? snap.data().enabled : false;
+        }
+
+        const { embed, components } = await createNotificationMessage(currentPrefs);
+        await interaction.editReply({ embeds: [embed], components: components });
+
+    } catch (error) {
+        console.error(`[Notify Button] Error handling button click for ${customId}:`, error);
+        await interaction.editReply({ content: '❌ An error occurred while updating your notification settings. Please try again later.' });
+    }
+}
 // This function creates the embed and buttons for the notify message
 async function createNotificationMessage(currentPrefs) {
     const embed = new EmbedBuilder()
