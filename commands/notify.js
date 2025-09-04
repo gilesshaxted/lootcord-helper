@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { doc, collection, getDoc, setDoc } = require('firebase/firestore');
 
 // Helper function to create the embed and buttons
@@ -44,10 +44,12 @@ async function createNotificationMessage(currentPrefs) {
 
 // Main execute function for the /notify slash command
 async function execute(interaction, db) {
-    await interaction.deferReply({ ephemeral: true });
+    // Correctly defer the reply before doing any other async work
+    // Use flags instead of the deprecated 'ephemeral' option
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     if (!db) {
-        return await interaction.editReply({ content: 'Bot is not fully initialized (Firestore not ready). Please try again in a moment.', ephemeral: true });
+        return await interaction.editReply({ content: 'Bot is not fully initialized (Firestore not ready). Please try again in a moment.', flags: MessageFlags.Ephemeral });
     }
 
     const userId = interaction.user.id;
@@ -69,10 +71,10 @@ async function execute(interaction, db) {
 
         const { embed, components } = await createNotificationMessage(currentPrefs);
         
-        await interaction.editReply({ embeds: [embed], components: components, ephemeral: true });
+        await interaction.editReply({ embeds: [embed], components: components, flags: MessageFlags.Ephemeral });
     } catch (error) {
         console.error('[Notify Command] An unexpected error occurred during execution:', error);
-        await interaction.editReply({ content: '❌ An unexpected error occurred while fetching your notification settings. Please check logs.', ephemeral: true });
+        await interaction.editReply({ content: '❌ An unexpected error occurred while fetching your notification settings. Please check logs.', flags: MessageFlags.Ephemeral });
     }
 }
 
