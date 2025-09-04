@@ -83,7 +83,7 @@ module.exports = {
                     const roleId = pingRoleIds[category];
                     if (roleId) {
                         const itemNames = items.map(item => `\`${item}\``).join(', ');
-                        pingMessageContent += `<@&${roleId}> **${category}**: ${itemNames}\n`;
+                        pingMessageContent += `<@&${roleId}>: ${itemNames}\n`;
                     } else {
                         console.warn(`Shop Deal Detector: No role ID configured for category: ${category}`);
                     }
