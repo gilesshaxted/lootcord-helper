@@ -1,7 +1,8 @@
 {
   "name": "Lootcord-Helper",
-  "version": "0.7.31",
-  "description": "A discord bot designed to interact with Lootcord bot and help its players.",
+  "version": "0.8.0",
+  "branch": "development",
+  "description": "A discord bot designed to interact with Lootcord bot and help it's players.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -17,7 +18,7 @@
     "discord.js": "^14.15.3",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "express-session": "^1.18.0",
+    "express-session": "^1.18.2",
     "firebase": "^10.12.3",
     "passport": "^0.7.0",
     "passport-discord": "^0.1.4"

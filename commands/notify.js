@@ -25,7 +25,10 @@ async function createNotificationMessage(currentPrefs) {
             `You'll be pinged when your **clan repair cooldown** is over.\n\n` +
             `**Gambling Cooldown Notifications:**\n` +
             `Status: **${currentPrefs.gamblingCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
-            `You'll be pinged when your **gambling cooldowns** are over.`
+            `You'll be pinged when your **gambling cooldowns** are over.\n\n` +
+            `**Loot Cooldown Notifications:**\n` +
+            `Status: **${currentPrefs.lootCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
+            `You'll be pinged for **trivia, scramble, and wordle** game cooldowns.`
         )
         .setFooter({ text: 'Use the buttons to toggle your notifications.' });
 
@@ -35,9 +38,10 @@ async function createNotificationMessage(currentPrefs) {
     const voteButton = new ButtonBuilder().setCustomId('toggle_vote_notifications').setLabel('Vote').setStyle(currentPrefs.voteCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
     const repairButton = new ButtonBuilder().setCustomId('toggle_repair_notifications').setLabel('Repair').setStyle(currentPrefs.repairCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
     const gamblingButton = new ButtonBuilder().setCustomId('toggle_gambling_notifications').setLabel('Gambling').setStyle(currentPrefs.gamblingCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
+    const lootButton = new ButtonBuilder().setCustomId('toggle_loot_notifications').setLabel('Loot').setStyle(currentPrefs.lootCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
 
     const row1 = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton, voteButton, repairButton);
-    const row2 = new ActionRowBuilder().addComponents(gamblingButton);
+    const row2 = new ActionRowBuilder().addComponents(gamblingButton, lootButton);
 
     return { embed, components: [row1, row2] };
 }
@@ -60,6 +64,7 @@ async function execute(interaction, db) {
         voteCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'voteCooldown'),
         repairCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'repairCooldown'),
         gamblingCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'gamblingCooldown'),
+        lootCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'lootCooldown'),
     };
 
     try {

@@ -29,11 +29,8 @@ module.exports = {
                 return;
             }
             try {
-                // All slash command deferrals are now handled within their respective command files.
-                // This centralized approach prevents duplicate deferrals and makes the logic cleaner.
                 await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
                 
-                // Don't track `channel-set` as a help, it's a configuration command
                 if (command.data.name !== 'channel-set') {
                     statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
                 }
@@ -75,6 +72,8 @@ module.exports = {
                         notificationType = 'repairCooldown';
                     } else if (customId === 'toggle_gambling_notifications') {
                         notificationType = 'gamblingCooldown';
+                    } else if (customId === 'toggle_loot_notifications') {
+                        notificationType = 'lootCooldown';
                     } else {
                         return;
                     }
@@ -95,6 +94,7 @@ module.exports = {
                         voteCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'voteCooldown'),
                         repairCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'repairCooldown'),
                         gamblingCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'gamblingCooldown'),
+                        lootCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'lootCooldown'),
                     };
         
                     for (const type in prefsRefs) {
@@ -108,9 +108,10 @@ module.exports = {
                     const voteButton = new ButtonBuilder().setCustomId('toggle_vote_notifications').setLabel('Vote').setStyle(currentPrefs.voteCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
                     const repairButton = new ButtonBuilder().setCustomId('toggle_repair_notifications').setLabel('Repair').setStyle(currentPrefs.repairCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
                     const gamblingButton = new ButtonBuilder().setCustomId('toggle_gambling_notifications').setLabel('Gambling').setStyle(currentPrefs.gamblingCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
-        
+                    const lootButton = new ButtonBuilder().setCustomId('toggle_loot_notifications').setLabel('Loot').setStyle(currentPrefs.lootCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
+
                     const row1 = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton, voteButton, repairButton);
-                    const row2 = new ActionRowBuilder().addComponents(gamblingButton);
+                    const row2 = new ActionRowBuilder().addComponents(gamblingButton, lootButton);
                         
                     const embed = new EmbedBuilder()
                         .setColor(0x0099ff)
@@ -134,7 +135,10 @@ module.exports = {
                             `You'll be pinged when your **clan repair cooldown** is over.\n\n` +
                             `**Gambling Cooldown Notifications:**\n` +
                             `Status: **${currentPrefs.gamblingCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
-                            `You'll be pinged when your **gambling cooldowns** are over.`
+                            `You'll be pinged when your **gambling cooldowns** are over.\n\n` +
+                            `**Loot Cooldown Notifications:**\n` +
+                            `Status: **${currentPrefs.lootCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
+                            `You'll be pinged for **trivia, scramble, and wordle** game cooldowns.`
                         )
                         .setFooter({ text: 'Use the buttons to toggle your notifications.' });
         
@@ -303,7 +307,14 @@ module.exports = {
                     return await interaction.editReply({ embeds: [embed], components: [], flags: 0 });
                 }
 
-                const [minDamageStr, maxDamageStr] = damageRangeStr.split(' - ').map(s => s.replace(' (x2)', '').replace(' (x3)', ''));
+                // Regex to find optional multipliers like (x2) or (x3)
+                const multiplierMatch = damageRangeStr.match(/\(x(\d+)\)/);
+                const multiplier = multiplierMatch ? parseInt(multiplierMatch[1], 10) : 1;
+                const multiplierText = multiplierMatch ? multiplierMatch[0] : '';
+
+                // Get the base damage range string, removing the multiplier part if it exists
+                const baseDamageRangeStr = damageRangeStr.replace(/\(x\d+\)/, '').trim();
+                const [minDamageStr, maxDamageStr] = baseDamageRangeStr.split(' - ');
                 let minDamage = parseInt(minDamageStr, 10);
                 let maxDamage = parseInt(maxDamageStr, 10);
 
@@ -317,22 +328,34 @@ module.exports = {
 
                 const buffMultiplier = selectedBleedingBuff === 'true' ? 1.5 : 1;
 
-                const finalMinDamage = Math.round(minDamage * strengthSkill * buffMultiplier);
-                const finalMaxDamage = Math.round(maxDamage * strengthSkill * buffMultiplier);
+                // Calculate the final damage with strength and buff, but without the ammo multiplier
+                const baseFinalMinDamage = Math.round(minDamage * strengthSkill * buffMultiplier);
+                const baseFinalMaxDamage = Math.round(maxDamage * strengthSkill * buffMultiplier);
+
+                let descriptionText = 
+                    `**Strength Skill:** ${strengthSkill}x\n` +
+                    `**Weapon:** ${selectedWeapon}\n` +
+                    `**Ammo:** ${selectedAmmo}\n` +
+                    `**Bleeding Buff:** ${selectedBleedingBuff === 'true' ? 'ON ✅ (x1.5)' : 'OFF ❌ (x1.0)'}\n\n`;
+
+                if (multiplier > 1) {
+                    // If a multiplier exists, show both the normal range and the multiplied range
+                    const multipliedFinalMinDamage = baseFinalMinDamage * multiplier;
+                    const multipliedFinalMaxDamage = baseFinalMaxDamage * multiplier;
+                    
+                    descriptionText += 
+                        `**Your Damage Range (Normal):** \`${baseFinalMinDamage} - ${baseFinalMaxDamage}\`\n` +
+                        `**Mob Damage Range ${multiplierText}:** \`${multipliedFinalMinDamage} - ${multipliedFinalMaxDamage}\``;
+                } else {
+                    // If no multiplier, just show the single range
+                    descriptionText += `**Your Damage Range:** \`${baseFinalMinDamage} - ${baseFinalMaxDamage}\``;
+                }
 
                 const resultEmbed = new EmbedBuilder()
                     .setColor(0x00ff00)
                     .setTitle('Damage Calculation Result')
-                    .setDescription(
-                        `**Strength Skill:** ${strengthSkill}x\n` +
-                        `**Weapon:** ${selectedWeapon}\n` +
-                        `**Ammo:** ${selectedAmmo}\n` +
-                        `**Bleeding Buff:** ${selectedBleedingBuff === 'true' ? 'ON ✅ (x1.5)' : 'OFF ❌ (x1.0)'}\n\n` +
-                        `**Calculated Damage Range:** \`${finalMinDamage} - ${finalMaxDamage}\``
-                    )
-                    .setFooter({
-                        text: 'Damage values are rounded to the nearest whole number.'
-                    });
+                    .setDescription(descriptionText)
+                    .setFooter({ text: 'Damage values are rounded to the nearest whole number.' });
 
                 await interaction.editReply({ embeds: [resultEmbed], components: [], flags: 0 });
             }
