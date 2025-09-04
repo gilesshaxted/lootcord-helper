@@ -76,13 +76,10 @@ async function execute(interaction, db) {
     }
 }
 
-// Export the slash command data and the two functions
+// Export the slash command data and the execute function
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('notify')
         .setDescription('Manage your personal notification preferences for Lootcord Helper.'),
-    execute, // This is for the /notify command
-    // Note: We are no longer exporting handleInteraction. The new interaction
-    // handling will be done directly in index.js, but with a different structure.
-    // The previous approach caused the API error.
+    execute,
 };
