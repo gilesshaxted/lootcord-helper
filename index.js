@@ -613,8 +613,22 @@ async function handleNotifyButton(interaction, db) {
         await interaction.editReply({ embeds: [embed], components: [row1, row2] });
 
     } catch (error) {
-        console.error(`[Notify Button] Error handling button click for ${interaction.customId}:`, error);
-        await interaction.editReply({ content: '❌ An error occurred while updating your notification settings. Please try again later.' });
+        // Here we handle the API error more gracefully.
+        // Check if the error is the "Unknown interaction" one.
+        if (error.code === 10062) {
+            console.error(`[Notify Button] Failed to defer update due to unknown interaction. This may be a double-click or stale interaction.`);
+            // Do not attempt to reply or edit the message.
+        } else {
+            // For any other unexpected errors, log and attempt a normal reply.
+            console.error(`[Notify Button] An unexpected error occurred in handleNotifyButton:`, error);
+            try {
+                // Since deferral failed, we can't editReply, so we try a new, ephemeral reply.
+                await interaction.followUp({ content: '❌ An error occurred while updating your notification settings. Please try again later.', ephemeral: true });
+            } catch (followUpError) {
+                // If followUp also fails, there's nothing more we can do.
+                console.error(`[Notify Button] Failed to send a follow-up reply.`, followUpError);
+            }
+        }
     }
 }
 
