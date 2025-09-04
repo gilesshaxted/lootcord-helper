@@ -29,20 +29,12 @@ module.exports = {
                 return;
             }
             try {
-                // Special handling for commands that need specific deferral or reply logic
+                // Special handling for commands that need a specific non-ephemeral deferral
                 if (command.data.name === 'damage-calc') {
                     await interaction.deferReply({ flags: 0 });
-                    await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
-                } else if (command.data.name === 'channel-set') {
-                    await interaction.deferReply({ ephemeral: true });
-                    const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, 0);
-                    await interaction.editReply({ content, components, flags: MessageFlags.Ephemeral });
-                } else if (command.data.name === 'notify') {
-                    await interaction.deferReply({ ephemeral: true });
-                    await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
-                } else {
-                    await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
                 }
+                
+                await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
                 
                 // Don't track `channel-set` as a help, it's a configuration command
                 if (command.data.name !== 'channel-set') {
