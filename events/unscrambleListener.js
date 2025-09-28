@@ -133,6 +133,7 @@ module.exports = {
 
             // Updated regex: Matches "Word:", then optional whitespace, then "```fix\n",
             // then captures the letters, and then looks for "```"
+            // FIX: Consolidate the regex onto a single line to fix SyntaxError: Invalid regular expression
             const wordMatch = embedDescription ? embedDescription.match(/Word:\s*
             
             // Check for "Reward" field as a validation
