@@ -197,17 +197,22 @@ module.exports = {
                         });
                         explanationContent += `\`\`\``;
 
-                        const originalMessage = interaction.message;
-                        if (originalMessage) {
-                            const newComponents = originalMessage.components.map(row => {
-                                return new ActionRowBuilder().addComponents(
-                                    row.components.map(button => {
-                                        return ButtonBuilder.from(button).setDisabled(true);
-                                    })
-                                );
-                            });
-                            await originalMessage.edit({ embeds: [originalMessage.embeds[0]], components: newComponents });
-                        }
+                        const originalMessage = interaction.message;
+                        if (originalMessage && originalMessage.embeds.length > 0) {
+                            // FIX: Re-create the embed using EmbedBuilder.from() to ensure valid formatting
+                            const existingEmbed = EmbedBuilder.from(originalMessage.embeds[0]);
+                            
+                            const newComponents = originalMessage.components.map(row => {
+                                return new ActionRowBuilder().addComponents(
+                                    row.components.map(button => {
+                                        return ButtonBuilder.from(button).setDisabled(true);
+                                    })
+                                );
+                            });
+                            
+                            // Use the new EmbedBuilder object
+                            await originalMessage.edit({ embeds: [existingEmbed], components: newComponents });
+                        }
 
                         await interaction.followUp({ content: explanationContent, flags: 0 });
                         console.log(`Trivia Solver: Posted explanation for message ID ${originalMessageId} in #${interaction.channel.name}.`);
