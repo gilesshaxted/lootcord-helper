@@ -145,94 +145,129 @@ module.exports = {
 
         if (scrambledLetters) {
             // Refined prompt to emphasize word types and strict anagram rules
-            const prompt = `Unscramble the following jumbled letters to form a single, most likely English word.
-The unscrambled word MUST use ALL of the provided letters exactly once, and therefore MUST be the same length as the provided jumbled letters.
-Prioritize common English words. If no common English word is found, then consider proper nouns (like a person's name, country, or city), demonyms (e.g., British, French, American), languages, or common slang.
+            const prompt = `Unscramble the following jumbled letters into valid English words.
 
-Examples of desired output:
-- Jumbled: "tesnea" -> Word: "senate"
-- Jumbled: "nairt" -> Word: "train"
-- Jumbled: "sraeh" -> Word: "share"
-- Jumbled: "tihsrib" -> Word: "british"
-- Jumbled: "tworrak" -> Word: "artwork"
-- Jumbled: "nadole" -> Word: "london"
-- Jumbled: "ailartsu" -> Word: "australia"
-- Jumbled: "hcnref" -> Word: "french"
-- Jumbled: "yertuk" -> Word: "turkey"
-- Jumbled: "anacda" -> Word: "canada"
-- Jumbled: "sihnaps" -> Word: "spanish"
-- Jumbled: "olleh" -> Word: "hello"
-- Jumbled: "namreg" -> Word: "german"
-- Jumbled: "aind" -> Word: "india"
+Rules:
+- Each unscrambled word MUST use ALL of the provided letters exactly once.
+- Prioritize common English words.
+- Provide the most likely word FIRST, followed by up to 3 alternative possibilities (if they exist).
+- Format: one word per line, no numbers, no extra text.
 
-Only provide the unscrambled word. Do not include any other text, explanations, or punctuation.
+Examples:
+- Jumbled: "tesnea" -> senate
+- Jumbled: "nairt" -> train
+- Jumbled: "sraeh" -> share
+- Jumbled: "tihsrib" -> british
+- Jumbled: "tworrak" -> artwork
+- Jumbled: "nadole" -> london
+- Jumbled: "ailartsu" -> australia
+- Jumbled: "hcnref" -> french
+- Jumbled: "yertuk" -> turkey
+- Jumbled: "anacda" -> canada
+- Jumbled: "sihnaps" -> spanish
+- Jumbled: "olleh" -> hello
+- Jumbled: "namreg" -> german
+- Jumbled: "aind" -> india
+- Jumbled: "roflam" -> formal
+- Jumbled: "otnsayemr" -> monastery
+- Jumbled: "coomsw" -> moscow
+- Jumbled: "suecre" -> secure
+- Jumbled: "conartts" -> contrast
+- Jumbled: "rayenb" -> nearby
+- Jumbled: "idwowdrel" -> worldwide
+- Jumbled: "ielogrna" -> regional
+- Jumbled: "rweionhps" -> ownership
+- Jumbled: "aotmnu" -> mount
+- Jumbled: "aiavrrten" -> narrative
+- Jumbled: "natas" -> santa
+- Jumbled: "fsnetrra" -> transfer
+- Jumbled: "xbfonio" -> infobox
+- Jumbled: "foerrrtuehm" -> furthermore
+- Jumbled: "eerfr" -> refer
+- Jumbled: "redumrm" -> drummer
+- Jumbled: "aslteivf" -> festival
+- Jumbled: "nailt" -> latin
+- Jumbled: "toiionamcpl" -> compilation
+- Jumbled: "aeppr" -> paper
+- Jumbled: "nsiectnots" -> consistent
+- Jumbled: "teoalinra" -> rationale
+- Jumbled: "serscsuoc" -> successor
+- Jumbled: "vloerse" -> resolve
+- Jumbled: "iydarbth" -> birthday
+- Jumbled: "utearagd" -> graduate
+- Jumbled: "mruaate" -> amateur
+- Jumbled: "tichstos" -> scottish
+- Jumbled: "aiecstssna" -> assistance
+- Jumbled: "cergha" -> charge
 
 Jumbled letters: ${scrambledLetters}`;
-            let llmAnswer = null;
 
-            try {
-                // --- Debugging: Log the prompt being sent ---
-                console.log(`Unscrambler: Sending prompt to LLM for '${scrambledLetters}':\n\`\`\`\n${prompt}\n\`\`\``);
+    let llmAnswers = [];
 
-                // Call the LLM (Gemini API)
-                const chatHistory = [];
-                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
-                const payload = { contents: chatHistory };
-                const apiKey = process.env.GOOGLE_API_KEY; // Get API key from environment variable
+    try {
+        console.log(`Unscrambler: Sending prompt to LLM for '${scrambledLetters}':\n\`\`\`\n${prompt}\n\`\`\``);
 
-                if (!apiKey) {
-                    console.error('Unscrambler: GOOGLE_API_KEY environment variable not set. Cannot unscramble.');
-                    return;
-                }
+        const chatHistory = [];
+        chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+        const payload = { contents: chatHistory };
+        const apiKey = process.env.GOOGLE_API_KEY;
 
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                const result = await response.json();
-                
-                if (result.candidates && result.candidates.length > 0 &&
-                    result.candidates[0].content && result.candidates[0].content.parts &&
-                    result.candidates[0].content.parts.length > 0) {
-                    llmAnswer = result.candidates[0].content.parts[0].text.trim().toLowerCase();
-                    
-                    // NEW: Validate LLM's answer against anagram rules
-                    if (!isValidAnagram(scrambledLetters, llmAnswer)) {
-                        console.warn(`Unscrambler: LLM suggested word '${llmAnswer}' for '${scrambledLetters}' is NOT a valid anagram. Ignoring LLM answer.`);
-                        llmAnswer = null; // Invalidate if not a perfect anagram
-                    }
-
-                } else {
-                    console.warn('Unscrambler: LLM response structure unexpected or empty for scrambled letters:', scrambledLetters);
-                }
-
-            } catch (error) {
-                console.error('Unscrambler: Error calling LLM API for scrambled letters:', scrambledLetters, error);
-            }
-
-            let replyContent = `**Unscrambled word for \`${scrambledLetters}\`:**\n`;
-
-            if (llmAnswer) {
-                replyContent += `Most likely word (from LLM): \`${llmAnswer}\``;
-                statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); // Increment helps for unscramble
-            } else {
-                replyContent += `Could not determine the most likely word using LLM.`;
-            }
-
-            if (replyContent.length > 2000) {
-                replyContent = replyContent.substring(0, 1990) + '...\n(Output truncated due to character limit)';
-            }
-
-            try {
-                await message.channel.send({ content: replyContent });
-                console.log(`Unscrambler: Posted LLM-based word for '${scrambledLetters}' in #${message.channel.name}`);
-            } catch (error) {
-                console.error(`Unscrambler: Failed to post LLM-based word in #${message.channel.name}:`, error);
-            }
+        if (!apiKey) {
+            console.error('Unscrambler: GOOGLE_API_KEY not set.');
+            return;
         }
-    },
-};
+
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (result.candidates?.[0]?.content?.parts?.[0]?.text) {
+            // Split into multiple words by line
+            const rawText = result.candidates[0].content.parts[0].text.trim().toLowerCase();
+            const words = rawText.split(/\r?\n/).map(w => w.trim()).filter(Boolean);
+
+            // Keep only valid anagrams
+            llmAnswers = words.filter(word => isValidAnagram(scrambledLetters, word));
+
+            if (llmAnswers.length === 0) {
+                console.warn(`Unscrambler: No valid anagrams returned for '${scrambledLetters}'.`);
+            }
+        } else {
+            console.warn('Unscrambler: LLM response structure unexpected for', scrambledLetters);
+        }
+
+    } catch (error) {
+        console.error('Unscrambler: Error calling LLM API for', scrambledLetters, error);
+    }
+
+    let replyContent = `**Unscrambled word for \`${scrambledLetters}\`:**\n`;
+
+    if (llmAnswers.length > 0) {
+        replyContent += `Most likely word: \`${llmAnswers[0]}\``;
+
+        if (llmAnswers.length > 1) {
+            const alternatives = llmAnswers.slice(1, 4).map(w => `\`${w}\``).join(', ');
+            replyContent += `\nOther possibilities: ${alternatives}`;
+        }
+
+        statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
+    } else {
+        replyContent += `Could not determine valid anagrams.`;
+    }
+
+    if (replyContent.length > 2000) {
+        replyContent = replyContent.substring(0, 1990) + '...\n(Output truncated)';
+    }
+
+    try {
+        await message.channel.send({ content: replyContent });
+        console.log(`Unscrambler: Posted words for '${scrambledLetters}' in #${message.channel.name}`);
+    } catch (error) {
+        console.error(`Unscrambler: Failed to post in #${message.channel.name}:`, error);
+    }
+}
