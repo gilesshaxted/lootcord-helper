@@ -332,7 +332,7 @@ client.once('clientReady', async () => {
                     console.log(`Cooldown Notifier: Removed stale cooldown entry ${cooldownDocId} on startup.`);
                 }
             }
-        } // <--- MISSING CLOSING BRACE WAS ADDED HERE
+        }
         console.log(`Cooldown Notifier: Rescheduled ${rescheduledCount} active cooldowns on startup.`);
     } catch (error) {
         console.error('Cooldown Notifier: Error rescheduling cooldowns on startup:', error);
