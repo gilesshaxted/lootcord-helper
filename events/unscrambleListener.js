@@ -272,4 +272,4 @@ Jumbled letters: ${scrambledLetters}`;
         console.error(`Unscrambler: Failed to post in #${message.channel.name}:`, error);
     }
 }
-}; 
+}
