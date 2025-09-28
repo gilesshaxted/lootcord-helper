@@ -24,7 +24,8 @@ const fs = require('fs');
 const crypto = require('crypto');
 const session = require('express-session');
 const passport = require('passport');
-const DiscordStrategy = require('passport-discord').Strategy;
+// FIX: Replacing deprecated 'passport-discord' with a maintained alternative.
+const DiscordStrategy = require('passport-discord-strategy').Strategy; 
 
 // Import Firebase modules
 const {
@@ -137,7 +138,6 @@ async function initializeFirebase() {
                 console.log(`Firebase not authenticated. Using anonymous/random User ID: ${userId}`);
             }
             isFirestoreReady = true;
-            console.log("Firestore client initialized and ready.");
             await setupFirestoreListeners();
         });
 
