@@ -271,6 +271,5 @@ Jumbled letters: ${scrambledLetters}`;
     } catch (error) {
         console.error(`Unscrambler: Failed to post in #${message.channel.name}:`, error);
     }
-} // closes execute()
-}; // closes module.exports (THIS LINE SHOULD NOT HAVE A SEMICOLON)
-// File ends here.
+}
+}
