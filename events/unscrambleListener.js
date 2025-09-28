@@ -134,7 +134,7 @@ module.exports = {
             // Updated regex: Matches "Word:", then optional whitespace, then "```fix\n",
             // then captures the letters, and then looks for "```"
             // FIX: Consolidate the regex onto a single line to fix SyntaxError: Invalid regular expression
-            const wordMatch = embedDescription ? embedDescription.match(/Word:\s*
+            const wordMatch = embedDescription ? embedDescription.match(/Word:\s*```fix\n([a-zA-Z]+)```/s) : null;
             
             // Check for "Reward" field as a validation
             const hasRewardField = embedFields.some(field => field.name && field.name.includes('Reward'));
