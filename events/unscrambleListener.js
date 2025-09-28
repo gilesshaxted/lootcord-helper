@@ -268,8 +268,8 @@ Jumbled letters: ${scrambledLetters}`;
     try {
         await message.channel.send({ content: replyContent });
         console.log(`Unscrambler: Posted words for '${scrambledLetters}' in #${message.channel.name}`);
-    } catch (error) {
+    } catch (error) {
         console.error(`Unscrambler: Failed to post in #${message.channel.name}:`, error);
     }
-  }
-};
+  } // closes execute()
+}; // closes module.exports
