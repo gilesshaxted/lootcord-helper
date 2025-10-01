@@ -1,40 +1,29 @@
-const statsTracker = require('../utils/statsTracker'); // Import Stats Tracker
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js'); // Import ActionRowBuilder, ButtonBuilder, ButtonStyle
-const { doc, collection, setDoc } = require('firebase/firestore'); // Import Firestore functions
+const statsTracker = require('../utils/statsTracker');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { doc, collection, setDoc } = require('firebase/firestore');
 
-// Configuration specific to this listener
-const TARGET_BOT_ID = '493316754689359874'; // User ID of the other bot posting trivia
-const GEMINI_MODEL = 'gemini-2.5-flash'; // Using a stable and capable model
+const TARGET_BOT_ID = '493316754689359874';
+const GEMINI_MODEL = 'gemini-2.5-flash';
 
 module.exports = {
-    name: 'messageCreate', // This event listener will also listen for messageCreate events
-    once: false, // This event should run every time a relevant message is created
-    // The execute function receives the message object, plus db, client, isFirestoreReady, and APP_ID_FOR_FIRESTORE from index.js
+    name: 'messageCreate',
+    once: false,
     async execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
-        // Ignore messages from bots other than the target bot, or from this bot itself
         if (message.author.bot && message.author.id !== TARGET_BOT_ID) return;
-        if (message.author.id === client.user.id) return; // Ignore messages from this bot itself
-
-        // Only process messages in guilds
+        if (message.author.id === client.user.id) return;
         if (!message.guild) return;
 
-        // Crucial: Check if Firestore is ready before attempting any DB operations (for stats tracking)
         if (!isFirestoreReady) {
             console.warn('Trivia Solver: Firestore not ready. Skipping processing.');
             return;
         }
 
-        // Check if the message has an embed and if it's a trivia message
         if (message.embeds.length > 0) {
             const embed = message.embeds[0];
-            // Trigger: if the embed title exists, ends with '?', and there's a description
             if (embed.title && embed.title.endsWith('?') && embed.description) {
                 const question = embed.title;
-                const options = embed.description; // e.g., "**A**: 17\n**B**: 18\n**C**: 15\n**D**: 16"
+                const options = embed.description;
 
-                // ------------------------------------------------
-                // 1. CONSTRUCT THE PROMPT 
-                // ------------------------------------------------
                 const prompt = `You are an expert trivia solver. You have access to a Google Search tool. **Use the search tool to verify the correct fact before providing your answer**, especially for specific trivia like video game facts, dates, or numbers. Given the following multiple-choice question and options, identify the single best answer.
 Provide the letter of the most likely correct option (A, B, C, or D), a confidence score for your chosen answer as a percentage (0-100), and a brief explanation for each option (A, B, C, D) indicating why it is correct or incorrect.
 
@@ -55,27 +44,22 @@ Question: ${question}
 Options:
 ${options}`;
 
-                // FIX 1: DECLARE VARIABLES IN THE WIDER SCOPE
                 let llmResponseParsed = null;
                 let mostLikelyAnswerLetter = null;
                 let confidencePercentage = 0;
                 let explanations = {}; 
-                let jsonString = ''; // Initialize to an empty string
+                let jsonString = ''; 
 
                 try {
-                    // Call the LLM (Gemini API)
                     const chatHistory = [];
                     chatHistory.push({ role: "user", parts: [{ text: prompt }] });
                     
-                    // ------------------------------------------------
-                    // 2. CONSTRUCT PAYLOAD (MAX OUTPUT TOKENS ADDED)
-                    // ------------------------------------------------
                     const payload = {
                         contents: chatHistory,
                         tools: [{ googleSearch: {} }], 
                         generationConfig: {
-                            // FIX 2: INCREASE MAX OUTPUT TO PREVENT TRUNCATION (CRITICAL FIX)
-                            max_output_tokens: 2048
+                            // !!! CRITICAL FIX: INCREASE TOKEN LIMIT TO MAX TO AVOID TRUNCATION !!!
+                            max_output_tokens: 8192
                         }
                     };
                     
@@ -102,7 +86,7 @@ ${options}`;
                         
                         const rawJsonText = result.candidates[0].content.parts[0].text;
                         
-                        jsonString = rawJsonText; // Use rawJsonText as the default
+                        jsonString = rawJsonText;
                         
                         const startMarker = "START_JSON";
                         const endMarker = "END_JSON";
@@ -111,22 +95,18 @@ ${options}`;
                         const endIndex = rawJsonText.indexOf(endMarker);
 
                         if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
-                            // Delimiter found: extract and trim
                             jsonString = rawJsonText.substring(startIndex + startMarker.length, endIndex).trim();
                         } else {
-                            // Delimiter not found: attempt robust cleanup
                             console.warn('Trivia Solver: Could not find JSON delimiters. Attempting robust cleanup.');
                             
-                            // STRIP COMMON MARKDOWN CODE BLOCKS
                             jsonString = jsonString.replace(/```json\s*/g, '')
                                                    .replace(/```\s*$/g, '')
                                                    .trim();
                         }
                         
-                        // FIX 3: ATTEMPT TO REPAIR TRUNCATED JSON BEFORE PARSING
+                        // ATTEMPT TO REPAIR TRUNCATED JSON BEFORE PARSING
                         if (!jsonString.endsWith('}')) {
                             // This attempts to fix partial JSON caused by token limits
-                            // It replaces the final trailing comma (if present) and appends a closing brace
                             jsonString = jsonString.trim().replace(/,$/, '').concat('}');
                             console.warn('Trivia Solver: Attempted to repair truncated JSON by adding "}".');
                         }
@@ -151,7 +131,6 @@ ${options}`;
                     }
 
                 } catch (error) {
-                    // This catch block handles the SyntaxError (and other API errors)
                     console.error('Trivia Solver: Error calling LLM API or parsing JSON for question:', question, error);
                 }
 
@@ -187,7 +166,6 @@ ${options}`;
                     statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); 
                 } else {
                     replyContent += `I apologize, but I couldn't determine a definitive answer from the LLM.`;
-                    // jsonString is now defined, so this won't throw a ReferenceError
                     if (jsonString.length > 0) { 
                          replyContent += `\nRaw LLM Text (Pre-Parse): \n\`\`\`\n${jsonString.substring(0, 500)}...\n\`\`\``;
                     }
