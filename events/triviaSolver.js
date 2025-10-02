@@ -1,28 +1,59 @@
-const statsTracker = require('../utils/statsTracker');
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { doc, collection, setDoc } = require('firebase/firestore');
+const statsTracker = require('../utils/statsTracker'); // Import Stats Tracker
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js'); // Import ActionRowBuilder, ButtonBuilder, ButtonStyle
+const { doc, collection, setDoc } = require('firebase/firestore'); // Import Firestore functions
 
-const TARGET_BOT_ID = '493316754689359874';
-const GEMINI_MODEL = 'gemini-2.5-flash';
+// Configuration specific to this listener
+const TARGET_BOT_ID = '493316754689359874'; // User ID of the other bot posting trivia
+const GEMINI_MODEL = 'gemini-2.5-flash'; // Using a stable and capable model
+
+// --- NEW FUNCTION: FALLBACK TEXT PARSER ---
+function extractFallbackData(text) {
+    const data = {
+        mostLikelyAnswer: null,
+        confidence: 0
+    };
+
+    // Regex 1: Find the most_likely_answer field (A, B, C, or D)
+    const answerMatch = text.match(/"most_likely_answer":\s*"([A-D])"/i);
+    if (answerMatch && answerMatch[1]) {
+        data.mostLikelyAnswer = answerMatch[1].toUpperCase();
+    }
+
+    // Regex 2: Find the confidence_percentage field (0-100)
+    const confidenceMatch = text.match(/"confidence_percentage":\s*(\d+)/);
+    if (confidenceMatch && confidenceMatch[1]) {
+        data.confidence = parseInt(confidenceMatch[1], 10);
+    }
+
+    return data;
+}
+// ------------------------------------------
 
 module.exports = {
-    name: 'messageCreate',
-    once: false,
+    name: 'messageCreate', // This event listener will also listen for messageCreate events
+    once: false, // This event should run every time a relevant message is created
+    // The execute function receives the message object, plus db, client, isFirestoreReady, and APP_ID_FOR_FIRESTORE from index.js
     async execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
+        // Ignore messages from bots other than the target bot, or from this bot itself
         if (message.author.bot && message.author.id !== TARGET_BOT_ID) return;
-        if (message.author.id === client.user.id) return;
+        if (message.author.id === client.user.id) return; // Ignore messages from this bot itself
+
+        // Only process messages in guilds
         if (!message.guild) return;
 
+        // Crucial: Check if Firestore is ready before attempting any DB operations (for stats tracking)
         if (!isFirestoreReady) {
             console.warn('Trivia Solver: Firestore not ready. Skipping processing.');
             return;
         }
 
+        // Check if the message has an embed and if it's a trivia message
         if (message.embeds.length > 0) {
             const embed = message.embeds[0];
+            // Trigger: if the embed title exists, ends with '?', and there's a description
             if (embed.title && embed.title.endsWith('?') && embed.description) {
                 const question = embed.title;
-                const options = embed.description;
+                const options = embed.description; // e.g., "**A**: 17\n**B**: 18\n**C**: 15\n**D**: 16"
 
                 const prompt = `You are an expert trivia solver. You have access to a Google Search tool. **Use the search tool to verify the correct fact before providing your answer**, especially for specific trivia like video game facts, dates, or numbers. Given the following multiple-choice question and options, identify the single best answer.
 Provide the letter of the most likely correct option (A, B, C, or D), a confidence score for your chosen answer as a percentage (0-100), and a brief explanation for each option (A, B, C, D) indicating why it is correct or incorrect.
@@ -49,6 +80,7 @@ ${options}`;
                 let confidencePercentage = 0;
                 let explanations = {}; 
                 let jsonString = ''; 
+                let rawJsonText = ''; // New variable to store the original text output for fallback
 
                 try {
                     const chatHistory = [];
@@ -58,7 +90,6 @@ ${options}`;
                         contents: chatHistory,
                         tools: [{ googleSearch: {} }], 
                         generationConfig: {
-                            // !!! CRITICAL FIX: INCREASE TOKEN LIMIT TO MAX TO AVOID TRUNCATION !!!
                             max_output_tokens: 8192
                         }
                     };
@@ -84,8 +115,7 @@ ${options}`;
                         result.candidates[0].content && result.candidates[0].content.parts &&
                         result.candidates[0].content.parts.length > 0) {
                         
-                        const rawJsonText = result.candidates[0].content.parts[0].text;
-                        
+                        rawJsonText = result.candidates[0].content.parts[0].text;
                         jsonString = rawJsonText;
                         
                         const startMarker = "START_JSON";
@@ -98,10 +128,7 @@ ${options}`;
                             jsonString = rawJsonText.substring(startIndex + startMarker.length, endIndex).trim();
                         } else {
                             console.warn('Trivia Solver: Could not find JSON delimiters. Attempting robust cleanup.');
-                            
-                            jsonString = jsonString.replace(/```json\s*/g, '')
-                                                   .replace(/```\s*$/g, '')
-                                                   .trim();
+                            jsonString = jsonString.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
                         }
                         
                         // ATTEMPT TO REPAIR TRUNCATED JSON BEFORE PARSING
@@ -111,14 +138,14 @@ ${options}`;
                             console.warn('Trivia Solver: Attempted to repair truncated JSON by adding "}".');
                         }
                         
-                        llmResponseParsed = JSON.parse(jsonString); 
+                        llmResponseParsed = JSON.parse(jsonString); // PRIMARY PARSE ATTEMPT
 
                         mostLikelyAnswerLetter = (llmResponseParsed.most_likely_answer || '').toUpperCase();
                         confidencePercentage = llmResponseParsed.confidence_percentage ?? 0;
-                        explanations.A = llmResponseParsed.explanation_A || 'No explanation provided.';
-                        explanations.B = llmResponseParsed.explanation_B || 'No explanation provided.';
-                        explanations.C = llmResponseParsed.explanation_C || 'No explanation provided.';
-                        explanations.D = llmResponseParsed.explanation_D || 'No explanation provided.';
+                        explanations.A = llmResponseParsed.explanation_A || 'No explanation provided (JSON parse successful).';
+                        explanations.B = llmResponseParsed.explanation_B || 'No explanation provided (JSON parse successful).';
+                        explanations.C = llmResponseParsed.explanation_C || 'No explanation provided (JSON parse successful).';
+                        explanations.D = llmResponseParsed.explanation_D || 'No explanation provided (JSON parse successful).';
 
                         const validAnswers = ['A', 'B', 'C', 'D'];
                         if (!validAnswers.includes(mostLikelyAnswerLetter)) {
@@ -131,7 +158,25 @@ ${options}`;
                     }
 
                 } catch (error) {
+                    // CATCH BLOCK: RUN FALLBACK EXTRACTION ON FAILURE
                     console.error('Trivia Solver: Error calling LLM API or parsing JSON for question:', question, error);
+                    
+                    // Only run fallback if we have raw text to work with (i.e., API call succeeded but parsing failed)
+                    if (rawJsonText.length > 0) {
+                        console.warn('Trivia Solver: Running fallback text extraction to salvage answer.');
+                        const fallbackData = extractFallbackData(rawJsonText);
+                        
+                        mostLikelyAnswerLetter = fallbackData.mostLikelyAnswer;
+                        confidencePercentage = fallbackData.confidence;
+                        
+                        // Clear explanations since we couldn't parse the full JSON
+                        explanations = {
+                            A: 'Explanation unavailable (JSON parse error).',
+                            B: 'Explanation unavailable (JSON parse error).',
+                            C: 'Explanation unavailable (JSON parse error).',
+                            D: 'Explanation unavailable (JSON parse error).'
+                        };
+                    }
                 }
 
                 let replyContent = `**Trivia Answer for:** \`${question}\`\n`;
@@ -161,7 +206,10 @@ ${options}`;
                 const row = new ActionRowBuilder().addComponents(buttons);
 
                 if (mostLikelyAnswerLetter) {
-                    replyContent += `Most Likely: \`${mostLikelyAnswerLetter}\` (Confidence: ${confidencePercentage}%)\n`;
+                    // ADDED NOTE if the answer was salvaged via regex
+                    const confidenceNote = llmResponseParsed ? '' : ' (Salvaged via Text Parsing)';
+                    
+                    replyContent += `Most Likely: \`${mostLikelyAnswerLetter}\` (Confidence: ${confidencePercentage}%) ${confidenceNote}\n`;
                     replyContent += `Click a button for an explanation.\n`;
                     statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); 
                 } else {
