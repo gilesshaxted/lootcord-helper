@@ -200,6 +200,12 @@ Examples:
 - Jumbled: "tichstos" -> scottish
 - Jumbled: "aiecstssna" -> assistance
 - Jumbled: "cergha" -> charge
+- Jumbled: "allterriy" -> artillery
+- Jumbled: "psaeh" -> shape
+- Jumbled: "nsatriaalu" -> australian
+- Jumbled: "eiiutstnt" -> institute
+- Jumbled: "gwnorertis" -> songwriter
+- Jumbled: "roflam" -> formal
 
 Jumbled letters: ${scrambledLetters}`;
 
