@@ -206,6 +206,7 @@ Examples:
 - Jumbled: "eiiutstnt" -> institute
 - Jumbled: "gwnorertis" -> songwriter
 - Jumbled: "roflam" -> formal
+- Jumbled: "reectn" -> centre
 
 Jumbled letters: ${scrambledLetters}`;
 
