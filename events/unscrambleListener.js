@@ -207,6 +207,7 @@ Examples:
 - Jumbled: "gwnorertis" -> songwriter
 - Jumbled: "roflam" -> formal
 - Jumbled: "reectn" -> centre
+- Jumbled: "vadrhra" -> harvard
 
 Jumbled letters: ${scrambledLetters}`;
 
