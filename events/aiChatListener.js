@@ -54,14 +54,12 @@ module.exports = {
             const payload = {
                 contents: chatHistory,
                 systemInstruction: { parts: [{ text: systemPrompt }] },
-                config: {
+                // FIX: Renamed 'config' to 'generationConfig' as required by the API
+                generationConfig: { 
                     temperature: 0.9,
                     maxOutputTokens: 100
                 }
             };
-
-            // Log the payload details being sent
-            // console.log("[AI Chat Debug] Payload:", JSON.stringify(payload)); // Too verbose, potentially expose content
 
             const response = await fetch(apiUrl, {
                 method: 'POST',
@@ -73,7 +71,7 @@ module.exports = {
             if (!response.ok) {
                  console.error(`[AI Chat Debug] API HTTP Error: ${response.status} ${response.statusText}`);
                  const errorBody = await response.json().catch(() => ({}));
-                 console.error('[AI Chat Debug] Raw Error Body:', JSON.stringify(errorBody, null, 2));
+                 console.error('[AI Chat Debug] Raw Error Body (API Failed):', JSON.stringify(errorBody, null, 2));
                  return;
             }
 
@@ -89,7 +87,7 @@ module.exports = {
             } else {
                  // Log if response is empty or filtered
                  console.error('[AI Chat Debug] API Failure: No text found in candidate response (may be filtered or empty).');
-                 console.error('[AI Chat Debug] Raw Result:', JSON.stringify(result, null, 2));
+                 console.error('[AI Chat Debug] Raw Result (LLM Filtered):', JSON.stringify(result, null, 2));
             }
         } catch (error) {
             console.error('AI Chat Listener: Critical Error calling LLM or sending message:', error);
