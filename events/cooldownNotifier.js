@@ -89,7 +89,7 @@ async function sendCooldownPing(client, db, userId, channelId, type, item, coold
             break;
         case 'farm':
             notificationType = 'farmCooldown';
-            pingMessage = `<@${userId}> your **${item}** farming cooldown is over!`;
+            pingMessage = `<@${userId}> your **farming** cooldown is over! Last find was **${item}**`;
             break;
         case 'med':
             notificationType = 'medCooldown';
