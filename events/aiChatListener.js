@@ -2,7 +2,7 @@ const { Client, GatewayIntentBits } = require('discord.js');
 
 // --- Configuration ---
 const TARGET_CHANNEL_ID = '1311341302570549401'; // The channel where the bot should chat
-const RESPONSE_CHANCE = 1.00; // Currently set to 1.00 for guaranteed response during testing
+const RESPONSE_CHANCE = 0.25; // Currently set to 1.00 for guaranteed response during testing
 
 module.exports = {
     name: 'messageCreate',
