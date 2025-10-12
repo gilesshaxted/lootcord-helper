@@ -54,10 +54,10 @@ module.exports = {
             const payload = {
                 contents: chatHistory,
                 systemInstruction: { parts: [{ text: systemPrompt }] },
-                // FIX: Renamed 'config' to 'generationConfig' as required by the API
                 generationConfig: { 
                     temperature: 0.9,
-                    maxOutputTokens: 100
+                    // FIX: Increased maxOutputTokens to give the AI space to finish its concise response
+                    maxOutputTokens: 256 
                 }
             };
 
