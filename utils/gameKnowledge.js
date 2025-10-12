@@ -7,7 +7,7 @@ const LOOTCORD_GAME_KNOWLEDGE = `
 // This database contains comprehensive facts about the game. Use this information to answer user questions accurately.
 
 // I. CORE MECHANICS & CURRENCY
-- Primary Currency: Scrap (SC).
+- Primary Currency: Scrap (SC). The emoji for this is <:scrap:1297320884255588362>.
 - Skills: Strength (affects damage output, e.g., 1.30x damage), Luck (affects loot quality).
 - Cooldowns: Farm (60 minutes), Vote (12 hours).
 - Status Effects: Includes Bleeding (grants 50% / 1.5x damage buff), Radiation, and Poison.
