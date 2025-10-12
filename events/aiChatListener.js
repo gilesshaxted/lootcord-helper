@@ -2,37 +2,44 @@ const { Client, GatewayIntentBits } = require('discord.js');
 
 // --- Configuration ---
 const TARGET_CHANNEL_ID = '1311341302570549401'; // The channel where the bot should chat
-const RESPONSE_CHANCE = 0.25; // Currently set to 1.00 for guaranteed response during testing
+const RESPONSE_CHANCE = 0.25; // Base chance of responding
 
 module.exports = {
     name: 'messageCreate',
     once: false,
-    async execute(message) {
+    // Injecting client here to check for mentions/replies
+    async execute(message, db, client) { 
         // 1. Initial Checks and Channel Filter
-        if (message.author.bot) {
-            // console.log(`[AI Chat Debug] Ignoring message: From a bot (${message.author.tag}).`);
+        if (message.author.bot || message.channel.id !== TARGET_CHANNEL_ID) {
             return;
         }
-        if (message.channel.id !== TARGET_CHANNEL_ID) {
-            // console.log(`[AI Chat Debug] Ignoring message: Not in target channel (${message.channel.id}).`);
-            return;
-        }
+
+        const botId = client.user.id;
+        const isDirectlyAddressed = message.mentions.has(botId) || 
+                                     (message.reference && message.type === 19); // Type 19 is reply
 
         console.log(`\n--- [AI Chat Debug] Message received in target channel from ${message.author.tag} ---`);
+        console.log(`[AI Chat Debug] Directly Addressed: ${isDirectlyAddressed}`);
         console.log(`[AI Chat Debug] Message content: "${message.content.substring(0, 50)}..."`);
 
-
-        // 2. Apply the probability filter
-        const roll = Math.random();
-        if (roll > RESPONSE_CHANCE) {
-            console.log(`[AI Chat Debug] Roll failed (${roll.toFixed(4)} vs ${RESPONSE_CHANCE}). Skipping response.`);
-            return;
+        // 2. Determine Response Trigger
+        let shouldRespond = false;
+        
+        if (isDirectlyAddressed) {
+            shouldRespond = true;
+            console.log(`[AI Chat Debug] Forced response due to mention/reply.`);
+        } else {
+            const roll = Math.random();
+            if (roll <= RESPONSE_CHANCE) {
+                shouldRespond = true;
+                console.log(`[AI Chat Debug] Roll successful (${roll.toFixed(4)} vs ${RESPONSE_CHANCE}). Proceeding to API call.`);
+            } else {
+                console.log(`[AI Chat Debug] Roll failed (${roll.toFixed(4)} vs ${RESPONSE_CHANCE}). Skipping response.`);
+                return;
+            }
         }
         
-        console.log(`[AI Chat Debug] Roll successful (${roll.toFixed(4)}). Proceeding to API call.`);
-
-
-        // 3. Define the LLM's persona and goal
+        // 3. Define the LLM's persona and goal (General Chat Persona)
         const systemPrompt = "You are a friendly, enthusiastic, and slightly silly Discord bot. You are designed to be concise, social, and you always respond in 1-2 sentences. Keep your responses relevant to the user's message and the conversation context.";
         const userQuery = message.content;
         
@@ -56,7 +63,6 @@ module.exports = {
                 systemInstruction: { parts: [{ text: systemPrompt }] },
                 generationConfig: { 
                     temperature: 0.9,
-                    // FIX: Increased maxOutputTokens to give the AI space to complete its processing and response
                     maxOutputTokens: 1024 
                 }
             };
