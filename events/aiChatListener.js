@@ -1,4 +1,5 @@
 const { Client, GatewayIntentBits } = require('discord.js');
+const { LOOTCORD_GAME_KNOWLEDGE } = require('../utils/gameKnowledge'); // 1. Import the knowledge file
 
 // --- Configuration ---
 const TARGET_CHANNEL_ID = '1311341302570549401'; // The channel where the bot should chat
@@ -7,16 +8,16 @@ const RESPONSE_CHANCE = 0.25; // Base chance of responding
 module.exports = {
     name: 'messageCreate',
     once: false,
-    // Injecting client here to check for mentions/replies
-    async execute(message, db, client) { 
+    async execute(message) {
         // 1. Initial Checks and Channel Filter
         if (message.author.bot || message.channel.id !== TARGET_CHANNEL_ID) {
             return;
         }
 
+        const client = message.client; // Get client for bot ID check
         const botId = client.user.id;
         const isDirectlyAddressed = message.mentions.has(botId) || 
-                                     (message.reference && message.type === 19); // Type 19 is reply
+                                     (message.reference && message.type === 19);
 
         console.log(`\n--- [AI Chat Debug] Message received in target channel from ${message.author.tag} ---`);
         console.log(`[AI Chat Debug] Directly Addressed: ${isDirectlyAddressed}`);
@@ -39,11 +40,19 @@ module.exports = {
             }
         }
         
-        // 3. Define the LLM's persona and goal (General Chat Persona)
-        const systemPrompt = "You are a friendly, enthusiastic, and slightly silly Discord bot. You are designed to be concise, social, and you always respond in 1-2 sentences. Keep your responses relevant to the user's message and the conversation context.";
+        // 3. Define the LLM's persona and inject knowledge
+        const generalPersona = "You are Loot Helper, a helpful, enthusiastic, and slightly silly Discord bot. You are designed to be concise, friendly, and you always respond in 1-2 sentences.";
+        
+        // The new system prompt directs the AI to use the knowledge base.
+        const systemPrompt = `${generalPersona} You have been provided with a game database below. When asked a question about the game, reference this database. If the question is about something else, respond socially but concisely.
+
+${LOOTCORD_GAME_KNOWLEDGE}
+
+Your response must be short and focused.`;
+
         const userQuery = message.content;
         
-        // Use the user's message as chat history for the AI
+        // The model will read the full prompt and answer based on the facts provided.
         const chatHistory = [{ role: "user", parts: [{ text: userQuery }] }];
 
         try {
@@ -51,7 +60,7 @@ module.exports = {
             const apiKey = process.env.GOOGLE_API_KEY; 
             if (!apiKey) {
                 console.error('AI Chat Listener: GOOGLE_API_KEY not set. Cannot generate response.');
-                await message.channel.send(`*Self-diagnostics: AI key is missing. Cannot chat.*`); // Send bot-side error
+                await message.channel.send(`*Self-diagnostics: AI key is missing. Cannot chat.*`);
                 return;
             }
 
@@ -91,7 +100,6 @@ module.exports = {
                 await message.channel.send({ content: aiResponse });
                 console.log(`[AI Chat Debug] Response sent: "${aiResponse.substring(0, 50)}..."`);
             } else {
-                 // Log if response is empty or filtered
                  console.error('[AI Chat Debug] API Failure: No text found in candidate response (may be filtered or empty).');
                  console.error('[AI Chat Debug] Raw Result (LLM Filtered):', JSON.stringify(result, null, 2));
             }
