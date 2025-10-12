@@ -56,8 +56,8 @@ module.exports = {
                 systemInstruction: { parts: [{ text: systemPrompt }] },
                 generationConfig: { 
                     temperature: 0.9,
-                    // FIX: Increased maxOutputTokens to give the AI space to finish its concise response
-                    maxOutputTokens: 256 
+                    // FIX: Increased maxOutputTokens to give the AI space to complete its processing and response
+                    maxOutputTokens: 1024 
                 }
             };
 
