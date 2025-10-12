@@ -1,43 +1,53 @@
-// This module holds all factual knowledge for the Lootcord game.
+// This module holds all factual knowledge scraped from the Lootcord documentation guides, items, and enemies pages.
+// The AI uses this entire string as context to provide accurate, specific, and detailed game answers.
+
 const LOOTCORD_GAME_KNOWLEDGE = `
---- LOOTCORD GAME DATABASE ---
-// This detailed information is provided to guide your responses. Prioritize this information over general knowledge.
+--- LOOTCORD GAME KNOWLEDGE BASE (VERSION 3.0 - AGGREGATED GUIDES & FAQ) ---
 
-// 1. ECONOMY & CURRENCY
-- Currency: Scrap (SC), represented by <:scrap:974201425125068830>.
-- Server-Side Economies: Some servers run special economies where the /giveitem command is restricted or tied to server events. Always check server rules.
-- Trading: Players trade items for scrap or other items directly.
+// This database contains comprehensive facts about the game. Use this information to answer user questions accurately.
 
-// 2. CHARACTER & SKILLS
-- Health: Max 100 HP. Use medical items to recover.
-- Skills: Strength (Multiplies melee/range damage), Luck (Affects crate/mob loot quality).
-- Cooldowns: Farm (60m), Vote (12h), Attack (varies by weapon).
+// I. CORE MECHANICS & CURRENCY
+- Primary Currency: Scrap (SC).
+- Skills: Strength (affects damage output, e.g., 1.30x damage), Luck (affects loot quality).
+- Cooldowns: Farm (60 minutes), Vote (12 hours).
+- Status Effects: Includes Bleeding (grants 50% / 1.5x damage buff), Radiation, and Poison.
 
-// 3. COMBAT & WEAPONS
-- Melee Damage: Affected by Strength skill. Examples include Bone Knife, Machete, Chainsaw.
-- Ranged Damage: Affected by Strength skill. Damage varies significantly by AMMO TYPE.
-- Bleeding Buff: Grants 50% (1.5x) extra damage if active.
-- Weapons:
-    - Bolt Rifle: High single-shot damage. Long cooldown (2h 1m).
-    - L96: Extremely high damage, longest cooldown (3h 37m 45s).
-    - Waterpipe Shotgun: Very short range, high burst damage. Best with Handmade Shells.
+// II. COMBAT & DAMAGE
+- DAMAGE CALCULATION: (Base Damage * Strength Skill Multiplier * Bleeding Multiplier).
+- Bleeding Status: Grants 50% (1.5x) extra damage if active.
+- Attack Mode: Can be 'Random' (forced via serversettings) or 'Selectable' (allows attacking specific players via 't-use [weapon] @player'). Check status with 'serversettings'.
+- Passive Shield: Grants a 24-hour attack shield upon death. It is removed instantly if the player attacks someone.
 
-// 4. ITEMS & INVENTORY
-- Inventory Space: Limited. Use Storage Containers to increase capacity.
-- Repair Kit: Used to repair weapons (requires component scraps).
-- Medical Items: Bandage (Minor heal, short CD), Medical Syringe (Medium heal), Large Medkit (Major heal, long CD: 44m 42s).
-- Crates/Loot: Elite Crate and Military Crates drop high-value components.
+// III. ENEMIES (MOBS)
+- Heavy Scientist: HIGH HP, drops ELITE LOOT (HQM, components). Recommended to use mid-to-long range rifles (LR-300, M249).
+- Bradley APC: EXTREME HP. Must be engaged with EXPLOSIVE AMMUNITION (Rockets, 40mm HE Grenades).
+- Mob Spawns: Mobs trigger channel renames (e.g., to '🐻╏heavy' or '🚨╏brad') in designated channels.
 
-// 5. ENEMIES (MOBS)
-- Heavy Scientist: Drops the best loot. High HP. Recommended to use mid-to-long range rifles (LR-300) to defeat.
-- Bradley APC: Extremely high HP. Requires Explosive ammunition (Rockets) to defeat.
-- Patrol Helicopter: High HP. Requires anti-air ammunition.
-- Scientist/Tunnel Dweller: Easier to defeat, drop basic resources.
+// IV. CLANS & BASE REPAIR
+- Clan Repair Cooldowns: Material-specific cooldowns.
+    - Wood: 2 minutes (shortest CD)
+    - Stone: 10 minutes
+    - Metal: 25 minutes
+    - High Quality Metal: 60 minutes (longest CD)
+- Raiding: Clans can raid each other using powerful explosives.
 
-// 6. CLAN MECHANICS
-- Clan Repair: Use Wood, Stone, Metal, or HQM to repair the base. Each material has a separate cooldown.
-- Raiding: Clans raid each other for resources. Success depends on defense level.
---- END DATABASE ---
+// V. DEATH AND PLAYER STATUS
+- Death Consequence: If killed by another player, you lose 75% of your scrap and 2 or more items (depending on inventory size).
+- Inactive Player: A player inactive for more than 2 weeks is automatically deactivated from all servers to keep the attack pool active.
+
+// VI. PLAYER COMMANDS & MECHANICS (FAQ)
+- Main Command List: View all commands with 't-help'.
+- Profile/Stats: Use 'profile'.
+- Inventory Check: Use 'inv' to view items, health, money, and equipped storage container. Can check other players' inventories.
+- Item Usage: Use 'use' (e.g., 't-use bandage' or 't-use crate'). Opening crates uses the 'use' command: 't-use crate'.
+- Item Info: Use 'items' to view the full list. Specify an item for details.
+- Buying/Selling: Use 'buy [item]' or 'sell [item]'. Specify an amount to purchase/sell.
+- Experience/Level Up: Gain XP by opening boxes, crafting, or killing. Check progress with 'xp'. Leveling up rewards a crate and unlocks new recipes.
+- Leaderboards: View server or global rankings with 'leaderboard'.
+- Settings: Use 'mysettings' to view/change notification settings.
+- Prefix Change: Change the bot's prefix using 'setprefix' (requires Manage Server permission). Example: 't-setprefix .'
+- Black Market: List and search items for sale by other players using the 'blackmarket' command.
+--- END KNOWLEDGE BASE ---
 `;
 
 module.exports = { LOOTCORD_GAME_KNOWLEDGE };
