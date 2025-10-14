@@ -208,6 +208,7 @@ Examples:
 - Jumbled: "roflam" -> formal
 - Jumbled: "reectn" -> centre
 - Jumbled: "vadrhra" -> harvard
+- Jumbled: "oblhacer" -> bachelor
 
 Jumbled letters: ${scrambledLetters}`;
 
