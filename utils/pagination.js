@@ -2,7 +2,7 @@ const { ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, C
 
 // --- Pagination Specific Configuration ---
 const CHANNELS_PER_PAGE = 25; // Max options for StringSelectMenuBuilder
-// const TARGET_CATEGORY_ID = '1192414248299675663'; // Removed specific category ID
+const TARGET_CATEGORY_ID = '1192414248299675663'; // Moved from channel-set.js for pagination continuity
 
 /**
  * Creates the content and components for a paginated channel selection message.
@@ -11,18 +11,18 @@ const CHANNELS_PER_PAGE = 25; // Max options for StringSelectMenuBuilder
  * @returns {Promise<{content: string, components: ActionRowBuilder[]}>} The message content and components.
  */
 async function createChannelPaginationMessage(guild, currentPage) {
-    // --- UPDATED: Removed category filter ---
-    // Now filters only by text channel type and sorts by position
-    const allChannelsInGuild = guild.channels.cache.filter(channel =>
-        channel.type === ChannelType.GuildText // Only filter by text channel type
+    // Filter by TARGET_CATEGORY_ID and text channel type
+    const allChannelsInTargetCategory = guild.channels.cache.filter(channel =>
+        channel.parentId === TARGET_CATEGORY_ID &&
+        channel.type === ChannelType.GuildText
     ).sort((a, b) => a.position - b.position);
 
-    const totalChannels = allChannelsInGuild.size;
+    const totalChannels = allChannelsInTargetCategory.size;
     const totalPages = Math.ceil(totalChannels / CHANNELS_PER_PAGE);
 
     if (totalChannels === 0) {
         return {
-            content: `No text channels found in this guild that the bot can see.`,
+            content: `No text channels found in the specified category (<#${TARGET_CATEGORY_ID}>) that the bot can see.`,
             components: []
         };
     }
@@ -31,7 +31,7 @@ async function createChannelPaginationMessage(guild, currentPage) {
     if (currentPage < 0) currentPage = 0;
     if (currentPage >= totalPages) currentPage = totalPages - 1;
 
-    const channelsForPage = allChannelsInGuild.toJSON().slice(
+    const channelsForPage = allChannelsInTargetCategory.toJSON().slice(
         currentPage * CHANNELS_PER_PAGE,
         (currentPage + 1) * CHANNELS_PER_PAGE
     );
@@ -63,7 +63,7 @@ async function createChannelPaginationMessage(guild, currentPage) {
     const selectRow = new ActionRowBuilder().addComponents(selectMenu);
     const buttonRow = new ActionRowBuilder().addComponents(prevButton, nextButton);
 
-    let contentMessage = `Please select channels from this guild. Page ${currentPage + 1} of ${totalPages}:`;
+    let contentMessage = `Please select channels from the category (<#${TARGET_CATEGORY_ID}>). Page ${currentPage + 1} of ${totalPages}:`;
     if (totalChannels > CHANNELS_PER_PAGE) {
         contentMessage += `\n(Showing ${channelsForPage.length} of ${totalChannels} channels)`;
     }
