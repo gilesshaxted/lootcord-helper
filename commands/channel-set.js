@@ -10,10 +10,9 @@ module.exports = {
         .setName('channel-set')
         .setDescription('Opens a paginated menu to select multiple channels from a specific category.'),
 
-    // The execute function now sends a message with a StringSelectMenu
-    // containing only channels from the specified category for the current page.
-    async execute(interaction, db, client) { // db is passed but not used directly in this part of the command
-        // NOTE: interaction is already deferred globally in index.js
+    async execute(interaction, db, client) {
+        // NOTE: interaction is already deferred globally in index.js. 
+        // DO NOT use interaction.deferReply() here.
 
         const guild = interaction.guild;
 
@@ -23,12 +22,13 @@ module.exports = {
         }
         
         // Use the centralized utility function to create the initial (Page 0) message components
-        // The utility function handles the channel filtering based on TARGET_CATEGORY_ID
+        // The filtering and pagination logic is handled inside this utility function.
         const { content, components } = await createChannelPaginationMessage(guild, 0);
 
         // Handle case where no channels are found (content will have been updated by utility)
         if (components.length === 0) {
-            return await interaction.editReply({
+            // Use editReply because the command was deferred in index.js
+            return await interaction.editReply({ 
                 content: content,
                 flags: MessageFlags.Ephemeral
             });
