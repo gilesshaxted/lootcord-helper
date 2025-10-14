@@ -188,12 +188,11 @@ module.exports = {
             const guildDocRef = doc(collection(db, `Guilds`), guild.id);
             let successCount = 0;
             let failureCount = 0;
-            let deleteCount = 0;
 
-            // --- NEW: Data structure for saving configured channels as an array ---
+            // --- NEW OPTIMIZATION: Prepare data for Atomic Save Operation (ONE WRITE) ---
             const newConfiguredChannels = [];
 
-            // --- Process Selected Channels (Set/Keep) ---
+            // 1. Process Selected Channels (Set/Keep)
             for (const channelId of selectedChannelIds) {
                 const channel = guild.channels.cache.get(channelId);
                 
@@ -217,31 +216,28 @@ module.exports = {
             
             // --- Atomic Save Operation (ONE WRITE) ---
             try {
-                // 1. Overwrite Guild Meta-doc and include the new array of configured channels
+                // Overwrite the configuredChannels array in the Guild doc.
                 await setDoc(guildDocRef, { 
                     guildId: guild.id, 
                     guildName: guild.name, 
                     lastUpdated: new Date().toISOString(),
-                    configuredChannels: newConfiguredChannels // Save the entire list
+                    configuredChannels: newConfiguredChannels // Save the entire list in one go
                 }, { merge: true });
-
-                // Since we are overwriting the array, we don't need the individual subcollection documents 
-                // anymore for the primary configuration check.
-                // NOTE: The MobDetect/Startup checks will need adjustment to read from this array, 
-                // but this fixes the quota issue immediately.
 
             } catch (error) {
                  // Log error from the single atomic write operation
                 console.error(`Error performing ATOMIC WRITE for channel configuration in guild ${guild.id}:`, error);
-                failureCount = selectedChannelIds.length; // Mark all as failed if atomic write fails
+                // The resource exhaustion error is often from too many writes/reads. 
+                // We mark successCount as 0 if the atomic write failed.
+                successCount = 0;
+                failureCount = selectedChannelIds.length;
             }
 
             let replyContent = `✅ Configuration saved: Updated **${successCount}** channels.`;
-            // NOTE: We no longer have a reliable way to report deleteCount without a prior read, 
-            // but the previous subcollection documents are technically redundant now.
+            // NOTE: Reporting deleteCount is removed as we now overwrite the array, which handles deselection implicitly.
 
             if (failureCount > 0) {
-                replyContent += `\n❌ Failed to save configuration due to a database error. Please check logs.`;
+                replyContent += `\n❌ Failed to save configuration due to a database error (Quota Exceeded). Please check logs.`;
             }
 
             // After saving, reload the page to show the user the updated state
