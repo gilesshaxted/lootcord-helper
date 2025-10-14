@@ -156,6 +156,9 @@ const client = new Client({
     ]
 });
 
+// INCREASE MAX LISTENERS TO AVOID WARNING/CONGESTION
+client.setMaxListeners(20); 
+
 client.commands = new Collection();
 const slashCommandsToRegister = [];
 const commandsPath = path.join(__dirname, 'commands');
