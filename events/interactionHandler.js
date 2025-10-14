@@ -1,4 +1,4 @@
-const { doc, collection, getDoc, setDoc } = require('firebase/firestore');
+                const { doc, collection, getDoc, setDoc } = require('firebase/firestore');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const { WEAPON_DATA } = require('../utils/damageData');
 const paginationHelpers = require('../utils/pagination');
@@ -134,7 +134,7 @@ module.exports = {
         // --- Pagination Logic ---
         if (interaction.isButton() && (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_'))) {
             
-            // FIX: Encapsulate deferUpdate to handle timeout rejection gracefully
+            // CRITICAL FIX: Encapsulate deferUpdate to handle timeout rejection gracefully
             try {
                 await interaction.deferUpdate();
             } catch (error) {
