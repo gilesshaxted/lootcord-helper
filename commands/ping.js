@@ -8,13 +8,12 @@ module.exports = {
 
     // The execute function contains the logic for when the command is used.
     async execute(interaction) {
-        // Defer the reply to acknowledge the interaction immediately.
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
+        // NOTE: interaction is already deferred globally in index.js
+        
         // Calculate the bot's current WebSocket heartbeat latency in milliseconds.
         const latency_ms = Math.round(interaction.client.ws.ping);
 
-        // Edit the deferred reply with the actual latency.
-        await interaction.editReply({ content: `Pong! 🏓 My ping is \`${latency_ms}ms\`.`, flags: MessageFlags.Ephemeral });
+        // We use editReply because the interaction was already deferred.
+        await interaction.editReply({ content: `Pong! 🏓 My ping is \`${latency_ms}ms\`.`, flags: 0 });
     },
 };
