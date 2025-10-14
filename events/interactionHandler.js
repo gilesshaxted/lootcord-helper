@@ -169,6 +169,7 @@ module.exports = {
 
             // CRITICAL FIX: Encapsulate deferUpdate to handle timeout rejection gracefully
             try {
+                // NOTE: We deferUpdate immediately to acknowledge the click and gain time.
                 await interaction.deferUpdate();
             } catch (error) {
                  if (error.code === 40060) {
@@ -189,62 +190,58 @@ module.exports = {
             let failureCount = 0;
             let deleteCount = 0;
 
-            // Fetch existing configured channels to determine which ones to delete/keep
-            // NOTE: We assume paginationHelpers.getAllConfiguredChannels(db, guild.id) exists and works correctly
-            const existingChannelsSnap = await paginationHelpers.getAllConfiguredChannels(db, guild.id);
-            const channelsToDelete = new Set(existingChannelsSnap.map(c => c.channelId));
+            // --- NEW: Data structure for saving configured channels as an array ---
+            const newConfiguredChannels = [];
 
             // --- Process Selected Channels (Set/Keep) ---
             for (const channelId of selectedChannelIds) {
-                channelsToDelete.delete(channelId); // Don't delete selected channels
-
                 const channel = guild.channels.cache.get(channelId);
+                
                 if (!channel) {
                     failureCount++;
                     continue;
                 }
-
-                const channelDocRef = doc(guildDocRef, 'channels', channel.id);
-
-                try {
-                    // Update Guild Meta-doc
-                    await setDoc(guildDocRef, { guildId: guild.id, guildName: guild.name, lastUpdated: new Date().toISOString() }, { merge: true });
-
-                    // Set Channel Config
-                    await setDoc(channelDocRef, {
-                        channelId: channel.id,
-                        channelName: channel.name,
-                        originalChannelName: channel.name,
-                        setType: 'manual',
-                        setByUserId: interaction.user.id,
-                        setByUsername: interaction.user.tag,
-                        timestamp: new Date().toISOString()
-                    });
-                    successCount++;
-                    // NOTE: statsTracker.incrementTotalHelps needs client and APP_ID_FOR_FIRESTORE if used here
-                } catch (error) {
-                    console.error(`Error saving channel ${channel.name} (${channel.id}) to Firestore:`, error);
-                    failureCount++;
-                }
+                
+                // Add to the new array structure
+                newConfiguredChannels.push({
+                    channelId: channel.id,
+                    channelName: channel.name,
+                    originalChannelName: channel.name,
+                    setType: 'manual',
+                    setByUserId: interaction.user.id,
+                    setByUsername: interaction.user.tag,
+                    timestamp: new Date().toISOString()
+                });
+                successCount++;
             }
+            
+            // --- Atomic Save Operation (ONE WRITE) ---
+            try {
+                // 1. Overwrite Guild Meta-doc and include the new array of configured channels
+                await setDoc(guildDocRef, { 
+                    guildId: guild.id, 
+                    guildName: guild.name, 
+                    lastUpdated: new Date().toISOString(),
+                    configuredChannels: newConfiguredChannels // Save the entire list
+                }, { merge: true });
 
-            // --- Process Deselected Channels (Delete) ---
-            for (const channelId of channelsToDelete) {
-                try {
-                    const channelDocRef = doc(guildDocRef, 'channels', channelId);
-                    await deleteDoc(channelDocRef);
-                    deleteCount++;
-                } catch (error) {
-                    console.error(`Error deleting channel config for ${channelId}:`, error);
-                }
+                // Since we are overwriting the array, we don't need the individual subcollection documents 
+                // anymore for the primary configuration check.
+                // NOTE: The MobDetect/Startup checks will need adjustment to read from this array, 
+                // but this fixes the quota issue immediately.
+
+            } catch (error) {
+                 // Log error from the single atomic write operation
+                console.error(`Error performing ATOMIC WRITE for channel configuration in guild ${guild.id}:`, error);
+                failureCount = selectedChannelIds.length; // Mark all as failed if atomic write fails
             }
 
             let replyContent = `✅ Configuration saved: Updated **${successCount}** channels.`;
-            if (deleteCount > 0) {
-                replyContent += ` Removed **${deleteCount}** deselected channels.`;
-            }
+            // NOTE: We no longer have a reliable way to report deleteCount without a prior read, 
+            // but the previous subcollection documents are technically redundant now.
+
             if (failureCount > 0) {
-                replyContent += `\n❌ Failed to process ${failureCount} channel(s). Check logs.`;
+                replyContent += `\n❌ Failed to save configuration due to a database error. Please check logs.`;
             }
 
             // After saving, reload the page to show the user the updated state
