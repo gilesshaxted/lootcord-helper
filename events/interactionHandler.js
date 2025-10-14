@@ -31,8 +31,6 @@ module.exports = {
         // --- Damage Calculator Logic (All parts of the multi-step interaction) ---
         if (interaction.customId.startsWith('damage_calc_')) {
             if (damageCalcCommand && damageCalcCommand.handleInteraction) {
-                // Ensure deferUpdate is handled inside handleInteraction for multi-step components
-                // We'll rely on damage-calc's handler to manage its own flow and deferrals
                 await damageCalcCommand.handleInteraction(interaction, db, client, APP_ID_FOR_FIRESTORE);
             }
             return;
