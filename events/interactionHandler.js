@@ -1,4 +1,4 @@
-                const { doc, collection, getDoc, setDoc } = require('firebase/firestore');
+const { doc, collection, getDoc, setDoc, deleteDoc } = require('firebase/firestore');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const { WEAPON_DATA } = require('../utils/damageData');
 const paginationHelpers = require('../utils/pagination');
@@ -131,7 +131,7 @@ module.exports = {
             }
         }
         
-        // --- Pagination Logic ---
+        // --- Pagination Buttons Logic (page_prev_ / page_next_) ---
         if (interaction.isButton() && (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_'))) {
             
             // CRITICAL FIX: Encapsulate deferUpdate to handle timeout rejection gracefully
@@ -156,12 +156,106 @@ module.exports = {
                 newPage++;
             }
             
-            // NOTE: createChannelPaginationMessage logic is assumed to be correct and centralized in utils/pagination.js
             const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage);
             
             // FIX: Use editReply after successful deferUpdate/timeout
             await interaction.editReply({ content, components, flags: 0 });
         }
+
+        // --- Channel Set Submission Logic (StringSelectMenu) ---
+        if (interaction.isStringSelectMenu() && interaction.customId.startsWith('select-channels-to-set_page_')) {
+            const guild = interaction.guild;
+            const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
+
+            // CRITICAL FIX: Encapsulate deferUpdate to handle timeout rejection gracefully
+            try {
+                await interaction.deferUpdate();
+            } catch (error) {
+                 if (error.code === 40060) {
+                     console.warn(`[Channel Set] Interaction timeout acknowledged by Discord. Continuing logic.`);
+                } else {
+                     throw error; // Re-throw unexpected errors
+                }
+            }
+
+            const selectedChannelIds = interaction.values;
+            
+            if (!guild) {
+                return await interaction.editReply({ content: 'This action can only be performed in a guild.', flags: 0 });
+            }
+
+            const guildDocRef = doc(collection(db, `Guilds`), guild.id);
+            let successCount = 0;
+            let failureCount = 0;
+            let deleteCount = 0;
+
+            // Fetch existing configured channels to determine which ones to delete/keep
+            // NOTE: We assume paginationHelpers.getAllConfiguredChannels(db, guild.id) exists and works correctly
+            const existingChannelsSnap = await paginationHelpers.getAllConfiguredChannels(db, guild.id);
+            const channelsToDelete = new Set(existingChannelsSnap.map(c => c.channelId));
+
+            // --- Process Selected Channels (Set/Keep) ---
+            for (const channelId of selectedChannelIds) {
+                channelsToDelete.delete(channelId); // Don't delete selected channels
+
+                const channel = guild.channels.cache.get(channelId);
+                if (!channel) {
+                    failureCount++;
+                    continue;
+                }
+
+                const channelDocRef = doc(guildDocRef, 'channels', channel.id);
+
+                try {
+                    // Update Guild Meta-doc
+                    await setDoc(guildDocRef, { guildId: guild.id, guildName: guild.name, lastUpdated: new Date().toISOString() }, { merge: true });
+
+                    // Set Channel Config
+                    await setDoc(channelDocRef, {
+                        channelId: channel.id,
+                        channelName: channel.name,
+                        originalChannelName: channel.name,
+                        setType: 'manual',
+                        setByUserId: interaction.user.id,
+                        setByUsername: interaction.user.tag,
+                        timestamp: new Date().toISOString()
+                    });
+                    successCount++;
+                    // NOTE: statsTracker.incrementTotalHelps needs client and APP_ID_FOR_FIRESTORE if used here
+                } catch (error) {
+                    console.error(`Error saving channel ${channel.name} (${channel.id}) to Firestore:`, error);
+                    failureCount++;
+                }
+            }
+
+            // --- Process Deselected Channels (Delete) ---
+            for (const channelId of channelsToDelete) {
+                try {
+                    const channelDocRef = doc(guildDocRef, 'channels', channelId);
+                    await deleteDoc(channelDocRef);
+                    deleteCount++;
+                } catch (error) {
+                    console.error(`Error deleting channel config for ${channelId}:`, error);
+                }
+            }
+
+            let replyContent = `✅ Configuration saved: Updated **${successCount}** channels.`;
+            if (deleteCount > 0) {
+                replyContent += ` Removed **${deleteCount}** deselected channels.`;
+            }
+            if (failureCount > 0) {
+                replyContent += `\n❌ Failed to process ${failureCount} channel(s). Check logs.`;
+            }
+
+            // After saving, reload the page to show the user the updated state
+            const currentPage = parseInt(interaction.customId.split('_')[3], 10); // Extract current page for continuity
+            const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, currentPage);
+
+            // Send the final confirmation and the newly refreshed pagination menu
+            await interaction.editReply({ content: replyContent + '\n\n' + content, components: components, flags: 0 });
+        }
+
+
         
         // --- Trivia Explanation Logic ---
         if (interaction.isButton() && interaction.customId.startsWith(TRIVIA_EXPLANATION_BUTTON)) {
