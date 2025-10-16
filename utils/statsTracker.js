@@ -93,11 +93,10 @@ async function addActiveUser(db, appId, userId) {
         console.error(`Stats Tracker: Error adding active user ${userId}:`, error);
         // If document doesn't exist, create it with this user
         if (error.code === 'not-found') {
-            await setDoc(statsDocRef, {
-                totalHelps: botStats.totalHelps, // Initialize with current helps
-                activeUsersMap: { [userId]: true },
+            await updateDoc(statsDocRef, {
+                [userKey]: true, 
                 lastUpdated: new Date().toISOString()
-            }, { merge: true });
+            });
             console.log(`Stats Tracker: Created botStats document and added user ${userId}.`);
         }
     }
