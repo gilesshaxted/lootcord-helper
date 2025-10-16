@@ -41,17 +41,8 @@ module.exports = {
         if (interaction.isButton() && interaction.customId.startsWith('toggle_')) {
             console.log(`[Notify Button - Debug] Button click received by ${interaction.user.tag} for customId: ${interaction.customId}`);
             
-            // FIX: Encapsulate deferUpdate to handle timeout rejection gracefully
-            try {
-                await interaction.deferUpdate();
-            } catch (error) {
-                if (error.code === 40060) {
-                     console.warn(`[Notify Button] Interaction timeout acknowledged by Discord. Continuing logic.`);
-                } else {
-                     throw error; // Re-throw unexpected errors
-                }
-            }
-            
+            // Acknowledge is handled at the top, allowing logic to run
+
             const userId = interaction.user.id;
             const prefsRefs = {
                 attackCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'attackCooldown'),
@@ -118,14 +109,13 @@ module.exports = {
                 const row1 = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton, voteButton, repairButton);
                 const row2 = new ActionRowBuilder().addComponents(gamblingButton);
 
-                // FIX: Use interaction.editReply() as it's already deferred (or was timed out by Discord)
                 await interaction.editReply({ embeds: [embed], components: [row1, row2] });
                 console.log(`[Notify Button] Updated original message with new notification status for ${userId}.`);
 
             } catch (error) {
                 console.error(`[Notify Button] Error during logic or editReply for ${userId}:`, error);
                 // Only send followUp if the interaction hasn't been replied to successfully by editReply yet.
-                if (error.code !== 40060) {
+                if (error.code !== 40060 && error.code !== 10062) {
                     await interaction.followUp({ content: '❌ A general error occurred while updating your notification settings. Please check logs.', flags: MessageFlags.Ephemeral });
                 }
             }
@@ -134,16 +124,7 @@ module.exports = {
         // --- Pagination Buttons Logic (page_prev_ / page_next_) ---
         if (interaction.isButton() && (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_'))) {
             
-            // CRITICAL FIX: Encapsulate deferUpdate to handle timeout rejection gracefully
-            try {
-                await interaction.deferUpdate();
-            } catch (error) {
-                 if (error.code === 40060) {
-                     console.warn(`[Pagination] Interaction timeout acknowledged by Discord. Continuing logic.`);
-                } else {
-                     throw error; // Re-throw unexpected errors
-                }
-            }
+            // DeferUpdate is handled at the top, proceed with logic
             
             const parts = interaction.customId.split('_');
             const action = parts[1];
@@ -156,7 +137,6 @@ module.exports = {
                 newPage++;
             }
             
-            // NOTE: Must pass DB to the pagination utility function
             const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage, db);
             
             // FIX: Use editReply after successful deferUpdate/timeout
@@ -168,17 +148,7 @@ module.exports = {
             const guild = interaction.guild;
             const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
 
-            // CRITICAL FIX: Encapsulate deferUpdate to handle timeout rejection gracefully
-            try {
-                // NOTE: We deferUpdate immediately to acknowledge the click and gain time.
-                await interaction.deferUpdate();
-            } catch (error) {
-                 if (error.code === 40060) {
-                     console.warn(`[Channel Set] Interaction timeout acknowledged by Discord. Continuing logic.`);
-                } else {
-                     throw error; // Re-throw unexpected errors
-                }
-            }
+            // DeferUpdate is handled at the top, proceed with logic
 
             const selectedChannelIds = interaction.values;
             
@@ -194,7 +164,6 @@ module.exports = {
             const newConfiguredChannels = [];
 
             // 1. Process Selected Channels (Set/Keep)
-            // Get original names from channels cache
             for (const channelId of selectedChannelIds) {
                 const channel = guild.channels.cache.get(channelId);
                 
@@ -225,6 +194,8 @@ module.exports = {
                     lastUpdated: new Date().toISOString(),
                     configuredChannels: newConfiguredChannels // Save the entire list in one go
                 }, { merge: true });
+                
+                console.log(`[Channel Set] Atomic write successful for guild ${guild.id}. Channels updated: ${successCount}`);
 
             } catch (error) {
                  // Log error from the single atomic write operation
@@ -252,15 +223,7 @@ module.exports = {
         
         // --- Trivia Explanation Logic ---
         if (interaction.isButton() && interaction.customId.startsWith(TRIVIA_EXPLANATION_BUTTON)) {
-             try {
-                await interaction.deferUpdate();
-            } catch (error) {
-                 if (error.code === 40060) {
-                     console.warn(`[Trivia] Interaction timeout acknowledged by Discord. Continuing logic.`);
-                } else {
-                     throw error; // Re-throw unexpected errors
-                }
-            }
+            // DeferUpdate is handled at the top, proceed with logic
 
             const parts = interaction.customId.split('_');
             const originalMessageId = parts[3];
