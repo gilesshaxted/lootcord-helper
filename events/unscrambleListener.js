@@ -92,9 +92,10 @@ module.exports = {
             const embedDescription = embed.description;
             const embedFields = embed.fields; // Also need to check fields for "Reward"
 
-            // Updated regex: Matches "Word:", then optional whitespace, then "```fix\n",
-            // then captures the letters, and then looks for "```"
-            const wordMatch = embedDescription ? embedDescription.match(/Word:\s*
+            // Corrected Regex: Matches "Word:", then optional whitespace, then "```fix\n",
+            // then captures the letters, and then looks for "```". The 's' flag is for multiline dots.
+            // This line had the SyntaxError in the original code.
+            const wordMatch = embedDescription ? embedDescription.match(/Word:\s*```fix\n([a-zA-Z]+)```/s) : null;
             
             // Check for "Reward" field as a validation
             const hasRewardField = embedFields.some(field => field.name && field.name.includes('Reward'));
