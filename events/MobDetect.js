@@ -43,14 +43,11 @@ module.exports = {
                 newName = '🚁╏heli';
             } else if (mobName.includes('Bradley APC')) {
                 newName = '🚨╏brad';
-            // ❌ THIS IS WHERE THE ERROR WAS. The '}' was here.
             } else if (mobName.includes('Mummy')) {
                 newName = '🎃 ╏Mummy';
             } else if (mobName.includes('Scarecrow')) {
                 newName = '🎃 ╏Scarecrow';
             }
-            // ✅ Corrected position for the closing brace of the mob detection logic.
-            
             if (newName && message.channel.name !== newName) {
                 const oldChannelName = message.channel.name;
                 try {
@@ -70,7 +67,7 @@ module.exports = {
                     }
                 }
             }
-        } // The closing brace for 'if (mobSpawnMatch)' should be here.
+        }
 
         // --- Detect Mob Killed or Escaped ---
         const embed = message.embeds.length > 0 ? message.embeds[0] : null;
@@ -102,4 +99,4 @@ module.exports = {
             }
         }
     },
-};
+};        
