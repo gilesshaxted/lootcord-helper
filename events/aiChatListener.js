@@ -5,6 +5,9 @@ const { LOOTCORD_GAME_KNOWLEDGE } = require('../utils/gameKnowledge'); // 1. Imp
 const TARGET_CHANNEL_ID = '1311341302570549401'; // The channel where the bot should chat
 const RESPONSE_CHANCE = 0.10; // Base chance of responding
 
+// Role ID for users who should ONLY receive direct responses (no random chat)
+const EXCLUDED_ROLE_ID = '1192414247276265512'; 
+
 module.exports = {
     name: 'messageCreate',
     once: false,
@@ -17,19 +20,32 @@ module.exports = {
         const client = message.client; // Get client for bot ID check
         const botId = client.user.id;
         const isDirectlyAddressed = message.mentions.has(botId) || 
-                                     (message.reference && message.type === 19);
+                                    (message.reference && message.type === 19);
 
         console.log(`\n--- [AI Chat Debug] Message received in target channel from ${message.author.tag} ---`);
         console.log(`[AI Chat Debug] Directly Addressed: ${isDirectlyAddressed}`);
         console.log(`[AI Chat Debug] Message content: "${message.content.substring(0, 50)}..."`);
 
-        // 2. Determine Response Trigger
+        // 2. Role Check: Determine if the author has the excluded role (requires message.member)
+        let hasExcludedRole = false;
+        if (message.member && message.member.roles.cache.has(EXCLUDED_ROLE_ID)) {
+            hasExcludedRole = true;
+            console.log(`[AI Chat Debug] User has excluded role (${EXCLUDED_ROLE_ID}).`);
+        }
+        
+        // 3. Determine Response Trigger
         let shouldRespond = false;
         
         if (isDirectlyAddressed) {
+            // Always respond if directly addressed (mention/reply), regardless of role
             shouldRespond = true;
             console.log(`[AI Chat Debug] Forced response due to mention/reply.`);
+        } else if (hasExcludedRole) {
+            // If not directly addressed AND user has excluded role, DO NOT respond.
+            console.log(`[AI Chat Debug] Skipping random response: User has excluded role.`);
+            return;
         } else {
+            // Random chance for everyone else (who wasn't directly addressed)
             const roll = Math.random();
             if (roll <= RESPONSE_CHANCE) {
                 shouldRespond = true;
@@ -40,7 +56,9 @@ module.exports = {
             }
         }
         
-        // 3. Define the LLM's persona and inject knowledge
+        // If we reach here, shouldRespond must be true.
+        
+        // 4. Define the LLM's persona and inject knowledge
         const generalPersona = "You are Loot Helper, a helpful, enthusiastic, and slightly silly Discord bot. You are designed to be concise, friendly, and you always respond in 1-2 sentences.";
         
         // The new system prompt directs the AI to use the knowledge base.
@@ -56,7 +74,7 @@ Your response must be short and focused.`;
         const chatHistory = [{ role: "user", parts: [{ text: userQuery }] }];
 
         try {
-            // 4. Call the LLM (Gemini API)
+            // 5. Call the LLM (Gemini API)
             const apiKey = process.env.GOOGLE_API_KEY; 
             if (!apiKey) {
                 console.error('AI Chat Listener: GOOGLE_API_KEY not set. Cannot generate response.');
@@ -82,12 +100,12 @@ Your response must be short and focused.`;
                 body: JSON.stringify(payload)
             });
             
-            // 5. Process API Response
+            // 6. Process API Response
             if (!response.ok) {
-                 console.error(`[AI Chat Debug] API HTTP Error: ${response.status} ${response.statusText}`);
-                 const errorBody = await response.json().catch(() => ({}));
-                 console.error('[AI Chat Debug] Raw Error Body (API Failed):', JSON.stringify(errorBody, null, 2));
-                 return;
+                   console.error(`[AI Chat Debug] API HTTP Error: ${response.status} ${response.statusText}`);
+                   const errorBody = await response.json().catch(() => ({}));
+                   console.error('[AI Chat Debug] Raw Error Body (API Failed):', JSON.stringify(errorBody, null, 2));
+                   return;
             }
 
             const result = await response.json();
@@ -96,12 +114,12 @@ Your response must be short and focused.`;
             if (candidate && candidate.content?.parts?.[0]?.text) {
                 const aiResponse = candidate.content.parts[0].text.trim();
                 
-                // 6. Send the AI-generated reply
+                // 7. Send the AI-generated reply
                 await message.channel.send({ content: aiResponse });
                 console.log(`[AI Chat Debug] Response sent: "${aiResponse.substring(0, 50)}..."`);
             } else {
-                 console.error('[AI Chat Debug] API Failure: No text found in candidate response (may be filtered or empty).');
-                 console.error('[AI Chat Debug] Raw Result (LLM Filtered):', JSON.stringify(result, null, 2));
+                   console.error('[AI Chat Debug] API Failure: No text found in candidate response (may be filtered or empty).');
+                   console.error('[AI Chat Debug] Raw Result (LLM Filtered):', JSON.stringify(result, null, 2));
             }
         } catch (error) {
             console.error('AI Chat Listener: Critical Error calling LLM or sending message:', error);
