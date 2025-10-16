@@ -44,7 +44,11 @@ module.exports = {
             } else if (mobName.includes('Bradley APC')) {
                 newName = '🚨╏brad';
             }
-
+            } else if (mobName.includes('Mummy')) {
+                newName = '🎃 ╏Mummy';
+            } else if (mobName.includes('Scarecrow')) {
+                newName = '🎃 ╏Scarecrow';
+            }
             if (newName && message.channel.name !== newName) {
                 const oldChannelName = message.channel.name;
                 try {
