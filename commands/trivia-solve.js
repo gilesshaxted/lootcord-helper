@@ -1,132 +1,196 @@
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const statsTracker = require('../utils/statsTracker'); // Import Stats Tracker
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js'); // Import ActionRowBuilder, ButtonBuilder, ButtonStyle
+const { doc, collection, setDoc } = require('firebase/firestore'); // Import Firestore functions
+
+// Configuration specific to this listener
+const TARGET_BOT_ID = '493316754689359874'; // User ID of the other bot posting trivia
+const GEMINI_MODEL = 'gemini-2.5-flash-preview-09-2025'; // Updated to latest preview model for stability
+
+// --- Configuration for Structured JSON Output ---
+const TRIVIA_SCHEMA = {
+    type: "OBJECT",
+    properties: {
+        "most_likely_answer": { 
+            "type": "STRING",
+            "description": "The letter of the most likely correct option (A, B, C, or D)."
+        },
+        "confidence_percentage": { 
+            "type": "INTEGER",
+            "description": "A confidence score for the chosen answer as a percentage (0-100)."
+        },
+        "explanation_A": { 
+            "type": "STRING",
+            "description": "Explanation for option A, indicating why it is correct or incorrect."
+        },
+        "explanation_B": { 
+            "type": "STRING",
+            "description": "Explanation for option B, indicating why it is correct or incorrect."
+        },
+        "explanation_C": { 
+            "type": "STRING",
+            "description": "Explanation for option C, indicating why it is correct or incorrect."
+        },
+        "explanation_D": { 
+            "type": "STRING",
+            "description": "Explanation for option D, indicating why it is correct or incorrect."
+        }
+    },
+    "required": ["most_likely_answer", "confidence_percentage", "explanation_A", "explanation_B", "explanation_C", "explanation_D"],
+    "propertyOrdering": ["most_likely_answer", "confidence_percentage", "explanation_A", "explanation_B", "explanation_C", "explanation_D"]
+};
+
+// Removed: extractFallbackData function as it is no longer needed with structured output
 
 module.exports = {
-    // Defines the slash command's name, description, and options.
-    data: new SlashCommandBuilder()
-        .setName('trivia-solve')
-        .setDescription('Attempts to solve a trivia question from a linked message using an LLM.')
-        .addStringOption(option =>
-            option.setName('link')
-                .setDescription('The link to the Discord message containing the trivia question embed.')
-                .setRequired(true)
-        ),
+    name: 'messageCreate',
+    once: false,
+    async execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
+        // Ignore messages from bots other than the target bot, or from this bot itself
+        if (message.author.bot && message.author.id !== TARGET_BOT_ID) return;
+        if (message.author.id === client.user.id) return;
 
-    // The execute function now accepts the 'client' object as an argument.
-    async execute(interaction, db, client) { // db is passed but not used by this specific command
-        // Defer the reply immediately. Non-ephemeral for testing.
-        await interaction.deferReply({ ephemeral: false });
+        if (!message.guild) return;
 
-        const messageLink = interaction.options.getString('link');
-
-        // Regex to parse Discord message links
-        const linkRegex = /discord(?:app)?\.com\/channels\/(\d+)\/(\d+)\/(\d+)/;
-        const match = messageLink.match(linkRegex);
-
-        if (!match) {
-            return await interaction.editReply({ content: 'Invalid Discord message link provided. Please ensure it is a direct link to a message.', ephemeral: false });
+        if (!isFirestoreReady) {
+            console.warn('Trivia Solver: Firestore not ready. Skipping processing.');
+            return;
         }
 
-        const [, guildId, channelId, messageId] = match;
+        // Check if the message has an embed and if it's a trivia message
+        if (message.embeds.length > 0) {
+            const embed = message.embeds[0];
+            // Trigger: if the embed title exists, ends with '?', and there's a description
+            if (embed.title && embed.title.endsWith('?') && embed.description) {
+                const question = embed.title;
+                const options = embed.description;
 
-        let question = null;
-        let options = null;
+                const systemPrompt = `You are an expert trivia solver. You have access to a Google Search tool. Use the search tool to verify the correct fact before providing your answer. Given the following multiple-choice question and options, identify the single best answer. Your response MUST be a single, valid JSON object that strictly adheres to the provided schema.`;
 
-        try {
-            const guild = client.guilds.cache.get(guildId);
-            if (!guild) {
-                return await interaction.editReply({ content: 'Could not find the guild specified in the link. Is the bot in that guild?', ephemeral: false });
-            }
+                const userQuery = `Question: ${question}\nOptions:\n${options}`;
+                
+                let llmResponseParsed = null;
+                let mostLikelyAnswerLetter = null;
+                let confidencePercentage = 0;
+                let explanations = {}; 
 
-            const channel = guild.channels.cache.get(channelId);
-            if (!channel) {
-                return await interaction.editReply({ content: 'Could not find the channel specified in the link. Is the bot in that channel?', ephemeral: false });
-            }
+                try {
+                    const chatHistory = [];
+                    chatHistory.push({ role: "user", parts: [{ text: userQuery }] });
+                    
+                    const payload = {
+                        contents: chatHistory,
+                        tools: [{ google_search: {} }], // Use the standard Google Search grounding tool
+                        systemInstruction: { parts: [{ text: systemPrompt }] },
+                        generationConfig: {
+                            responseMimeType: "application/json",
+                            responseSchema: TRIVIA_SCHEMA,
+                            maxOutputTokens: 8192
+                        }
+                    };
+                    
+                    const apiKey = process.env.GOOGLE_API_KEY;
 
-            const targetMessage = await channel.messages.fetch(messageId);
+                    if (!apiKey) {
+                        console.error('Trivia Solver: GOOGLE_API_KEY environment variable not set. Cannot solve trivia.');
+                        return;
+                    }
 
-            // Check if the message has an embed and if it's a trivia message
-            if (targetMessage.embeds.length > 0) {
-                const embed = targetMessage.embeds[0];
-                const hasTriviaStreakField = embed.fields.some(field => field.name && field.name.includes('Trivia Streak'));
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
 
-                if (hasTriviaStreakField && embed.title && embed.description) {
-                    question = embed.title;
-                    options = embed.description;
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await response.json();
+                    
+                    if (result.candidates?.[0]?.content?.parts?.[0]?.text) {
+                        const jsonText = result.candidates[0].content.parts[0].text;
+                        llmResponseParsed = JSON.parse(jsonText); 
+
+                        mostLikelyAnswerLetter = (llmResponseParsed.most_likely_answer || '').toUpperCase();
+                        confidencePercentage = llmResponseParsed.confidence_percentage ?? 0;
+                        explanations = {
+                            A: llmResponseParsed.explanation_A || 'No explanation provided.',
+                            B: llmResponseParsed.explanation_B || 'No explanation provided.',
+                            C: llmResponseParsed.explanation_C || 'No explanation provided.',
+                            D: llmResponseParsed.explanation_D || 'No explanation provided.'
+                        };
+
+                        const validAnswers = ['A', 'B', 'C', 'D'];
+                        if (!validAnswers.includes(mostLikelyAnswerLetter)) {
+                            console.warn(`Trivia Solver: Invalid answer received from LLM: ${mostLikelyAnswerLetter}`);
+                            mostLikelyAnswerLetter = null; 
+                        }
+                    } else {
+                        console.warn('Trivia Solver: LLM response structure unexpected or empty for question:', question, JSON.stringify(result, null, 2));
+                    }
+
+                } catch (error) {
+                    console.error('Trivia Solver: Error calling LLM API or parsing JSON for question:', question, error);
+                }
+
+                let replyContent = `**Trivia Answer for:** \`${question}\`\n`;
+                const buttons = [];
+                const optionLetters = ['A', 'B', 'C', 'D'];
+
+                let buttonColor = ButtonStyle.Danger; 
+                if (mostLikelyAnswerLetter) {
+                    if (confidencePercentage >= 90) {
+                        buttonColor = ButtonStyle.Success; 
+                    } else if (confidencePercentage >= 50) {
+                        buttonColor = ButtonStyle.Primary; 
+                    } else if (confidencePercentage >= 10) { 
+                        buttonColor = ButtonStyle.Secondary; 
+                    }
+                }
+
+                optionLetters.forEach(letter => {
+                    buttons.push(
+                        new ButtonBuilder()
+                            .setCustomId(`show_trivia_explanation_${message.id}_${letter}`)
+                            .setLabel(letter)
+                            .setStyle(letter === mostLikelyAnswerLetter ? buttonColor : ButtonStyle.Secondary)
+                    );
+                });
+
+                const row = new ActionRowBuilder().addComponents(buttons);
+
+                if (mostLikelyAnswerLetter) {
+                    replyContent += `Most Likely: \`${mostLikelyAnswerLetter}\` (Confidence: ${confidencePercentage}%) \n`;
+                    replyContent += `Click a button for an explanation.\n`;
+                    statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); 
+                } else {
+                    replyContent += `I apologize, but I couldn't determine a definitive answer from the LLM.`;
+                }
+
+                if (replyContent.length > 2000) {
+                    replyContent = replyContent.substring(0, 1990) + '...\n(Output truncated due to character limit)';
+                }
+
+                try {
+                    const sentMessage = await message.channel.send({ content: replyContent, components: [row] });
+                    console.log(`Trivia Solver: Answered '${question}' with '${mostLikelyAnswerLetter}' (Confidence: ${confidencePercentage}%) in #${message.channel.name}`);
+
+                    const triviaExplanationRef = doc(collection(db, `TriviaExplanations`), message.id); 
+                    await setDoc(triviaExplanationRef, {
+                        question: question,
+                        options: options,
+                        mostLikelyAnswer: mostLikelyAnswerLetter,
+                        confidence: confidencePercentage,
+                        explanations: explanations, 
+                        timestamp: new Date().toISOString(),
+                        channelId: message.channel.id,
+                        guildId: message.guild.id,
+                        botReplyMessageId: sentMessage.id
+                    });
+                    console.log(`Trivia Solver: Stored explanations for original message ID ${message.id} in Firestore.`);
+
+                } catch (error) {
+                    console.error(`Trivia Solver: Failed to post reply or store explanations in #${message.channel.name}:`, error);
                 }
             }
-
-            if (!question || !options) {
-                return await interaction.editReply({ content: 'Could not find a valid trivia question embed in the linked message (expected: "Trivia Streak" field, title, and description).', ephemeral: false });
-            }
-
-        } catch (error) {
-            console.error('Error fetching or parsing message for trivia command:', error);
-            if (error.code === 10003 || error.code === 10008 || error.code === 50001) { // Unknown Channel, Unknown Message, Missing Access
-                return await interaction.editReply({ content: 'Could not fetch the message. Please ensure the link is correct and the bot has access to the channel and message.', ephemeral: false });
-            } else {
-                return await interaction.editReply({ content: 'An unexpected error occurred while trying to read the message for trivia. Please check the bot\'s logs.', ephemeral: false });
-            }
         }
-
-        // --- Construct the prompt for the LLM ---
-        const prompt = `Answer the following multiple-choice question by selecting only the letter (A, B, C, or D) that corresponds to the correct answer. Do not provide any other text, explanation, or punctuation.
-
-Question: ${question}
-Options:
-${options}`;
-
-        let llmAnswer = null;
-        let replyContent = `**Attempting to solve trivia:**\nQuestion: \`${question}\`\nOptions:\n\`\`\`\n${options}\n\`\`\`\n`;
-
-        try {
-            // Call the LLM (Gemini API)
-            const chatHistory = [];
-            chatHistory.push({ role: "user", parts: [{ text: prompt }] });
-            const payload = { contents: chatHistory };
-            // --- IMPORTANT: For outside environments like Render, get API key from environment variables ---
-            const apiKey = process.env.GOOGLE_API_KEY; // <-- Updated: Get API key from environment variable
-            if (!apiKey) {
-                console.error('Trivia Solver Command: GOOGLE_API_KEY environment variable not set.');
-                replyContent += `**LLM Answer:** API key is missing. Please set GOOGLE_API_KEY environment variable.`;
-                await interaction.editReply({ content: replyContent, ephemeral: false });
-                return;
-            }
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-
-            const response = await fetch(apiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            const result = await response.json();
-            
-            // --- DIAGNOSTIC LOG: Log the raw LLM response to console (already there) ---
-            console.log('Trivia Solver Command: Raw LLM response:', JSON.stringify(result, null, 2));
-
-            // --- ADDED: Display what was sent to LLM ---
-            replyContent += `\n**Prompt Sent to LLM:**\n\`\`\`\n${prompt}\n\`\`\`\n`;
-
-            // --- ADDED: Display raw LLM response in the reply ---
-            replyContent += `**Raw LLM Response JSON:**\n\`\`\`json\n${JSON.stringify(result, null, 2).substring(0, 1500)}...\n\`\`\`\n`; // Truncate for Discord limit
-
-            if (result.candidates && result.candidates.length > 0 &&
-                result.candidates[0].content && result.candidates[0].content.parts &&
-                result.candidates[0].content.parts.length > 0) {
-                llmAnswer = result.candidates[0].content.parts[0].text.trim();
-                // Ensure the answer is just a single letter (A, B, C, D)
-                llmAnswer = llmAnswer.charAt(0).toUpperCase();
-                replyContent += `**LLM Answer:** \`${llmAnswer}\``;
-            } else {
-                replyContent += `**LLM Answer:** Could not get a valid response from the LLM.`;
-                console.warn('Trivia Solver Command: LLM response structure unexpected or empty.');
-            }
-
-        } catch (error) {
-            replyContent += `**LLM Answer:** An error occurred while calling the LLM.`;
-            console.error('Trivia Solver Command: Error calling LLM API:', error);
-        }
-
-        await interaction.editReply({ content: replyContent, ephemeral: false });
     },
 };
