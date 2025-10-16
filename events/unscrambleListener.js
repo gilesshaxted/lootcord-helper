@@ -82,49 +82,9 @@ module.exports = {
         if (!storedChannels[channelId]) {
             return; // Not a configured channel, ignore
         }
-
-        const currentChannelData = storedChannels[channelId];
-        const originalChannelName = currentChannelData.originalChannelName;
-
-        // --- Channel Renaming Logic (triggered by embed title alone for any message from target bot) ---
-        // This block will execute for any message from the target bot with an embed.
-        if (message.embeds.length > 0) {
-            const embedTitle = message.embeds[0].title;
-            let newName = null;
-
-            if (embedTitle) { // Ensure embedTitle exists
-                if (embedTitle.includes('Heavy Scientist')) {
-                    newName = '🐻╏heavy';
-                } else if (embedTitle.includes('Scientist')) { // Check Scientist after Heavy Scientist
-                    newName = '🥼╏scientist';
-                } else if (embedTitle.includes('Tunnel Dweller')) {
-                    newName = '🧟╏dweller';
-                } else if (embedTitle.includes('Patrol Helicopter')) {
-                    newName = '🚁╏heli';
-                } else if (embedTitle.includes('Bradley APC')) {
-                    newName = '🚨╏brad';
-                }
-            }
-
-            if (newName && message.channel.name !== newName) {
-                try {
-                    await message.channel.setName(newName, 'Automated rename due to enemy embed title.');
-                    console.log(`MobDetect: Renamed channel ${message.channel.name} to ${newName} in guild ${message.guild.name}`);
-                    statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
-                } catch (error) {
-                    console.error(`MobDetect: Failed to rename channel ${message.channel.name}:`, error);
-                    if (error.code === 50013) { // Missing Permissions
-                        console.error(`MobDetect: Bot lacks 'Manage Channels' permission in #${message.channel.name}.`);
-                    }
-                }
-                return;
-            }
-        }
-
-        // --- Logic for Reverting to original name has been removed from MobDetect.js ---
-        // This functionality is now handled by the /mob-off command and startup checks.
-
-
+        
+        // Removed: Channel Renaming Logic (Now centralized in mob_detect.js)
+        
         // --- Unscrambler Logic (now using LLM) ---
         let scrambledLetters = null;
         if (message.embeds.length > 0) {
@@ -134,7 +94,7 @@ module.exports = {
 
             // Updated regex: Matches "Word:", then optional whitespace, then "```fix\n",
             // then captures the letters, and then looks for "```"
-            const wordMatch = embedDescription ? embedDescription.match(/Word:\s*```fix\n([a-zA-Z]+)```/s) : null;
+            const wordMatch = embedDescription ? embedDescription.match(/Word:\s*
             
             // Check for "Reward" field as a validation
             const hasRewardField = embedFields.some(field => field.name && field.name.includes('Reward'));
@@ -227,6 +187,8 @@ Jumbled letters: ${scrambledLetters}`;
                     return;
                 }
 
+                // NOTE: Using a hypothetical model for demonstration purposes.
+                // Replace with the actual model name if needed (e.g., gemini-2.5-flash-preview-09-2025).
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
                 const response = await fetch(apiUrl, {
                     method: 'POST',
@@ -280,6 +242,6 @@ Jumbled letters: ${scrambledLetters}`;
             } catch (error) {
                 console.error(`Unscrambler: Failed to post LLM-based word in #${message.channel.name}:`, error);
             }
-        } // <-- End of 'if (scrambledLetters)'
-    } // <-- End of 'async execute' function
-}; // <-- End of 'module.exports' object
+        }
+    }
+};
