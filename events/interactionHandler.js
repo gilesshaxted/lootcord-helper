@@ -156,7 +156,8 @@ module.exports = {
                 newPage++;
             }
             
-            const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage);
+            // NOTE: Must pass DB to the pagination utility function
+            const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage, db);
             
             // FIX: Use editReply after successful deferUpdate/timeout
             await interaction.editReply({ content, components, flags: 0 });
@@ -193,6 +194,7 @@ module.exports = {
             const newConfiguredChannels = [];
 
             // 1. Process Selected Channels (Set/Keep)
+            // Get original names from channels cache
             for (const channelId of selectedChannelIds) {
                 const channel = guild.channels.cache.get(channelId);
                 
@@ -205,7 +207,7 @@ module.exports = {
                 newConfiguredChannels.push({
                     channelId: channel.id,
                     channelName: channel.name,
-                    originalChannelName: channel.name,
+                    originalChannelName: channel.name, // Use current name as original on set
                     setType: 'manual',
                     setByUserId: interaction.user.id,
                     setByUsername: interaction.user.tag,
@@ -227,22 +229,20 @@ module.exports = {
             } catch (error) {
                  // Log error from the single atomic write operation
                 console.error(`Error performing ATOMIC WRITE for channel configuration in guild ${guild.id}:`, error);
-                // The resource exhaustion error is often from too many writes/reads. 
                 // We mark successCount as 0 if the atomic write failed.
                 successCount = 0;
                 failureCount = selectedChannelIds.length;
             }
 
             let replyContent = `✅ Configuration saved: Updated **${successCount}** channels.`;
-            // NOTE: Reporting deleteCount is removed as we now overwrite the array, which handles deselection implicitly.
-
             if (failureCount > 0) {
                 replyContent += `\n❌ Failed to save configuration due to a database error (Quota Exceeded). Please check logs.`;
             }
 
             // After saving, reload the page to show the user the updated state
             const currentPage = parseInt(interaction.customId.split('_')[3], 10); // Extract current page for continuity
-            const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, currentPage);
+            // NOTE: Must pass DB to the pagination utility function
+            const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, currentPage, db);
 
             // Send the final confirmation and the newly refreshed pagination menu
             await interaction.editReply({ content: replyContent + '\n\n' + content, components: components, flags: 0 });
