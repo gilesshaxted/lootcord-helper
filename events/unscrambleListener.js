@@ -47,13 +47,37 @@ module.exports = {
     name: 'messageCreate', // This event listener will also listen for messageCreate events
     once: false, // This event should run every time a relevant message is created
     // The execute function receives the message object, plus db, client, isFirestoreReady, and APP_ID_FOR_FIRESTORE from index.js
+
     async execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
-        // Ignore messages from bots other than the target bot, or from this bot itself
+        // ... (Ignore logic for bots and self) ...
         if (message.author.bot && message.author.id !== TARGET_BOT_ID) return;
-        if (message.author.id === client.user.id) return; // Ignore messages from this bot itself
+        if (message.author.id === client.user.id) return;
 
         // Only process messages in guilds
         if (!message.guild) return;
+
+        // --- Category-Based Filtering Logic ---
+        
+        // 1. Define the target Category IDs
+        const TARGET_CATEGORY_IDS = [
+            '1192414248299675663', // Your first category ID
+            '1319717698380501033'  // Your second category ID
+        ];
+
+        // 2. Get the category ID of the current channel
+        const channel = message.channel;
+        const parentCategoryId = channel.parent ? channel.parent.id : null;
+        
+        if (!parentCategoryId) {
+            // The channel is not in a category (or is a thread/DM), so we ignore it.
+            return;
+        }
+
+        // 3. Check if the channel's category is in the approved list
+        if (!TARGET_CATEGORY_IDS.includes(parentCategoryId)) {
+            // If the category is not approved, stop processing.
+            return;
+        }
 
         // --- Ignore Logic for "You got it correct!" messages regardless of embed color ---
         if (message.content.includes('You got it correct!')) {
@@ -67,37 +91,27 @@ module.exports = {
             return;
         }
 
-        const guildId = message.guild.id;
-        const channelId = message.channel.id;
+        // --- Skip Firestore check for channel configuration ---
+        // Since we are filtering by Category ID above, the previous Firestore channel lookup
+        // (fetching stored channels for this guild) is no longer necessary for *this* module.
+        // If your database is structured to only store Guilds/Channels that are *allowed*, 
+        // you might still want to check Guild/Bot settings, but for simple category filtering, 
+        // we can proceed directly to the unscrambler logic.
 
-        // Fetch stored channels for this guild from Firestore
-        const guildChannelsRef = collection(db, `Guilds/${guildId}/channels`);
-        const channelDocs = await getDocs(guildChannelsRef);
-        const storedChannels = {};
-        channelDocs.forEach(d => {
-            storedChannels[d.id] = d.data();
-        });
-
-        // Check if the current channel is one of the stored channels
-        if (!storedChannels[channelId]) {
-            return; // Not a configured channel, ignore
-        }
-        
-        // Removed: Channel Renaming Logic (Now centralized in mob_detect.js)
+        // If you were previously using Firestore to track *which* categories are enabled, 
+        // you would replace the hardcoded array above with a Firestore lookup here.
         
         // --- Unscrambler Logic (now using LLM) ---
         let scrambledLetters = null;
+        // ... (rest of the unscrambler logic remains the same) ...
+        
         if (message.embeds.length > 0) {
             const embed = message.embeds[0];
             const embedDescription = embed.description;
-            const embedFields = embed.fields; // Also need to check fields for "Reward"
+            const embedFields = embed.fields;
 
-            // Corrected Regex: Matches "Word:", then optional whitespace, then "```fix\n",
-            // then captures the letters, and then looks for "```". The 's' flag is for multiline dots.
-            // This line had the SyntaxError in the original code.
             const wordMatch = embedDescription ? embedDescription.match(/Word:\s*```fix\n([a-zA-Z]+)```/s) : null;
             
-            // Check for "Reward" field as a validation
             const hasRewardField = embedFields.some(field => field.name && field.name.includes('Reward'));
 
             if (wordMatch && wordMatch[1] && hasRewardField) {
