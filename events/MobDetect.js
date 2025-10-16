@@ -8,7 +8,9 @@ const TARGET_GAME_BOT_IDS = ['493316754689359874'];
 const BOT_ID = '1393708735104422040';
 
 // Regex to detect mob spawn messages
-const MOB_MESSAGE_REGEX = /A \*\*(.*?)\*\* has spawned!/i;
+// UPDATED REGEX: Now matches the exact ping message, verifying the spawn event occurred.
+// It uses \d+ to match any role ID and escapes the dots.
+const MOB_MESSAGE_REGEX = /^<@&\d+>, An enemy has spawned\.\.\.$/i;
 
 // --- Target Categories ---
 // Messages will ONLY be processed if they originate from a channel within one of these categories.
@@ -71,7 +73,6 @@ module.exports = {
 
         const guildId = message.guild.id;
         const channelId = message.channel.id;
-        // Firestore references are kept as they are required later for saving the original channel name.
         const guildChannelsRef = collection(db, `Guilds/${guildId}/channels`);
         const channelConfigDocRef = doc(guildChannelsRef, channelId);
         const embed = message.embeds.length > 0 ? message.embeds[0] : null;
@@ -82,27 +83,23 @@ module.exports = {
         let renameReason = null;
         let mobName = null;
 
-        // 1. ** Comment: When an enemy spawns (message content) (rename to mob name). **
+        // 1. ** Comment: When an enemy spawns (message content) (checks if it's the right type of message). **
         const mobSpawnMatch = message.content.match(MOB_MESSAGE_REGEX);
-        if (mobSpawnMatch) {
-            mobName = mobSpawnMatch[1];
-            newName = getTargetChannelName(mobName);
-            renameReason = `Automated rename due to mob spawn: ${mobName}.`;
-        }
+        
+        // NOTE ON NEW LOGIC: mobSpawnMatch will now only confirm the ping message, but will NOT capture the mobName,
+        // as the mobName is in the embed title. We must rely on the embed check (point 2).
         
         // 2. ** Comment: When an enemy is detected (embed title) (rename to mob name). **
-        // This handles cases where the notification is an embed rather than a raw spawn message, 
-        // which was the logic moved from the unscramble listener.
-        if (!newName && embed && embed.title) {
+        // This check is now the primary source for the mob name since the content no longer contains it.
+        if (embed && embed.title) {
             const embedMobName = embed.title;
             const targetName = getTargetChannelName(embedMobName);
             
-            // Check if the target name is one of the specific mob names from the embed title logic
-            // (e.g., Heavy Scientist, Scientist, Tunnel Dweller, etc.)
-            if (targetName) {
+            // Check if the message content matches the new spawn ping AND the embed has a detectable mob name.
+            if (mobSpawnMatch && targetName) {
                 newName = targetName;
                 mobName = embedMobName; // Use the full title for logging
-                renameReason = 'Automated rename due to enemy embed title.';
+                renameReason = 'Automated rename due to enemy embed title and spawn ping.';
             }
         }
         
