@@ -94,10 +94,10 @@ async function repostStickyMessage(client, db, stickyMessageData) {
 
         // Update Firestore with the new message ID and last posted timestamp
         const stickyDocRef = doc(collection(db, `SoloStickyMessages`), channelId);
-        await updateDoc(stickyDocRef, {
+        await updateDoc(stickyDocRef, { // Firestore Write #1
             stickyMessageId: newStickyDiscordMessage.id,
             lastPostedTimestamp: Date.now(),
-            expirationTimestamp: Date.now() + STICKY_DURATION_MS // Reset expiration on repost
+            expirationTimestamp: Date.now() + STICKY_DURATION_MS 
         });
         console.log(`Sticky Message Manager: Updated Firestore with new sticky message ID for channel ${channelId}.`);
 
