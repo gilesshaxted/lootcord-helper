@@ -32,9 +32,9 @@ module.exports = {
             // Atomically increment the messageCount
             await setDoc(userMessageCountRef, {
                 messageCount: increment(1),
-                username: username, // Store/update username with each message
+                username: username, 
                 lastMessageTimestamp: now.toISOString()
-            }, { merge: true }); // Use merge: true to avoid overwriting other fields if they exist
+            }, { merge: true });
 
             // console.log(`Monthly Message Tracker: Incremented message count for ${username} (${userId}) in ${monthDocId}.`);
         } catch (error) {
