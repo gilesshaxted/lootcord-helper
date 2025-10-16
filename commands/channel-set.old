@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags } = require('discord.js'); // Added ButtonBuilder, ButtonStyle
+const { SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags } = require('discord.js');
 const { createChannelPaginationMessage } = require('../utils/pagination'); // Import pagination utility
 
 // Define how many channels to show per page in the dropdown
@@ -12,7 +12,6 @@ module.exports = {
 
     async execute(interaction, db, client) {
         // NOTE: interaction is already deferred globally in index.js. 
-        // DO NOT use interaction.deferReply() here.
 
         const guild = interaction.guild;
 
@@ -21,13 +20,12 @@ module.exports = {
             return await interaction.followUp({ content: 'This command can only be used in a guild.', flags: MessageFlags.Ephemeral });
         }
         
-        // Use the centralized utility function to create the initial (Page 0) message components
-        // The filtering and pagination logic is handled inside this utility function.
-        const { content, components } = await createChannelPaginationMessage(guild, 0);
+        // Use the centralized utility function to create the initial (Page 0) message components.
+        // CRITICAL: We pass the 'db' reference here so the pagination helper can fetch existing configs.
+        const { content, components } = await createChannelPaginationMessage(guild, 0, db);
 
-        // Handle case where no channels are found (content will have been updated by utility)
+        // Handle case where no channels are found 
         if (components.length === 0) {
-            // Use editReply because the command was deferred in index.js
             return await interaction.editReply({ 
                 content: content,
                 flags: MessageFlags.Ephemeral
