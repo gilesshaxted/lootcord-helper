@@ -58,8 +58,11 @@ const {
     sendCooldownPing
 } = require('./events/cooldownNotifier');
 const {
-    updateVoiceChannelNameOnDemand
-} = require('./utils/voiceChannelUpdater');
+    updateVoiceChannelNameOnDemand,
+    // Import the non-standard event handlers here for manual registration
+    guildMemberAdd,
+    guildMemberRemove 
+} = require('./utils/voiceChannelUpdater'); 
 const { WEAPON_DATA } = require('./utils/damageData');
 const notifyCommands = require('./commands/notify');
 
@@ -232,6 +235,11 @@ for (const file of eventFiles) {
     }
 }
 
+// --- Manual Registration for Voice Channel Update Listeners ---
+// These functions are exported separately in voiceChannelUpdater.js and need explicit registration.
+client.on('guildMemberAdd', (...args) => guildMemberAdd(...args, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE));
+client.on('guildMemberRemove', (...args) => guildMemberRemove(...args, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE));
+console.log('[Event Loader] Manually registered guildMemberAdd and guildMemberRemove events from voiceChannelUpdater.js.');
 
 // --- Discord Event Handlers (main ones remaining in index.js) ---
 
