@@ -37,6 +37,7 @@ const {
 } = require('firebase/auth');
 const {
     getFirestore,
+    writeBatch, // <--- NEW: Import writeBatch
     doc,
     setDoc,
     onSnapshot,
@@ -59,12 +60,13 @@ const {
 } = require('./events/cooldownNotifier');
 const {
     updateVoiceChannelNameOnDemand,
-    // Import the non-standard event handlers here for manual registration
     guildMemberAdd,
     guildMemberRemove 
 } = require('./utils/voiceChannelUpdater'); 
 const { WEAPON_DATA } = require('./utils/damageData');
 const notifyCommands = require('./commands/notify');
+// NEW: Import the flush function from the message tracker
+const { flushMessageCache } = require('./events/monthlyMessageTracker');
 
 
 // Custom IDs for interaction components
@@ -289,6 +291,7 @@ client.once('clientReady', async () => {
         console.error('Failed to register slash commands:', error);
     }
 
+    // Interval for Dynamic Bot Status Update (every 5 minutes)
     setInterval(async () => {
         if (!db || !APP_ID_FOR_FIRESTORE || !client.isReady()) {
             console.warn('Interval Status Update: DB, App ID, or Client not ready. Skipping interval update.');
@@ -313,6 +316,16 @@ client.once('clientReady', async () => {
             console.error('Interval Status Update: Error fetching stats for presence update:', error);
         }
     }, 300000);
+
+    // NEW: Interval for Message Cache Flush (every 5 minutes)
+    setInterval(() => {
+        if (isFirestoreReady && db) {
+            flushMessageCache(db);
+        } else {
+            console.warn('Message Cache Flush: Firestore not ready. Skipping flush.');
+        }
+    }, 300000); // 5 minutes (300,000 ms)
+
 
     await startupChecks.checkAndRenameChannelsOnStartup(db, isFirestoreReady, client);
     await updateVoiceChannelNameOnDemand(client);
