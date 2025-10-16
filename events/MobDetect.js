@@ -10,6 +10,13 @@ const BOT_ID = '1393708735104422040';
 // Regex to detect mob spawn messages
 const MOB_MESSAGE_REGEX = /A \*\*(.*?)\*\* has spawned!/i;
 
+// --- Target Categories ---
+// Messages will ONLY be processed if they originate from a channel within one of these categories.
+const TARGET_CATEGORY_IDS = [
+    '1192414248299675663', 
+    '1319717698380501033'
+];
+
 /**
  * Determines the target channel name based on a mob name.
  * @param {string} mobName The name of the mob detected.
@@ -50,9 +57,21 @@ module.exports = {
             console.warn(`[MobDetect] Firestore is not ready. Skipping message processing for mob events.`);
             return;
         }
+        
+        // --- CATEGORY FILTERING IMPLEMENTATION ---
+        const channel = message.channel;
+        const parentCategoryId = channel.parent ? channel.parent.id : null;
+        
+        // If the channel is not in an approved category, stop execution immediately.
+        if (!parentCategoryId || !TARGET_CATEGORY_IDS.includes(parentCategoryId)) {
+            return;
+        }
+        // --- END CATEGORY FILTERING ---
+
 
         const guildId = message.guild.id;
         const channelId = message.channel.id;
+        // Firestore references are kept as they are required later for saving the original channel name.
         const guildChannelsRef = collection(db, `Guilds/${guildId}/channels`);
         const channelConfigDocRef = doc(guildChannelsRef, channelId);
         const embed = message.embeds.length > 0 ? message.embeds[0] : null;
@@ -69,7 +88,7 @@ module.exports = {
             mobName = mobSpawnMatch[1];
             newName = getTargetChannelName(mobName);
             renameReason = `Automated rename due to mob spawn: ${mobName}.`;
-        } 
+        }
         
         // 2. ** Comment: When an enemy is detected (embed title) (rename to mob name). **
         // This handles cases where the notification is an embed rather than a raw spawn message, 
