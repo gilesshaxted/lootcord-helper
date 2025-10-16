@@ -23,31 +23,37 @@ module.exports = {
             return await interaction.editReply({ content: '❌ This command must be used in a text channel.', flags: MessageFlags.Ephemeral });
         }
 
+        // --- Firestore References ---
         const guildDocRef = doc(collection(db, `Guilds`), guild.id);
+        // NEW: Reference to the specific channel document within the 'channels' subcollection
+        const channelDocRef = doc(collection(guildDocRef, 'channels'), channelId);
 
-        // 1. Check if channel already exists in the configured list
+        // 1. Check if channel already exists in the configured list (from the centralized array)
         const guildSnap = await getDoc(guildDocRef);
         const configuredChannels = guildSnap.exists() ? (guildSnap.data().configuredChannels || []) : [];
 
         // Check if the channel is already configured
-        if (configuredChannels.some(c => c.channelId === channelId)) {
-            return await interaction.editReply({ content: `ℹ️ Channel **#${channel.name}** is already configured for monitoring.`, flags: MessageFlags.Ephemeral });
+        const isAlreadyConfigured = configuredChannels.some(c => c.channelId === channelId);
+        
+        if (isAlreadyConfigured) {
+            // Even if it's already in the array, we proceed to ensure the subcollection document exists/is updated
+            // We just don't add it to the array again.
+            console.log(`[Channel-Add Debug] Channel ${channel.name} already in array. Skipping array push.`);
+        } else {
+             // 2. Add the new channel to the centralized array
+            const newChannelEntry = {
+                channelId: channelId,
+                channelName: channel.name,
+                originalChannelName: channel.name, // Store current name as original name
+                setType: 'command_add',
+                setByUserId: interaction.user.id,
+                setByUsername: interaction.user.tag,
+                timestamp: new Date().toISOString()
+            };
+            configuredChannels.push(newChannelEntry);
         }
 
-        // 2. Add the new channel to the list
-        const newChannelEntry = {
-            channelId: channelId,
-            channelName: channel.name,
-            originalChannelName: channel.name, // Store current name as original name
-            setType: 'command_add',
-            setByUserId: interaction.user.id,
-            setByUsername: interaction.user.tag,
-            timestamp: new Date().toISOString()
-        };
-
-        configuredChannels.push(newChannelEntry);
-
-        // 3. Perform ATOMIC WRITE: Update the Guild document with the new array
+        // 3. Perform ATOMIC WRITE 1: Update the Guild document with the centralized array
         try {
             await setDoc(guildDocRef, {
                 guildId: guild.id,
@@ -55,13 +61,33 @@ module.exports = {
                 lastUpdated: new Date().toISOString(),
                 configuredChannels: configuredChannels // Overwrite the whole array
             }, { merge: true });
-
-            // Use editReply because the interaction was deferred
-            return await interaction.editReply({ content: `✅ Channel **#${channel.name}** has been added for mob/sticky message monitoring.`, flags: MessageFlags.Ephemeral });
         } catch (error) {
-            console.error(`[Channel-Add] Error adding channel ${channel.name}:`, error);
-            return await interaction.editReply({ content: '❌ An error occurred while saving to the database. Please check logs.', flags: MessageFlags.Ephemeral });
+            console.error(`[Channel-Add] Error updating centralized array for ${channel.name}:`, error);
+            return await interaction.editReply({ content: '❌ An error occurred while updating the main configuration. Please check logs.', flags: MessageFlags.Ephemeral });
         }
+        
+        // 4. Perform ATOMIC WRITE 2: Create/Update the channel document in the subcollection
+        // This is crucial for MobDetect/Mob-Off/StartupChecks to function.
+        try {
+            await setDoc(channelDocRef, {
+                channelId: channelId,
+                channelName: channel.name,
+                originalChannelName: channel.name,
+                status: 'configured',
+                setByUserId: interaction.user.id,
+                lastUpdated: new Date().toISOString()
+            }, { merge: true });
+        } catch (error) {
+            console.error(`[Channel-Add] Error updating subcollection document for ${channel.name}:`, error);
+            return await interaction.editReply({ content: '❌ An error occurred while creating the channel record. Please check logs.', flags: MessageFlags.Ephemeral });
+        }
+
+
+        // 5. Final Reply
+        const replyMessage = isAlreadyConfigured 
+            ? `ℹ️ Channel **#${channel.name}** was already configured. Configuration record updated.`
+            : `✅ Channel **#${channel.name}** has been added for mob/sticky message monitoring.`;
+
+        return await interaction.editReply({ content: replyMessage, flags: MessageFlags.Ephemeral });
     },
 };
-    
