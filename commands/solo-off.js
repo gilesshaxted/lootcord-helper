@@ -1,6 +1,10 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const { doc, collection, getDoc, updateDoc, deleteDoc } = require('firebase/firestore');
 
+// Removed COOLDOWN_DURATION_MS constant as it is not used in this file but should be inferred or defined elsewhere
+// Note: Sticky message cleanup logic (which is the primary reset) is in stickyMessageManager.js
+// We aim to align with the manager's logic to reset the cooldown completely.
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('solo-off')
@@ -74,12 +78,13 @@ module.exports = {
                 const userCooldownSnap = await getDoc(userCooldownDocRef);
                 if (userCooldownSnap.exists()) {
                     const cooldownData = userCooldownSnap.data();
+                    // Only update the cooldown if the user's *active* channel is this channel
                     if (cooldownData.activeChannelId === channelId) {
                         await updateDoc(userCooldownDocRef, {
                             activeChannelId: null, // Clear the active channel
-                            lastUsedTimestamp: Date.now() - (COOLDOWN_DURATION_MS / 2) // Optionally reduce cooldown, or just set to now
+                            lastUsedTimestamp: 0 // Reset cooldown completely to allow immediate re-use, aligning with manager
                         });
-                        console.log(`[Solo-Off Command] Cleared active channel and adjusted cooldown for user ${soloingUserId}.`);
+                        console.log(`[Solo-Off Command] Cleared active channel and reset cooldown for user ${soloingUserId}.`);
                     }
                 }
 
