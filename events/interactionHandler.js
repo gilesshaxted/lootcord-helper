@@ -1,11 +1,13 @@
-const { doc, collection, getDoc, setDoc, deleteDoc } = require('firebase/firestore');
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { doc, collection, getDoc, setDoc, getDocs } = require('firebase/firestore');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, StringSelectMenuBuilder, ChannelType } = require('discord.js');
 const { WEAPON_DATA } = require('../utils/damageData');
 const paginationHelpers = require('../utils/pagination');
-const damageCalcCommand = require('../commands/damage-calc.js');
+const statsTracker = require('../utils/statsTracker');
 
-// Custom IDs for interactions
-const TRIVIA_EXPLANATION_BUTTON = 'show_trivia_explanation_';
+// Custom IDs for interaction components
+const WEAPON_SELECT_ID = 'damage_calc_weapon_select';
+const AMMO_SELECT_ID = 'damage_calc_ammo_select';
+const BLEEDING_SELECT_ID = 'damage_calc_bleeding_select';
 
 module.exports = {
     name: 'interactionCreate',
@@ -13,261 +15,354 @@ module.exports = {
     async execute(interaction, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
         if (!isFirestoreReady) {
             console.error('Firestore is not yet ready to process interactions. Skipping interaction.');
-            if (interaction.isMessageComponent() || interaction.isModalSubmit() && !interaction.replied && !interaction.deferred) {
+            if (!interaction.replied && !interaction.deferred) {
                 await interaction.reply({ content: 'The bot is still starting up. Please try again in a moment.', flags: MessageFlags.Ephemeral });
             }
             return;
         }
 
-        // --- Handle Chat Input Commands (Slash Commands) ---
+        // --- Handle Slash Commands ---
         if (interaction.isChatInputCommand()) {
-            return;
-        }
-
-        if (!interaction.customId) {
-             return; 
+            const command = client.commands.get(interaction.commandName);
+            if (!command) {
+                console.error(`No command matching ${interaction.commandName} was found.`);
+                return;
+            }
+            try {
+                await command.execute(interaction, db, client, APP_ID_FOR_FIRESTORE);
+                
+                if (command.data.name !== 'channel-set') {
+                    statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
+                }
+            } catch (error) {
+                console.error(`Error executing command ${interaction.commandName}:`, error);
+                if (interaction.deferred || interaction.replied) {
+                    await interaction.followUp({
+                        content: 'There was an error while executing this command!',
+                        flags: MessageFlags.Ephemeral
+                    });
+                } else {
+                    await interaction.reply({
+                        content: 'There was an error while executing this command!',
+                        flags: MessageFlags.Ephemeral
+                    });
+                }
+            }
         }
         
-        // --- Damage Calculator Logic (All parts of the multi-step interaction) ---
-        if (interaction.customId.startsWith('damage_calc_')) {
-            if (damageCalcCommand && damageCalcCommand.handleInteraction) {
-                await damageCalcCommand.handleInteraction(interaction, db, client, APP_ID_FOR_FIRESTORE);
+        // --- Handle Button Interactions ---
+        else if (interaction.isButton()) {
+            if (interaction.customId.startsWith('toggle_')) {
+                console.log(`[Notify Button - Debug] Button click received by ${interaction.user.tag} for customId: ${interaction.customId}`);
+                try {
+                    await interaction.deferUpdate();
+                    const userId = interaction.user.id;
+                    const customId = interaction.customId;
+        
+                    let notificationType;
+                    if (customId === 'toggle_attack_notifications') {
+                        notificationType = 'attackCooldown';
+                    } else if (customId === 'toggle_farm_notifications') {
+                        notificationType = 'farmCooldown';
+                    } else if (customId === 'toggle_med_notifications') {
+                        notificationType = 'medCooldown';
+                    } else if (customId === 'toggle_vote_notifications') {
+                        notificationType = 'voteCooldown';
+                    } else if (customId === 'toggle_repair_notifications') {
+                        notificationType = 'repairCooldown';
+                    } else if (customId === 'toggle_gambling_notifications') {
+                        notificationType = 'gamblingCooldown';
+                    } else if (customId === 'toggle_loot_notifications') {
+                        notificationType = 'lootCooldown';
+                    } else {
+                        return;
+                    }
+        
+                    const docRef = doc(collection(db, `UserNotifications/${userId}/preferences`), notificationType);
+                    const docSnap = await getDoc(docRef);
+        
+                    const isCurrentlyEnabled = docSnap.exists() ? docSnap.data().enabled : false;
+                    const newStatus = !isCurrentlyEnabled;
+        
+                    await setDoc(docRef, { enabled: newStatus });
+        
+                    const currentPrefs = {};
+                    const prefsRefs = {
+                        attackCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'attackCooldown'),
+                        farmCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'farmCooldown'),
+                        medCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'medCooldown'),
+                        voteCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'voteCooldown'),
+                        repairCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'repairCooldown'),
+                        gamblingCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'gamblingCooldown'),
+                        lootCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'lootCooldown'),
+                    };
+        
+                    for (const type in prefsRefs) {
+                        const snap = await getDoc(prefsRefs[type]);
+                        currentPrefs[type] = snap.exists() ? snap.data().enabled : false;
+                    }
+        
+                    const attackButton = new ButtonBuilder().setCustomId('toggle_attack_notifications').setLabel('Attack').setStyle(currentPrefs.attackCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
+                    const farmButton = new ButtonBuilder().setCustomId('toggle_farm_notifications').setLabel('Farm').setStyle(currentPrefs.farmCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
+                    const medButton = new ButtonBuilder().setCustomId('toggle_med_notifications').setLabel('Meds').setStyle(currentPrefs.medCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
+                    const voteButton = new ButtonBuilder().setCustomId('toggle_vote_notifications').setLabel('Vote').setStyle(currentPrefs.voteCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
+                    const repairButton = new ButtonBuilder().setCustomId('toggle_repair_notifications').setLabel('Repair').setStyle(currentPrefs.repairCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
+                    const gamblingButton = new ButtonBuilder().setCustomId('toggle_gambling_notifications').setLabel('Gambling').setStyle(currentPrefs.gamblingCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
+                    const lootButton = new ButtonBuilder().setCustomId('toggle_loot_notifications').setLabel('Loot').setStyle(currentPrefs.lootCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
+
+                    const row1 = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton, voteButton, repairButton);
+                    const row2 = new ActionRowBuilder().addComponents(gamblingButton, lootButton);
+                        
+                    const embed = new EmbedBuilder()
+                        .setColor(0x0099ff)
+                        .setTitle('Lootcord Helper Notifications')
+                        .setDescription(
+                            `Here you can manage your personal notification settings for Lootcord Helper.\n\n` +
+                            `**Attack Cooldown Notifications:**\n` +
+                            `Status: **${currentPrefs.attackCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
+                            `You'll be pinged when your **weapon cooldowns** are over.\n\n` +
+                            `**Farm Cooldown Notifications:**\n` +
+                            `Status: **${currentPrefs.farmCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
+                            `You'll be pinged when your **farming cooldowns** are over.\n\n` +
+                            `**Med Cooldown Notifications:**\n` +
+                            `Status: **${currentPrefs.medCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
+                            `You'll be pinged when your **medical item cooldowns** are over.\n\n` +
+                            `**Vote Cooldown Notifications:**\n` +
+                            `Status: **${currentPrefs.voteCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
+                            `You'll be pinged when your **voting cooldown** is over.\n\n` +
+                            `**Repair Cooldown Notifications:**\n` +
+                            `Status: **${currentPrefs.repairCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
+                            `You'll be pinged when your **clan repair cooldown** is over.\n\n` +
+                            `**Gambling Cooldown Notifications:**\n` +
+                            `Status: **${currentPrefs.gamblingCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
+                            `You'll be pinged when your **gambling cooldowns** are over.\n\n` +
+                            `**Loot Cooldown Notifications:**\n` +
+                            `Status: **${currentPrefs.lootCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
+                            `You'll be pinged for **trivia, scramble, and wordle** game cooldowns.`
+                        )
+                        .setFooter({ text: 'Use the buttons to toggle your notifications.' });
+        
+                    await interaction.editReply({ embeds: [embed], components: [row1, row2] });
+        
+                } catch (error) {
+                    if (error.code === 10062) {
+                        console.error(`[Notify Button] Failed to defer update due to unknown interaction. This may be a double-click or stale interaction.`);
+                    } else {
+                        console.error(`[Notify Button] An unexpected error occurred in handleNotifyButton:`, error);
+                        try {
+                            await interaction.followUp({ content: '❌ An error occurred while updating your notification settings. Please try again later.', flags: MessageFlags.Ephemeral });
+                        } catch (followUpError) {
+                            console.error(`[Notify Button] Failed to send a follow-up reply.`, followUpError);
+                        }
+                    }
+                }
+            } else if (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_')) {
+                await interaction.deferUpdate();
+
+                const parts = interaction.customId.split('_');
+                const action = parts[1];
+                const currentPage = parseInt(parts[2], 10);
+
+                let newPage = currentPage;
+                if (action === 'prev') {
+                    newPage--;
+                } else if (action === 'next') {
+                    newPage++;
+                }
+
+                const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage);
+                await interaction.editReply({ content, components, flags: MessageFlags.Ephemeral });
+            } else if (interaction.customId.startsWith('show_trivia_explanation_')) {
+                await interaction.deferUpdate();
+
+                const parts = interaction.customId.split('_');
+                const originalMessageId = parts[3];
+
+                const triviaExplanationRef = doc(collection(db, `TriviaExplanations`), originalMessageId);
+
+                try {
+                    const docSnap = await getDoc(triviaExplanationRef);
+
+                    if (docSnap.exists()) {
+                        const explanationData = docSnap.data();
+                        const explanations = explanationData.explanations;
+                        const optionLetters = ['A', 'B', 'C', 'D'];
+
+                        let explanationContent = `**Explanation for Trivia Question:** \`${explanationData.question}\`\n\n`;
+                        explanationContent += `\`\`\`\n`;
+                        optionLetters.forEach(letter => {
+                            if (explanations[letter]) {
+                                explanationContent += `${letter}: ${explanations[letter]}\n`;
+                            }
+                        });
+                        explanationContent += `\`\`\``;
+
+                        const originalMessage = interaction.message;
+                        if (originalMessage && originalMessage.embeds.length > 0) {
+                            // FIX: Re-create the embed using EmbedBuilder.from() to ensure valid formatting
+                            const existingEmbed = EmbedBuilder.from(originalMessage.embeds[0]);
+                            
+                            const newComponents = originalMessage.components.map(row => {
+                                return new ActionRowBuilder().addComponents(
+                                    row.components.map(button => {
+                                        return ButtonBuilder.from(button).setDisabled(true);
+                                    })
+                                );
+                            });
+                            
+                            // Use the new EmbedBuilder object
+                            await originalMessage.edit({ embeds: [existingEmbed], components: newComponents });
+                        }
+
+                        await interaction.followUp({ content: explanationContent, flags: 0 });
+                        console.log(`Trivia Solver: Posted explanation for message ID ${originalMessageId} in #${interaction.channel.name}.`);
+                    } else {
+                        await interaction.followUp({ content: 'Could not find explanation for this trivia question.', flags: 0 });
+                        console.warn(`Trivia Solver: Explanation not found for message ID ${originalMessageId}.`);
+                    }
+                } catch (error) {
+                    console.error(`Trivia Solver: Error fetching explanation for message ID ${originalMessageId}:`, error);
+                    await interaction.followUp({ content: 'An error occurred while fetching the explanation. Please check logs.', flags: MessageFlags.Ephemeral });
+                }
             }
-            return;
         }
+        
+        // --- Handle Select Menu Interactions ---
+        else if (interaction.isStringSelectMenu()) {
+            const customId = interaction.customId;
+            if (customId.startsWith(WEAPON_SELECT_ID)) {
+                await interaction.deferUpdate();
+                const selectedWeapon = interaction.values[0];
+                const strengthSkill = parseFloat(customId.split(':')[1]);
+                const ammoTypes = WEAPON_DATA[selectedWeapon];
 
-
-        // --- Notify Button Logic ---
-        if (interaction.isButton() && interaction.customId.startsWith('toggle_')) {
-            console.log(`[Notify Button - Debug] Button click received by ${interaction.user.tag} for customId: ${interaction.customId}`);
-            
-            // Acknowledge is handled at the top, allowing logic to run
-
-            const userId = interaction.user.id;
-            const prefsRefs = {
-                attackCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'attackCooldown'),
-                farmCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'farmCooldown'),
-                medCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'medCooldown'),
-                voteCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'voteCooldown'),
-                repairCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'repairCooldown'),
-                gamblingCooldown: doc(collection(db, `UserNotifications/${userId}/preferences`), 'gamblingCooldown'),
-            };
-
-            try {
-                let targetCooldownType;
-                if (interaction.customId === 'toggle_gambling_notifications') {
-                    targetCooldownType = 'gamblingCooldown';
-                } else {
-                    targetCooldownType = interaction.customId.replace('toggle_', '').replace('_notifications', '');
+                if (!ammoTypes || Object.keys(ammoTypes).length === 0) {
+                    const embed = new EmbedBuilder()
+                        .setColor(0xff0000)
+                        .setTitle('Damage Calculator Error')
+                        .setDescription(`No ammo data found for **${selectedWeapon}**. Please select another weapon.`);
+                    return await interaction.editReply({ embeds: [embed], components: [], flags: 0 });
                 }
 
-                const currentPrefSnap = await getDoc(prefsRefs[targetCooldownType]);
-                let newEnabledState = !(currentPrefSnap.exists() ? currentPrefSnap.data().enabled : false);
-                console.log(`[Notify Button] User ${userId} toggled ${targetCooldownType} notifications to: ${newEnabledState}`);
+                const ammoOptions = Object.keys(ammoTypes).map(ammoName => ({
+                    label: ammoName,
+                    value: ammoName,
+                }));
 
-                await setDoc(prefsRefs[targetCooldownType], { enabled: newEnabledState }, { merge: true });
-
-                const currentPrefs = {};
-                for (const type in prefsRefs) {
-                    const snap = await getDoc(prefsRefs[type]);
-                    currentPrefs[type] = snap.exists() ? snap.data().enabled : false;
-                }
+                const ammoSelect = new StringSelectMenuBuilder()
+                    .setCustomId(`${AMMO_SELECT_ID}:${strengthSkill}:${selectedWeapon}`)
+                    .setPlaceholder('Select ammo type...')
+                    .addOptions(ammoOptions);
 
                 const embed = new EmbedBuilder()
                     .setColor(0x0099ff)
-                    .setTitle('Lootcord Helper Notifications')
-                    .setDescription(
-                        `Here you can manage your personal notification settings for Lootcord Helper.\n\n` +
-                        `**Attack Cooldown Notifications:**\n` +
-                        `Status: **${currentPrefs.attackCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
-                        `You'll be pinged when your weapon cooldowns are over.\n\n` +
-                        `**Farm Cooldown Notifications:**\n` +
-                        `Status: **${currentPrefs.farmCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
-                        `You'll be pinged when your farming cooldowns are over.\n\n` +
-                        `**Med Cooldown Notifications:**\n` +
-                        `Status: **${currentPrefs.medCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
-                        `You'll be pinged when your medical item cooldowns are over.\n\n` +
-                        `**Vote Cooldown Notifications:**\n` +
-                        `Status: **${currentPrefs.voteCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
-                        `You'll be pinged when your **voting cooldown** is over.\n\n` +
-                        `**Repair Cooldown Notifications:**\n` +
-                        `Status: **${currentPrefs.repairCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
-                        `You'll be pinged when your **clan repair cooldown** is over.\n\n` +
-                        `**Gambling Cooldown Notifications:**\n` +
-                        `Status: **${currentPrefs.gamblingCooldown ? 'ON ✅' : 'OFF ❌'}**\n` +
-                        `You'll be pinged when your **gambling cooldowns** are over.`
-                    )
-                    .setFooter({ text: 'Use the buttons to toggle your notifications.' });
+                    .setTitle('Damage Calculator')
+                    .setDescription(`Your Strength Skill is currently - **${strengthSkill}x**\nWeapon: **${selectedWeapon}**\n\nPlease select your ammo type.`);
 
-                const attackButton = new ButtonBuilder().setCustomId('toggle_attack_notifications').setLabel('Attack').setStyle(currentPrefs.attackCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
-                const farmButton = new ButtonBuilder().setCustomId('toggle_farm_notifications').setLabel('Farm').setStyle(currentPrefs.farmCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
-                const medButton = new ButtonBuilder().setCustomId('toggle_med_notifications').setLabel('Meds').setStyle(currentPrefs.medCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
-                const voteButton = new ButtonBuilder().setCustomId('toggle_vote_notifications').setLabel('Vote').setStyle(currentPrefs.voteCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
-                const repairButton = new ButtonBuilder().setCustomId('toggle_repair_notifications').setLabel('Repair').setStyle(currentPrefs.repairCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
-                const gamblingButton = new ButtonBuilder().setCustomId('toggle_gambling_notifications').setLabel('Gambling').setStyle(currentPrefs.gamblingCooldown ? ButtonStyle.Success : ButtonStyle.Danger);
-
-                const row1 = new ActionRowBuilder().addComponents(attackButton, farmButton, medButton, voteButton, repairButton);
-                const row2 = new ActionRowBuilder().addComponents(gamblingButton);
-
-                await interaction.editReply({ embeds: [embed], components: [row1, row2] });
-                console.log(`[Notify Button] Updated original message with new notification status for ${userId}.`);
-
-            } catch (error) {
-                console.error(`[Notify Button] Error during logic or editReply for ${userId}:`, error);
-                // Only send followUp if the interaction hasn't been replied to successfully by editReply yet.
-                if (error.code !== 40060 && error.code !== 10062) {
-                    await interaction.followUp({ content: '❌ A general error occurred while updating your notification settings. Please check logs.', flags: MessageFlags.Ephemeral });
-                }
-            }
-        }
-        
-        // --- Pagination Buttons Logic (page_prev_ / page_next_) ---
-        if (interaction.isButton() && (interaction.customId.startsWith('page_prev_') || interaction.customId.startsWith('page_next_'))) {
-            
-            // DeferUpdate is handled at the top, proceed with logic
-            
-            const parts = interaction.customId.split('_');
-            const action = parts[1];
-            const currentPage = parseInt(parts[2], 10);
-
-            let newPage = currentPage;
-            if (action === 'prev') {
-                newPage--;
-            } else if (action === 'next') {
-                newPage++;
-            }
-            
-            const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, newPage, db);
-            
-            // FIX: Use editReply after successful deferUpdate/timeout
-            await interaction.editReply({ content, components, flags: 0 });
-        }
-
-        // --- Channel Set Submission Logic (StringSelectMenu) ---
-        if (interaction.isStringSelectMenu() && interaction.customId.startsWith('select-channels-to-set_page_')) {
-            const guild = interaction.guild;
-            const APP_ID_FOR_FIRESTORE = process.env.RENDER_SERVICE_ID || 'my-discord-bot-app';
-
-            // DeferUpdate is handled at the top, proceed with logic
-
-            const selectedChannelIds = interaction.values;
-            
-            if (!guild) {
-                return await interaction.editReply({ content: 'This action can only be performed in a guild.', flags: 0 });
-            }
-
-            const guildDocRef = doc(collection(db, `Guilds`), guild.id);
-            let successCount = 0;
-            let failureCount = 0;
-
-            // --- NEW OPTIMIZATION: Prepare data for Atomic Save Operation (ONE WRITE) ---
-            const newConfiguredChannels = [];
-
-            // 1. Process Selected Channels (Set/Keep)
-            for (const channelId of selectedChannelIds) {
-                const channel = guild.channels.cache.get(channelId);
-                
-                if (!channel) {
-                    failureCount++;
-                    continue;
-                }
-                
-                // Add to the new array structure
-                newConfiguredChannels.push({
-                    channelId: channel.id,
-                    channelName: channel.name,
-                    originalChannelName: channel.name, // Use current name as original on set
-                    setType: 'manual',
-                    setByUserId: interaction.user.id,
-                    setByUsername: interaction.user.tag,
-                    timestamp: new Date().toISOString()
+                await interaction.editReply({
+                    embeds: [embed],
+                    components: [new ActionRowBuilder().addComponents(ammoSelect)],
+                    flags: 0,
                 });
-                successCount++;
-            }
-            
-            // --- Atomic Save Operation (ONE WRITE) ---
-            try {
-                // Overwrite the configuredChannels array in the Guild doc.
-                await setDoc(guildDocRef, { 
-                    guildId: guild.id, 
-                    guildName: guild.name, 
-                    lastUpdated: new Date().toISOString(),
-                    configuredChannels: newConfiguredChannels // Save the entire list in one go
-                }, { merge: true });
-                
-                console.log(`[Channel Set] Atomic write successful for guild ${guild.id}. Channels updated: ${successCount}`);
+            } else if (customId.startsWith(AMMO_SELECT_ID)) {
+                await interaction.deferUpdate();
+                const selectedAmmo = interaction.values[0];
+                const [, strengthSkill, selectedWeapon] = customId.split(':');
 
-            } catch (error) {
-                 // Log error from the single atomic write operation
-                console.error(`Error performing ATOMIC WRITE for channel configuration in guild ${guild.id}:`, error);
-                // We mark successCount as 0 if the atomic write failed.
-                successCount = 0;
-                failureCount = selectedChannelIds.length;
-            }
+                const bleedingOptions = [{
+                    label: 'ON ✅ (1.5x)',
+                    value: 'true'
+                }, {
+                    label: 'OFF ❌ (1.0x)',
+                    value: 'false'
+                }, ];
 
-            let replyContent = `✅ Configuration saved: Updated **${successCount}** channels.`;
-            if (failureCount > 0) {
-                replyContent += `\n❌ Failed to save configuration due to a database error (Quota Exceeded). Please check logs.`;
-            }
+                const bleedingSelect = new StringSelectMenuBuilder()
+                    .setCustomId(`${BLEEDING_SELECT_ID}:${strengthSkill}:${selectedWeapon}:${selectedAmmo}`)
+                    .setPlaceholder('Bleeding Buff...')
+                    .addOptions(bleedingOptions);
 
-            // After saving, reload the page to show the user the updated state
-            const currentPage = parseInt(interaction.customId.split('_')[3], 10); // Extract current page for continuity
-            // NOTE: Must pass DB to the pagination utility function
-            const { content, components } = await paginationHelpers.createChannelPaginationMessage(interaction.guild, currentPage, db);
+                const embed = new EmbedBuilder()
+                    .setColor(0x0099ff)
+                    .setTitle('Damage Calculator')
+                    .setDescription(
+                        `Your Strength Skill is currently - **${strengthSkill}x**\n` +
+                        `Weapon: **${selectedWeapon}**\n` +
+                        `Ammo: **${selectedAmmo}**\n\n` +
+                        `Please select bleeding buff status.`
+                    );
 
-            // Send the final confirmation and the newly refreshed pagination menu
-            await interaction.editReply({ content: replyContent + '\n\n' + content, components: components, flags: 0 });
-        }
+                await interaction.editReply({
+                    embeds: [embed],
+                    components: [new ActionRowBuilder().addComponents(bleedingSelect)],
+                    flags: 0,
+                });
+            } else if (customId.startsWith(BLEEDING_SELECT_ID)) {
+                await interaction.deferUpdate();
+                const selectedBleedingBuff = interaction.values[0];
+                const [, strengthSkill, selectedWeapon, selectedAmmo] = customId.split(':');
 
+                const damageRangeStr = WEAPON_DATA[selectedWeapon]?.[selectedAmmo];
 
-        
-        // --- Trivia Explanation Logic ---
-        if (interaction.isButton() && interaction.customId.startsWith(TRIVIA_EXPLANATION_BUTTON)) {
-            // DeferUpdate is handled at the top, proceed with logic
-
-            const parts = interaction.customId.split('_');
-            const originalMessageId = parts[3];
-
-            const triviaExplanationRef = doc(collection(db, `TriviaExplanations`), originalMessageId);
-
-            try {
-                const docSnap = await getDoc(triviaExplanationRef);
-
-                if (docSnap.exists()) {
-                    const explanationData = docSnap.data();
-                    const explanations = explanationData.explanations;
-                    const optionLetters = ['A', 'B', 'C', 'D'];
-
-                    let explanationContent = `**Explanation for Trivia Question:** \`${explanationData.question}\`\n\n`;
-                    explanationContent += `\`\`\`n`;
-                    optionLetters.forEach(letter => {
-                        if (explanations[letter]) {
-                            explanationContent += `${letter}: ${explanations[letter]}\n`;
-                        }
-                    });
-                    explanationContent += `\`\`\``;
-
-                    const originalMessage = interaction.message;
-                    if (originalMessage) {
-                        const newComponents = originalMessage.components.map(row => {
-                            return new ActionRowBuilder().addComponents(
-                                row.components.map(button => {
-                                    return ButtonBuilder.from(button).setDisabled(true);
-                                })
-                            );
-                        });
-                        await originalMessage.edit({ embeds: [originalMessage.embeds[0]], components: newComponents });
-                    }
-
-                    await interaction.followUp({ content: explanationContent, flags: 0 });
-                    console.log(`Trivia Solver: Posted explanation for message ID ${originalMessageId} in #${interaction.channel.name}.`);
-                } else {
-                    await interaction.followUp({ content: 'Could not find explanation for this trivia question.', flags: 0 });
-                    console.warn(`Trivia Solver: Explanation not found for message ID ${originalMessageId}.`);
+                if (!damageRangeStr) {
+                    const embed = new EmbedBuilder()
+                        .setColor(0xff0000)
+                        .setTitle('Damage Calculator Error')
+                        .setDescription('Could not find damage data for the selected weapon/ammo combination. Please restart with `/damage-calc`.');
+                    return await interaction.editReply({ embeds: [embed], components: [], flags: 0 });
                 }
-            } catch (error) {
-                console.error(`Trivia Solver: Error fetching explanation for message ID ${originalMessageId}:`, error);
-                await interaction.followUp({ content: 'An error occurred while fetching the explanation. Please check logs.', flags: MessageFlags.Ephemeral });
+
+                // Regex to find optional multipliers like (x2) or (x3)
+                const multiplierMatch = damageRangeStr.match(/\(x(\d+)\)/);
+                const multiplier = multiplierMatch ? parseInt(multiplierMatch[1], 10) : 1;
+                const multiplierText = multiplierMatch ? multiplierMatch[0] : '';
+
+                // Get the base damage range string, removing the multiplier part if it exists
+                const baseDamageRangeStr = damageRangeStr.replace(/\(x\d+\)/, '').trim();
+                const [minDamageStr, maxDamageStr] = baseDamageRangeStr.split(' - ');
+                let minDamage = parseInt(minDamageStr, 10);
+                let maxDamage = parseInt(maxDamageStr, 10);
+
+                if (isNaN(minDamage) || isNaN(maxDamage)) {
+                    const embed = new EmbedBuilder()
+                        .setColor(0xff0000)
+                        .setTitle('Damage Calculator Error')
+                        .setDescription('Error parsing damage range. Please try again with `/damage-calc`.');
+                    return await interaction.editReply({ embeds: [embed], components: [], flags: 0 });
+                }
+
+                const buffMultiplier = selectedBleedingBuff === 'true' ? 1.5 : 1;
+
+                // Calculate the final damage with strength and buff, but without the ammo multiplier
+                const baseFinalMinDamage = Math.round(minDamage * strengthSkill * buffMultiplier);
+                const baseFinalMaxDamage = Math.round(maxDamage * strengthSkill * buffMultiplier);
+
+                let descriptionText = 
+                    `**Strength Skill:** ${strengthSkill}x\n` +
+                    `**Weapon:** ${selectedWeapon}\n` +
+                    `**Ammo:** ${selectedAmmo}\n` +
+                    `**Bleeding Buff:** ${selectedBleedingBuff === 'true' ? 'ON ✅ (x1.5)' : 'OFF ❌ (x1.0)'}\n\n`;
+
+                if (multiplier > 1) {
+                    // If a multiplier exists, show both the normal range and the multiplied range
+                    const multipliedFinalMinDamage = baseFinalMinDamage * multiplier;
+                    const multipliedFinalMaxDamage = baseFinalMaxDamage * multiplier;
+                    
+                    descriptionText += 
+                        `**Your Damage Range (Normal):** \`${baseFinalMinDamage} - ${baseFinalMaxDamage}\`\n` +
+                        `**Mob Damage Range ${multiplierText}:** \`${multipliedFinalMinDamage} - ${multipliedFinalMaxDamage}\``;
+                } else {
+                    // If no multiplier, just show the single range
+                    descriptionText += `**Your Damage Range:** \`${baseFinalMinDamage} - ${baseFinalMaxDamage}\``;
+                }
+
+                const resultEmbed = new EmbedBuilder()
+                    .setColor(0x00ff00)
+                    .setTitle('Damage Calculation Result')
+                    .setDescription(descriptionText)
+                    .setFooter({ text: 'Damage values are rounded to the nearest whole number.' });
+
+                await interaction.editReply({ embeds: [resultEmbed], components: [], flags: 0 });
             }
         }
     }
