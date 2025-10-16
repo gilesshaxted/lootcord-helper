@@ -7,13 +7,16 @@ module.exports = {
         .setDescription('Designates the current channel for Mob/Sticky Message monitoring.'),
 
     async execute(interaction, db, client, APP_ID_FOR_FIRESTORE) {
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        // NOTE: interaction is already deferred globally in index.js. 
+        // REMOVED: await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         const guild = interaction.guild;
         const channel = interaction.channel;
+        const channelId = channel.id;
 
         if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-            return await interaction.editReply({ content: '❌ You need the "Manage Channels" permission to use this command.', flags: MessageFlags.Ephemeral });
+            // Use followUp because the initial interaction was globally deferred in index.js
+            return await interaction.followUp({ content: '❌ You need the "Manage Channels" permission to use this command.', flags: MessageFlags.Ephemeral });
         }
 
         if (channel.type !== ChannelType.GuildText) {
@@ -21,7 +24,6 @@ module.exports = {
         }
 
         const guildDocRef = doc(collection(db, `Guilds`), guild.id);
-        const channelId = channel.id;
 
         // 1. Check if channel already exists in the configured list
         const guildSnap = await getDoc(guildDocRef);
@@ -29,7 +31,7 @@ module.exports = {
 
         // Check if the channel is already configured
         if (configuredChannels.some(c => c.channelId === channelId)) {
-            return await interaction.editReply({ content: `ℹ️ Channel ${channel.name} is already configured for monitoring.`, flags: MessageFlags.Ephemeral });
+            return await interaction.editReply({ content: `ℹ️ Channel **#${channel.name}** is already configured for monitoring.`, flags: MessageFlags.Ephemeral });
         }
 
         // 2. Add the new channel to the list
@@ -54,6 +56,7 @@ module.exports = {
                 configuredChannels: configuredChannels // Overwrite the whole array
             }, { merge: true });
 
+            // Use editReply because the interaction was deferred
             return await interaction.editReply({ content: `✅ Channel **#${channel.name}** has been added for mob/sticky message monitoring.`, flags: MessageFlags.Ephemeral });
         } catch (error) {
             console.error(`[Channel-Add] Error adding channel ${channel.name}:`, error);
@@ -61,3 +64,4 @@ module.exports = {
         }
     },
 };
+    
