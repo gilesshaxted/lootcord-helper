@@ -24,11 +24,21 @@ module.exports = {
 
         console.log(`\n--- [AI Chat Debug] Message received in target channel from ${message.author.tag} ---`);
         console.log(`[AI Chat Debug] Directly Addressed: ${isDirectlyAddressed}`);
-        console.log(`[AI Chat Debug] Message content: "${message.content.substring(0, 50)}..."`);
 
-        // 2. Role Check: Determine if the author has the excluded role (requires message.member)
+        // --- FIX: Robustly fetch the member for accurate role checking ---
+        let member = message.member;
+        if (!member && message.guild) {
+            try {
+                member = await message.guild.members.fetch(message.author.id);
+            } catch (e) {
+                console.error('[AI Chat Debug] Failed to fetch member for role check:', e.message);
+                // If member fetching fails, we proceed without role check, assuming no exclusion.
+            }
+        }
+
+        // 2. Role Check: Determine if the author has the excluded role
         let hasExcludedRole = false;
-        if (message.member && message.member.roles.cache.has(EXCLUDED_ROLE_ID)) {
+        if (member && member.roles.cache.has(EXCLUDED_ROLE_ID)) {
             hasExcludedRole = true;
             console.log(`[AI Chat Debug] User has excluded role (${EXCLUDED_ROLE_ID}).`);
         }
@@ -37,15 +47,15 @@ module.exports = {
         let shouldRespond = false;
         
         if (isDirectlyAddressed) {
-            // Always respond if directly addressed (mention/reply), regardless of role
+            // Priority 1: Always respond if directly addressed (mention/reply)
             shouldRespond = true;
             console.log(`[AI Chat Debug] Forced response due to mention/reply.`);
         } else if (hasExcludedRole) {
-            // If not directly addressed AND user has excluded role, DO NOT respond.
+            // Priority 2: If not directly addressed AND user has excluded role, DO NOT respond.
             console.log(`[AI Chat Debug] Skipping random response: User has excluded role.`);
             return;
         } else {
-            // Random chance for everyone else (who wasn't directly addressed)
+            // Priority 3: Random chance for everyone else
             const roll = Math.random();
             if (roll <= RESPONSE_CHANCE) {
                 shouldRespond = true;
@@ -102,10 +112,10 @@ Your response must be short and focused.`;
             
             // 6. Process API Response
             if (!response.ok) {
-                   console.error(`[AI Chat Debug] API HTTP Error: ${response.status} ${response.statusText}`);
-                   const errorBody = await response.json().catch(() => ({}));
-                   console.error('[AI Chat Debug] Raw Error Body (API Failed):', JSON.stringify(errorBody, null, 2));
-                   return;
+                    console.error(`[AI Chat Debug] API HTTP Error: ${response.status} ${response.statusText}`);
+                    const errorBody = await response.json().catch(() => ({}));
+                    console.error('[AI Chat Debug] Raw Error Body (API Failed):', JSON.stringify(errorBody, null, 2));
+                    return;
             }
 
             const result = await response.json();
@@ -118,8 +128,8 @@ Your response must be short and focused.`;
                 await message.channel.send({ content: aiResponse });
                 console.log(`[AI Chat Debug] Response sent: "${aiResponse.substring(0, 50)}..."`);
             } else {
-                   console.error('[AI Chat Debug] API Failure: No text found in candidate response (may be filtered or empty).');
-                   console.error('[AI Chat Debug] Raw Result (LLM Filtered):', JSON.stringify(result, null, 2));
+                    console.error('[AI Chat Debug] API Failure: No text found in candidate response (may be filtered or empty).');
+                    console.error('[AI Chat Debug] Raw Result (LLM Filtered):', JSON.stringify(result, null, 2));
             }
         } catch (error) {
             console.error('AI Chat Listener: Critical Error calling LLM or sending message:', error);
