@@ -3,7 +3,7 @@ const { LOOTCORD_GAME_KNOWLEDGE } = require('../utils/gameKnowledge'); // 1. Imp
 
 // --- Configuration ---
 const TARGET_CHANNEL_ID = '1311341302570549401'; // The channel where the bot should chat
-const RESPONSE_CHANCE = 0.10; // Base chance of responding
+const RESPONSE_CHANCE = 0.05; // Base chance of responding
 
 // Role ID for users who should ONLY receive direct responses (no random chat)
 const EXCLUDED_ROLE_ID = '1192414247276265512'; 
