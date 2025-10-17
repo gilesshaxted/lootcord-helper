@@ -8,46 +8,75 @@ const RESPONSE_CHANCE = 0.05; // Base chance of responding
 // Role ID for users who should ONLY receive direct responses (no random chat)
 const EXCLUDED_ROLE_ID = '1192414247276265512'; 
 
+/**
+ * Checks if a message is a reply specifically directed at the bot.
+ * This requires fetching the referenced message to check the author ID.
+ * @param {Message} message The incoming message object.
+ * @param {string} botId The bot's user ID.
+ * @returns {Promise<boolean>} True if the message is a reply to the bot.
+ */
+async function isReplyToBot(message, botId) {
+    if (!message.reference || !message.reference.messageId) {
+        return false;
+    }
+    
+    // Check if the reply is a direct reply to the bot's message
+    try {
+        const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
+        return referencedMessage.author.id === botId;
+    } catch (error) {
+        // If the referenced message is deleted or inaccessible, assume it's not a direct bot reply.
+        console.error('[AI Chat Debug] Error fetching referenced message:', error.message);
+        return false;
+    }
+}
+
 module.exports = {
     name: 'messageCreate',
     once: false,
     async execute(message) {
         // 1. Initial Checks and Channel Filter
-        if (message.author.bot || message.channel.id !== TARGET_CHANNEL_ID) {
+        if (message.author.bot || message.channel.id !== TARGET_CHANNEL_ID || !message.guild) {
             return;
         }
 
-        const client = message.client; // Get client for bot ID check
+        const client = message.client;
         const botId = client.user.id;
-        const isDirectlyAddressed = message.mentions.has(botId) || 
-                                    (message.reference && message.type === 19);
+
+        // --- Step 2: Determine if Directly Addressed (Mention or Reply to Bot) ---
+        // A. Check for direct @mention
+        let isDirectlyAddressed = message.mentions.has(botId);
+        
+        // B. Check for reply to bot (requires async fetch)
+        if (!isDirectlyAddressed && message.type === 19) { // message.type 19 is Reply
+             isDirectlyAddressed = await isReplyToBot(message, botId);
+        }
 
         console.log(`\n--- [AI Chat Debug] Message received in target channel from ${message.author.tag} ---`);
         console.log(`[AI Chat Debug] Directly Addressed: ${isDirectlyAddressed}`);
-
-        // --- FIX: Robustly fetch the member for accurate role checking ---
+        
+        // --- Step 3: Robustly fetch the member for accurate role checking ---
         let member = message.member;
-        if (!member && message.guild) {
+        if (!member) {
             try {
                 member = await message.guild.members.fetch(message.author.id);
             } catch (e) {
                 console.error('[AI Chat Debug] Failed to fetch member for role check:', e.message);
-                // If member fetching fails, we proceed without role check, assuming no exclusion.
             }
         }
 
-        // 2. Role Check: Determine if the author has the excluded role
+        // 4. Role Check: Determine if the author has the excluded role
         let hasExcludedRole = false;
         if (member && member.roles.cache.has(EXCLUDED_ROLE_ID)) {
             hasExcludedRole = true;
             console.log(`[AI Chat Debug] User has excluded role (${EXCLUDED_ROLE_ID}).`);
         }
         
-        // 3. Determine Response Trigger
+        // 5. Determine Response Trigger
         let shouldRespond = false;
         
         if (isDirectlyAddressed) {
-            // Priority 1: Always respond if directly addressed (mention/reply)
+            // Priority 1: Always respond if directly addressed (mention/reply to bot)
             shouldRespond = true;
             console.log(`[AI Chat Debug] Forced response due to mention/reply.`);
         } else if (hasExcludedRole) {
@@ -68,10 +97,9 @@ module.exports = {
         
         // If we reach here, shouldRespond must be true.
         
-        // 4. Define the LLM's persona and inject knowledge
+        // 6. Define the LLM's persona and inject knowledge
         const generalPersona = "You are Loot Helper, a helpful, enthusiastic, and slightly silly Discord bot. You are designed to be concise, friendly, and you always respond in 1-2 sentences.";
         
-        // The new system prompt directs the AI to use the knowledge base.
         const systemPrompt = `${generalPersona} You have been provided with a game database below. When asked a question about the game, reference this database. If the question is about something else, respond socially but concisely.
 
 ${LOOTCORD_GAME_KNOWLEDGE}
@@ -84,7 +112,7 @@ Your response must be short and focused.`;
         const chatHistory = [{ role: "user", parts: [{ text: userQuery }] }];
 
         try {
-            // 5. Call the LLM (Gemini API)
+            // 7. Call the LLM (Gemini API)
             const apiKey = process.env.GOOGLE_API_KEY; 
             if (!apiKey) {
                 console.error('AI Chat Listener: GOOGLE_API_KEY not set. Cannot generate response.');
@@ -110,7 +138,7 @@ Your response must be short and focused.`;
                 body: JSON.stringify(payload)
             });
             
-            // 6. Process API Response
+            // 8. Process API Response
             if (!response.ok) {
                     console.error(`[AI Chat Debug] API HTTP Error: ${response.status} ${response.statusText}`);
                     const errorBody = await response.json().catch(() => ({}));
@@ -124,7 +152,7 @@ Your response must be short and focused.`;
             if (candidate && candidate.content?.parts?.[0]?.text) {
                 const aiResponse = candidate.content.parts[0].text.trim();
                 
-                // 7. Send the AI-generated reply
+                // 9. Send the AI-generated reply
                 await message.channel.send({ content: aiResponse });
                 console.log(`[AI Chat Debug] Response sent: "${aiResponse.substring(0, 50)}..."`);
             } else {
