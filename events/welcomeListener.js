@@ -1,20 +1,16 @@
 const { Events } = require('discord.js');
 
 // --- Configuration ---
-const WELCOME_CHANNEL_ID = '1311341302570549401'; // Main chat channel
+// WELCOME_CHANNEL_ID is kept as a reference, but the message will be sent via DM.
+const WELCOME_CHANNEL_ID = '1311341302570549401'; // Main chat channel (Reference for message text)
 const VERIFICATION_CHANNEL_ID = '1192414247909589043'; // Verification channel ID
 
 module.exports = {
     name: Events.GuildMemberAdd, // The event to listen for
     once: false,
     async execute(member) {
-        // Find the designated welcome channel
-        const welcomeChannel = member.client.channels.cache.get(WELCOME_CHANNEL_ID);
-
-        if (!welcomeChannel) {
-            console.error(`[Welcome Listener] Welcome channel ID ${WELCOME_CHANNEL_ID} not found.`);
-            return;
-        }
+        // Find the designated welcome channel (This block is removed as we are DMing)
+        // const welcomeChannel = member.client.channels.cache.get(WELCOME_CHANNEL_ID);
 
         // Use the member's mention to welcome them personally
         const welcomeMessage = `
@@ -42,10 +38,12 @@ Check out **<id:customize>** for all available ping roles (e.g., for specific bo
         `;
 
         try {
-            await welcomeChannel.send({ content: welcomeMessage });
-            console.log(`[Welcome Listener] Sent welcome message to ${member.user.tag} in #${welcomeChannel.name}.`);
+            // Attempt to send the message via Direct Message
+            await member.send({ content: welcomeMessage });
+            console.log(`[Welcome Listener] Sent welcome DM to ${member.user.tag}.`);
         } catch (error) {
-            console.error(`[Welcome Listener] Failed to send message to #${welcomeChannel.name}:`, error);
+            // This is typically caught if the user has DMs disabled
+            console.error(`[Welcome Listener] Failed to send DM to ${member.user.tag}. User may have DMs disabled. Error:`, error.message);
         }
     },
 };
