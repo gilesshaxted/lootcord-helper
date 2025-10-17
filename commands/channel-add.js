@@ -20,7 +20,8 @@ module.exports = {
         }
 
         if (channel.type !== ChannelType.GuildText) {
-            return await interaction.editReply({ content: '❌ This command must be used in a text channel.', flags: MessageFlags.Ephemeral });
+            // CHANGED: Using followUp instead of editReply to guarantee a response if the deferral status is lost.
+            return await interaction.followUp({ content: '❌ This command must be used in a text channel.', flags: MessageFlags.Ephemeral });
         }
 
         // --- Firestore References ---
@@ -63,7 +64,8 @@ module.exports = {
             }, { merge: true });
         } catch (error) {
             console.error(`[Channel-Add] Error updating centralized array for ${channel.name}:`, error);
-            return await interaction.editReply({ content: '❌ An error occurred while updating the main configuration. Please check logs.', flags: MessageFlags.Ephemeral });
+            // CHANGED: Using followUp instead of editReply. (Line 91 fixed here)
+            return await interaction.followUp({ content: '❌ An error occurred while updating the main configuration. Please check logs.', flags: MessageFlags.Ephemeral });
         }
         
         // 4. Perform ATOMIC WRITE 2: Create/Update the channel document in the subcollection
@@ -79,7 +81,8 @@ module.exports = {
             }, { merge: true });
         } catch (error) {
             console.error(`[Channel-Add] Error updating subcollection document for ${channel.name}:`, error);
-            return await interaction.editReply({ content: '❌ An error occurred while creating the channel record. Please check logs.', flags: MessageFlags.Ephemeral });
+            // CHANGED: Using followUp instead of editReply.
+            return await interaction.followUp({ content: '❌ An error occurred while creating the channel record. Please check logs.', flags: MessageFlags.Ephemeral });
         }
 
 
@@ -88,6 +91,7 @@ module.exports = {
             ? `ℹ️ Channel **#${channel.name}** was already configured. Configuration record updated.`
             : `✅ Channel **#${channel.name}** has been added for mob/sticky message monitoring.`;
 
-        return await interaction.editReply({ content: replyMessage, flags: MessageFlags.Ephemeral });
+        // CHANGED: Using followUp instead of editReply for the final success message.
+        return await interaction.followUp({ content: replyMessage, flags: MessageFlags.Ephemeral });
     },
 };
