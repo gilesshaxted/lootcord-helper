@@ -184,6 +184,16 @@ Examples:
 - Jumbled: "reectn" -> centre
 - Jumbled: "vadrhra" -> harvard
 - Jumbled: "oblhacer" -> bachelor
+- Jumbled: "yesas" -> essay
+- Jumbled: "einsscsaat" -> assistance
+- Jumbled: "hrade" -> heard
+- Jumbled: "esoxpernis" -> expression
+- Jumbled: "ynroueg" -> younger
+- Jumbled: "egampnea" -> pagename
+- Jumbled: "pudocrre" -> producer
+- Jumbled: "rrkawot" -> artwork
+- Jumbled: "nitenotta" -> attention
+- Jumbled: "ysmrnotae" -> monastery
 
 Jumbled letters: ${scrambledLetters}`;
 
