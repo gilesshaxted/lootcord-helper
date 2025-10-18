@@ -133,14 +133,29 @@ module.exports = {
 
         // --- Detect Mob Killed or Escaped (Channel Revert Logic) ---
         const deathRevertCondition = message.content.includes('DIED!');
-        // 3. ** Comment: When an enemy leaves (escaped! or left...). **
-        const escapeRevertCondition = message.content.includes('escaped!') || (embed && embed.title && embed.title.includes('left...'));
         
-        // 3. ** Comment: When an enemy is killed (DIED!). **
+        // ** UPDATED LOGIC FOR MOB LEAVING **
+        // Condition A: Generic "escaped!" message content.
+        const contentEscapeCondition = message.content.includes('escaped!');
+
+        // Condition B: Specific "Mob left..." embed with the required description "Nobody defeated the mob!".
+        const embedLeftCondition = (
+            embed &&
+            embed.title &&
+            embed.title.includes('left...') &&
+            embed.description &&
+            embed.description.includes('Nobody defeated the mob!')
+        );
+
+        // Combined escape condition
+        const escapeRevertCondition = contentEscapeCondition || embedLeftCondition;
+        // ** END UPDATED LOGIC **
+        
         const revertCondition = deathRevertCondition || escapeRevertCondition;
 
         if (revertCondition) {
             try {
+                // We need to fetch the config *again* if we didn't exit on a new spawn, as we rely on the original name here.
                 const channelConfigSnap = await getDoc(channelConfigDocRef);
                 if (channelConfigSnap.exists() && channelConfigSnap.data().originalChannelName) {
                     const originalChannelName = channelConfigSnap.data().originalChannelName;
