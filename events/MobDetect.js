@@ -85,7 +85,7 @@ module.exports = {
         // 1. Check for the spawn ping message (used only to qualify the rename reason).
         const mobSpawnMatch = message.content.match(MOB_MESSAGE_REGEX);
         
-        // 2. ** NEW LOGIC: Trigger rename if any message from the target bot has a mob name in its embed title. **
+        // 2. ** Trigger rename if any message from the target bot has a mob name in its embed title. **
         if (embed && embed.title) {
             const embedMobName = embed.title;
             const targetName = getTargetChannelName(embedMobName);
@@ -117,7 +117,7 @@ module.exports = {
                 await message.channel.setName(newName, renameReason);
                 console.log(`MobDetect: Renamed channel ${oldChannelName} to ${newName} in guild ${message.guild.name}`);
                 
-                // Increment stats for a successful detection/rename (moved from old unscramble listener)
+                // Increment stats for a successful detection/rename
                 statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE); 
 
             } catch (error) {
@@ -132,30 +132,25 @@ module.exports = {
 
 
         // --- Detect Mob Killed or Escaped (Channel Revert Logic) ---
+        
+        // 1. Condition for Death/Kill
         const deathRevertCondition = message.content.includes('DIED!');
         
-        // ** UPDATED LOGIC FOR MOB LEAVING **
-        // Condition A: Generic "escaped!" message content.
-        const contentEscapeCondition = message.content.includes('escaped!');
-
-        // Condition B: Specific "Mob left..." embed with the required description "Nobody defeated the mob!".
-        const embedLeftCondition = (
+        // 2. Condition for Mob Escaped/Left (Embed Title ending in 'left...' AND Description is 'Nobody defeated the mob!')
+        const escapeRevertCondition = (
             embed &&
             embed.title &&
             embed.title.includes('left...') &&
             embed.description &&
             embed.description.includes('Nobody defeated the mob!')
         );
-
-        // Combined escape condition
-        const escapeRevertCondition = contentEscapeCondition || embedLeftCondition;
-        // ** END UPDATED LOGIC **
         
+        // Combined revert condition
         const revertCondition = deathRevertCondition || escapeRevertCondition;
 
         if (revertCondition) {
             try {
-                // We need to fetch the config *again* if we didn't exit on a new spawn, as we rely on the original name here.
+                // Fetch the config to get the original name
                 const channelConfigSnap = await getDoc(channelConfigDocRef);
                 if (channelConfigSnap.exists() && channelConfigSnap.data().originalChannelName) {
                     const originalChannelName = channelConfigSnap.data().originalChannelName;
@@ -163,7 +158,7 @@ module.exports = {
                     if (message.channel.name !== originalChannelName) {
                         const revertReason = deathRevertCondition 
                             ? 'Automated revert: Mob DIED!' 
-                            : 'Automated revert: Mob escaped/left.';
+                            : 'Automated revert: Mob left (Nobody defeated the mob!).'; // Updated Revert Reason
 
                         await message.channel.setName(originalChannelName, revertReason);
                         console.log(`MobDetect: Reverted channel ${message.channel.name} to ${originalChannelName}`);
