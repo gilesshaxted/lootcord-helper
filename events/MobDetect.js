@@ -9,6 +9,9 @@ const BOT_ID = '1393708735104422040';
 // Regex to detect mob spawn messages
 const MOB_MESSAGE_REGEX = /A \*\*(.*?)\*\* has spawned!/i;
 
+// New Regex to detect mob left embed titles (e.g., "The Mummy left...")
+const MOB_LEFT_EMBED_TITLE_REGEX = /.+ left\.\.\.$/i;
+
 module.exports = {
     name: 'messageCreate',
     once: false,
@@ -131,7 +134,7 @@ module.exports = {
         const embedLeftCondition = (
             embed && 
             embed.title && 
-            embed.title.includes('left...') &&
+            MOB_LEFT_EMBED_TITLE_REGEX.test(embed.title) && // Using the new Regex
             embed.description &&
             embed.description.includes('Nobody defeated the mob!')
         );
