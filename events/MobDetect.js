@@ -143,8 +143,11 @@ module.exports = {
             embed.description.includes('Nobody defeated the mob!')
         );
         
+        // 3. NEW: Condition for 'No Enemies Spawned Here' message
+        const noEnemiesRevertCondition = message.content.trim().startsWith('There are no enemies spawned here,');
+        
         // Combined revert condition
-        const revertCondition = deathRevertCondition || escapeRevertCondition;
+        const revertCondition = deathRevertCondition || escapeRevertCondition || noEnemiesRevertCondition;
 
         if (revertCondition) {
             try {
@@ -154,9 +157,15 @@ module.exports = {
                     const originalChannelName = channelConfigSnap.data().originalChannelName;
                     
                     if (message.channel.name !== originalChannelName) {
-                        const revertReason = deathRevertCondition 
-                            ? 'Automated revert: Mob DIED!' 
-                            : 'Automated revert: Mob left (Nobody defeated the mob!).'; // Updated Revert Reason
+                        // Determine the revert reason
+                        let revertReason;
+                        if (deathRevertCondition) {
+                            revertReason = 'Automated revert: Mob DIED!';
+                        } else if (escapeRevertCondition) {
+                            revertReason = 'Automated revert: Mob left (Nobody defeated the mob!).';
+                        } else { 
+                            revertReason = 'Automated revert: No enemies are currently spawned here.';
+                        }
 
                         await message.channel.setName(originalChannelName, revertReason);
                         console.log(`MobDetect: Reverted channel ${message.channel.name} to ${originalChannelName}`);
