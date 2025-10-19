@@ -143,8 +143,8 @@ module.exports = {
             embed.description.includes('Nobody defeated the mob!')
         );
         
-        // 3. NEW: Condition for 'No Enemies Spawned Here' message
-        const noEnemiesRevertCondition = message.content.trim().startsWith('There are no enemies spawned here,');
+        // 3. NEW: Condition for 'No Enemies Spawned Here' message (Updated to include ❌ emoji)
+        const noEnemiesRevertCondition = message.content.trim().startsWith('❌ There are no enemies spawned here,');
         
         // Combined revert condition
         const revertCondition = deathRevertCondition || escapeRevertCondition || noEnemiesRevertCondition;
