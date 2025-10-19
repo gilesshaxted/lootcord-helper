@@ -139,8 +139,6 @@ module.exports = {
         // 2. Condition for Mob Escaped/Left (Embed Title ending in 'left...' AND Description is 'Nobody defeated the mob!')
         const escapeRevertCondition = (
             embed &&
-            embed.title &&
-            embed.title.includes('left...') &&
             embed.description &&
             embed.description.includes('Nobody defeated the mob!')
         );
