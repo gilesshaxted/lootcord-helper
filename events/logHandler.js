@@ -1,4 +1,4 @@
-const { collection, doc, setDoc, getDoc, deleteDoc } = require('firebase/firestore');
+const { collection, doc, setDoc, getDoc, deleteDoc, PermissionsBitField } = require('firebase/firestore'); // Added PermissionsBitField import
 const { AttachmentBuilder } = require('discord.js');
 
 // --- Configuration Variables (MUST BE EDITED) ---
@@ -6,7 +6,7 @@ const LOGGING_ENABLED = true; 
 // 1. The channel ID where game events MUST originate from.
 const LOG_GAME_CHANNEL_ID = '1429872409233850478'; 
 // 2. The channel ID where the finished log file (.txt) is sent.
-const LOG_OUTPUT_CHANNEL_ID = '1394316724819591318'; // CHANGE THIS to a separate log channel ID
+const LOG_OUTPUT_CHANNEL_ID = '1394316724819591318'; 
 // 3. The ID of the bot whose messages we want to monitor.
 const TARGET_BOT_ID = '493316754689359874'; 
 
@@ -17,11 +17,10 @@ const logCache = new Map();
 const sessionStartTime = new Map();
 
 // --- Log Game End Conditions (Bot Message Content) ---
-// Now checks if content CONTAINS "WOOooo" OR STARTS WITH one of the two loss messages.
+// Checks if content CONTAINS "WOOooo" OR STARTS WITH one of the two loss messages.
 const GAME_END_REGEX = /(WOOooo|^(You've exhausted all of your guesses|You ran out of time to guess the correct word))/i;
 
 // --- Firestore State Management ---
-// Used to maintain the logging session status across function calls
 const FIREBASE_LOG_STATE_PATH = 'BotConfigs/loggingState'; 
 
 /**
@@ -56,10 +55,6 @@ async function setLogState(db, state) {
 
 /**
  * Formats Discord message data (including embeds) into a single raw log string.
- * @param {import('discord.js').Message|import('discord.js').PartialMessage} message The message object.
- * @param {string} actionType A short description of the action (e.g., 'MESSAGE_CREATE').
- * @param {string|null} [oldContent=null] Original content for message updates.
- * @returns {string} A raw, multi-line log entry.
  */
 function formatLogEntry(message, actionType, oldContent = null) {
     const time = new Date().toISOString();
@@ -79,7 +74,6 @@ function formatLogEntry(message, actionType, oldContent = null) {
     if (message.embeds && message.embeds.length > 0) {
         log += `  -> Embeds (${message.embeds.length}):\n`;
         message.embeds.forEach((embed, index) => {
-            // Note: Replace special characters and newlines for cleaner log file output
             log += `     [Embed ${index + 1}] Title: ${embed.title || 'N/A'} | Description: ${embed.description ? embed.description.replace(/\n/g, ' ') : 'N/A'}\n`;
             if (embed.fields) {
                 embed.fields.forEach(field => {
@@ -96,60 +90,79 @@ function formatLogEntry(message, actionType, oldContent = null) {
  * Ends the logging session, dumps the cache to a TXT file, and sends it to the output channel.
  * @param {import('discord.js').Client} client The Discord client instance.
  * @param {object} db Firestore instance.
+ * @param {boolean} [isManualDump=false] Indicates if triggered by a command.
  */
-async function endLoggingSession(client, db) {
+async function endLoggingSession(client, db, isManualDump = false) {
     const channelId = LOG_GAME_CHANNEL_ID;
     const cache = logCache.get(channelId);
     
     if (!cache || cache.length === 0) {
-        await setLogState(db, { isActive: false }); // Clear state even if empty cache
+        await setLogState(db, { isActive: false }); 
         logCache.delete(channelId);
         sessionStartTime.delete(channelId);
-        return;
+        return { success: true, message: "Log session cleared (no entries found)." };
     }
 
     const logContent = cache.join('\n---\n');
     const logsFileName = `wordle_log_${new Date().getTime()}.txt`;
     const logsFile = new AttachmentBuilder(Buffer.from(logContent, 'utf-8'), { name: logsFileName });
 
-    // FIX: Use fetch() to guarantee the channel object is retrieved, bypassing cache issues.
     let outputChannel = null;
+    let finalStatus = { success: false, message: "Unknown error." };
+
     try {
+        // Attempt to fetch the channel reliably
         outputChannel = await client.channels.fetch(LOG_OUTPUT_CHANNEL_ID);
     } catch (e) {
-        console.error(`[LOGGER] Failed to fetch output channel ${LOG_OUTPUT_CHANNEL_ID}:`, e.message);
+        finalStatus.message = `❌ Failed to fetch output channel ${LOG_OUTPUT_CHANNEL_ID}.`;
+        console.error(`[LOGGER] ${finalStatus.message}:`, e.message);
+        // Continue cleanup but log failure
     }
-
-    const startTime = sessionStartTime.get(channelId);
-    const duration = startTime ? (Date.now() - startTime) / 1000 : 0; // Duration in seconds
-
-    let replyMessage = `✅ **Log Session Complete for <#${channelId}>**\n`;
-    replyMessage += `Duration: ${duration.toFixed(0)} seconds (${Math.round(duration / 60)} minutes)\n`;
-    replyMessage += `Total Entries: ${cache.length}\n\n**Log file attached.**`;
 
     if (outputChannel && outputChannel.isTextBased()) {
         try {
-            await outputChannel.send({ content: replyMessage, files: [logsFile] });
-            console.log(`[LOGGER] Log file sent to output channel #${outputChannel.name}. Entries: ${cache.length}`);
+            // Check permissions before sending
+            const permissions = outputChannel.permissionsFor(client.user.id);
+            if (!permissions.has(PermissionsBitField.Flags.SendMessages)) {
+                finalStatus.message = `❌ Missing 'Send Messages' permission in <#${LOG_OUTPUT_CHANNEL_ID}>.`;
+                console.error(`[LOGGER] ${finalStatus.message}`);
+            } else if (!permissions.has(PermissionsBitField.Flags.AttachFiles)) {
+                finalStatus.message = `❌ Missing 'Attach Files' permission in <#${LOG_OUTPUT_CHANNEL_ID}>.`;
+                console.error(`[LOGGER] ${finalStatus.message}`);
+            } else {
+                const startTime = sessionStartTime.get(channelId);
+                const duration = startTime ? (Date.now() - startTime) / 1000 : 0; // Duration in seconds
+
+                let replyMessage = isManualDump ? `Manual Log Dump for <#${channelId}>` : `✅ **Log Session Complete for <#${channelId}>**`;
+                replyMessage += `\nDuration: ${duration.toFixed(0)} seconds (${Math.round(duration / 60)} minutes)\n`;
+                replyMessage += `Total Entries: ${cache.length}\n\n**Log file attached.**`;
+
+                await outputChannel.send({ content: replyMessage, files: [logsFile] });
+                console.log(`[LOGGER] Log file sent to output channel #${outputChannel.name}. Entries: ${cache.length}`);
+                finalStatus = { success: true, message: `Log file sent successfully to <#${LOG_OUTPUT_CHANNEL_ID}>.` };
+            }
         } catch (error) {
             console.error("[LOGGER] Failed to send log file:", error);
+            finalStatus.message = `❌ Failed to send log file: ${error.message}`;
         }
     } else {
-        // This includes cases where fetch failed or the channel isn't a text channel
-        console.error("[LOGGER] Output channel not found or not text-based:", LOG_OUTPUT_CHANNEL_ID);
+        if (!finalStatus.message.startsWith('❌')) {
+            finalStatus.message = `❌ Output channel ${LOG_OUTPUT_CHANNEL_ID} is not a valid text channel or could not be found.`;
+        }
     }
     
-    // Clean up state and cache
-    await setLogState(db, { isActive: false });
-    logCache.delete(channelId);
-    sessionStartTime.delete(channelId);
+    // Clean up state and cache only if it wasn't a manual dump (Manual dumps keep state for feedback)
+    if (!isManualDump) {
+        await setLogState(db, { isActive: false });
+        logCache.delete(channelId);
+        sessionStartTime.delete(channelId);
+    }
+
+    return finalStatus;
 }
 
 /**
  * Pushes a log entry into the cache if logging is active.
- * @param {import('discord.js').Message|import('discord.js').PartialMessage} message Message data.
- * @param {string} actionType Type of action.
- * @param {string|null} [oldContent=null] Old content for edits.
  */
 function cacheLogEntry(message, actionType, oldContent = null) {
     const logEntry = formatLogEntry(message, actionType, oldContent);
@@ -182,7 +195,7 @@ async function handleMessageCreate(message, db, client, isFirestoreReady, APP_ID
             await setLogState(db, { isActive: true, initiatorId: message.author.id, gameStartedAt: Date.now() });
             sessionStartTime.set(LOG_GAME_CHANNEL_ID, Date.now());
             cacheLogEntry(message, 'SESSION_START_COMMAND');
-            console.log(`[LOGGER] Started new logging session in #${message.channel.name} by ${message.author.tag}.`);
+            console.log(`[LOGGER] SESSION START: Logging began in #${message.channel.name} by ${message.author.tag}.`); // New console log
             return;
         }
         return;
@@ -195,7 +208,7 @@ async function handleMessageCreate(message, db, client, isFirestoreReady, APP_ID
     
     // --- LOGGING SESSION END ---
     if (isTargetBot && message.content && GAME_END_REGEX.test(message.content)) {
-        console.log(`[LOGGER] Detected game end message: "${message.content.substring(0, 50)}..." in #${message.channel.name}. Dumping logs.`);
+        console.log(`[LOGGER] SESSION END DETECTED: Game end message: "${message.content.substring(0, 50)}..." in #${message.channel.name}. Dumping logs.`); // New console log
         await endLoggingSession(client, db);
     }
 }
@@ -247,5 +260,7 @@ module.exports = {
 
     // Export other handlers to be manually registered in index.js
     messageDelete: handleMessageDelete,
-    messageUpdate: handleMessageUpdate
+    messageUpdate: handleMessageUpdate,
+    // Export the end function for manual command trigger
+    endLoggingSession
 };
