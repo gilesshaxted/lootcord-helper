@@ -79,6 +79,7 @@ function formatLogEntry(message, actionType, oldContent = null) {
     if (message.embeds && message.embeds.length > 0) {
         log += `  -> Embeds (${message.embeds.length}):\n`;
         message.embeds.forEach((embed, index) => {
+            // Note: Replace special characters and newlines for cleaner log file output
             log += `     [Embed ${index + 1}] Title: ${embed.title || 'N/A'} | Description: ${embed.description ? embed.description.replace(/\n/g, ' ') : 'N/A'}\n`;
             if (embed.fields) {
                 embed.fields.forEach(field => {
@@ -111,7 +112,14 @@ async function endLoggingSession(client, db) {
     const logsFileName = `wordle_log_${new Date().getTime()}.txt`;
     const logsFile = new AttachmentBuilder(Buffer.from(logContent, 'utf-8'), { name: logsFileName });
 
-    const outputChannel = client.channels.cache.get(LOG_OUTPUT_CHANNEL_ID);
+    // FIX: Use fetch() to guarantee the channel object is retrieved, bypassing cache issues.
+    let outputChannel = null;
+    try {
+        outputChannel = await client.channels.fetch(LOG_OUTPUT_CHANNEL_ID);
+    } catch (e) {
+        console.error(`[LOGGER] Failed to fetch output channel ${LOG_OUTPUT_CHANNEL_ID}:`, e.message);
+    }
+
     const startTime = sessionStartTime.get(channelId);
     const duration = startTime ? (Date.now() - startTime) / 1000 : 0; // Duration in seconds
 
@@ -127,6 +135,7 @@ async function endLoggingSession(client, db) {
             console.error("[LOGGER] Failed to send log file:", error);
         }
     } else {
+        // This includes cases where fetch failed or the channel isn't a text channel
         console.error("[LOGGER] Output channel not found or not text-based:", LOG_OUTPUT_CHANNEL_ID);
     }
     
