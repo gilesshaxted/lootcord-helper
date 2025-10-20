@@ -21,7 +21,9 @@ module.exports = {
         // This is the channel ID that logHandler is actively caching for
         const channelIdBeingLogged = LOG_GAME_CHANNEL_ID;
 
-        // Execute the log dump function manually
+        // Execute the log dump function manually (sets isManualDump=true).
+        // This prevents the function from clearing the Firestore state, allowing 
+        // automatic logging to potentially continue or trigger on the next event.
         const result = await endLoggingSession(client, db, true);
 
         // Check if the output channel exists (to provide a clear message)
@@ -34,12 +36,4 @@ module.exports = {
                 content: `✅ Log dump successful for ${gameChannelMention}. ${result.message}`
             });
         } else {
-            // Log the failure to the console and inform the user
-            console.error(`[LOGS COMMAND] Manual dump failed with error: ${result.message}`);
-            await interaction.editReply({ 
-                content: `❌ Log dump failed for ${gameChannelMention}. Reason: ${result.message}\n` +
-                         `Please check the bot's console for detailed errors and ensure the bot has 'Send Messages' and 'Attach Files' permissions in the output channel.`
-            });
-        }
-    },
-};
+            // Log the failure to the console and
