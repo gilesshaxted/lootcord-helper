@@ -86,7 +86,7 @@ require('dotenv').config({
 // --- Configuration Variables ---
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
-const PORT = processs.env.PORT || 3000;
+const PORT = process.env.PORT || 3000; // FIX: Corrected typo from processs.env to process.env
 
 // Firebase configuration loaded from environment variables for Render hosting
 const firebaseConfig = {
@@ -218,6 +218,7 @@ for (const file of commandFiles) {
             // Check if it's the specific logs command file
             if (file === 'log.js') {
                 // Manually define command data for /logs to ensure it gets registered.
+                // NOTE: This structure MUST match what Discord expects for slash commands.
                 const LOGS_COMMAND_DATA = {
                     name: "logs",
                     description: "Retrieves the latest logs stored in the database.",
