@@ -3,7 +3,7 @@ const { collection, addDoc } = require('firebase/firestore'); // Import Firestor
 // Logging Configuration Variables
 // 1. Variable to enable/disable logging
 const LOGGING_ENABLED = true; 
-// 2. Placeholder for a log channel ID (not used for Firestore)
+// 2. The channel ID where events MUST originate from to be logged (The channel you specified)
 const LOG_CHANNEL_ID = '1429872409233850478'; 
 
 /**
@@ -63,41 +63,43 @@ function generateLogEntry(message, actionType, oldContent = null) {
 
 // 1. Logs all newly created messages
 async function handleMessageCreate(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
-    // Ignore messages from bots or from this bot itself (prevents logging other bot's spam)
+    // FIX: Filtering to the specific channel ID
+    if (!message.guild || message.channel.id !== LOG_CHANNEL_ID || !isFirestoreReady || !LOGGING_ENABLED) return;
+    // Ignore messages from bots or from this bot itself
     if (message.author.bot || message.author.id === client.user.id) return;
-    if (!message.guild || !isFirestoreReady || !LOGGING_ENABLED) return;
     
     const logData = generateLogEntry(message, 'MESSAGE_CREATE');
     await writeLogToFirestore(logData, db, APP_ID_FOR_FIRESTORE);
-    console.log(`[LOGGER] Logged Message Create from ${message.author.tag} to Firestore.`);
+    console.log(`[LOGGER] Logged Message Create from ${message.author.tag} in #${message.channel.name} to Firestore.`);
 }
 
 
 // 2. Logs deleted messages
 async function handleMessageDelete(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
-    // Only log if we have guild context and logging is enabled
-    if (!message.guild || !isFirestoreReady || !LOGGING_ENABLED) return;
+    // FIX: Filtering to the specific channel ID
+    if (!message.guild || message.channel.id !== LOG_CHANNEL_ID || !isFirestoreReady || !LOGGING_ENABLED) return;
 
-    // Log the deletion action. We generally want to log bot deletions too for clarity, 
-    // but ignoring self is safer.
+    // Ignore logging deletions by the bot itself
     if (message.author && message.author.id === client.user.id) return;
 
     const logData = generateLogEntry(message, 'MESSAGE_DELETE');
     await writeLogToFirestore(logData, db, APP_ID_FOR_FIRESTORE);
-    console.log(`[LOGGER] Logged Message Delete (ID: ${message.id}) to Firestore.`);
+    console.log(`[LOGGER] Logged Message Delete (ID: ${message.id}) from #${message.channel.name} to Firestore.`);
 }
 
 // 3. Logs edited messages
 async function handleMessageUpdate(oldMessage, newMessage, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
+    // FIX: Filtering to the specific channel ID
+    if (!newMessage.guild || newMessage.channel.id !== LOG_CHANNEL_ID || !isFirestoreReady || !LOGGING_ENABLED) return;
+    
     // Ignore if content hasn't changed or if message is partial/bot message
-    if (oldMessage.content === newMessage.content || !newMessage.guild || newMessage.author.bot || !isFirestoreReady || !LOGGING_ENABLED) return;
+    if (oldMessage.content === newMessage.content || newMessage.author.bot) return;
 
-    // The oldMessage content might be undefined if uncached, but we can only log if we have it
     const oldContent = oldMessage.content || 'CONTENT_UNAVAILABLE (Uncached Old)';
     
     const logData = generateLogEntry(newMessage, 'MESSAGE_EDIT', oldContent);
     await writeLogToFirestore(logData, db, APP_ID_FOR_FIRESTORE);
-    console.log(`[LOGGER] Logged Message Edit (ID: ${newMessage.id}) to Firestore.`);
+    console.log(`[LOGGER] Logged Message Edit (ID: ${newMessage.id}) in #${newMessage.channel.name} to Firestore.`);
 }
 
 
