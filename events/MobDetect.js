@@ -136,15 +136,13 @@ module.exports = {
         // 1. Condition for Death/Kill
         const deathRevertCondition = message.content.includes('DIED!');
         
-        // 2. Condition for Mob Escaped/Left (Embed Title ending in 'left...' AND Description is 'Nobody defeated the mob!')
-        // Alternative Escape Revert Condition (more lenient on whitespace)
-        const escapeRevertCondition = (
-            embed &&
-            embed.description &&
-            /Nobody\s+defeated\s+the\s+mob!/i.test(embed.description) 
+        // 2. Condition for Mob Escaped/Left (Simplified logic: Title contains 'left...' OR Description contains 'Nobody defeated the mob!')
+        const escapeRevertCondition = embed && (
+            (embed.title && embed.title.includes('left...')) || 
+            (embed.description && /Nobody\s+defeated\s+the\s+mob!/i.test(embed.description))
         );
         
-        // 3. NEW: Condition for 'No Enemies Spawned Here' message (Updated to include ❌ emoji)
+        // 3. NEW: Condition for 'No Enemies Spawned Here' message
         const noEnemiesRevertCondition = message.content.trim().startsWith('❌ There are no enemies spawned here,');
         
         // Combined revert condition
@@ -163,6 +161,7 @@ module.exports = {
                         if (deathRevertCondition) {
                             revertReason = 'Automated revert: Mob DIED!';
                         } else if (escapeRevertCondition) {
+                            // This reason covers both title-match and description-match escapes
                             revertReason = 'Automated revert: Mob left (Nobody defeated the mob!).';
                         } else { 
                             revertReason = 'Automated revert: No enemies are currently spawned here.';
