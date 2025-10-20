@@ -1,72 +1,61 @@
-const fs = require('fs');
-const path = require('path');
+const { collection, addDoc } = require('firebase/firestore'); // Import Firestore methods
 
 // Logging Configuration Variables
 // 1. Variable to enable/disable logging
 const LOGGING_ENABLED = true; 
-// 2. Placeholder for a log channel ID (currently not used for file logging)
+// 2. Placeholder for a log channel ID (not used for Firestore)
 const LOG_CHANNEL_ID = '1429872409233850478'; 
 
 /**
- * Creates the required log directory structure (logs/YYYY-MM-DD) and appends a log entry to the hourly file (HH.txt).
- * @param {string} logEntry The raw log line to append.
+ * Writes the structured log entry to the public Firestore logs collection.
+ * Path: artifacts/{appId}/public/data/logs
+ * @param {object} logData The log object to save.
+ * @param {object} db Firestore instance.
+ * @param {string} appId The application ID for the artifact path.
  */
-function writeLogToFile(logEntry) {
-    const now = new Date();
-    // YYYY-MM-DD format for folder name
-    const dateFolder = now.toISOString().substring(0, 10); 
-    // HH format for file name
-    const hourFile = now.getHours().toString().padStart(2, '0'); 
-
-    // Construct the full directory path relative to the bot's execution location
-    const logDir = path.join(process.cwd(), 'logs', dateFolder);
-    const filePath = path.join(logDir, `${hourFile}.txt`);
-
+async function writeLogToFirestore(logData, db, appId) {
+    if (!db || !appId) {
+        console.error("[LOGGER] Firestore or APP_ID not available for logging.");
+        return;
+    }
     try {
-        // Ensure the directory exists. { recursive: true } creates intermediate folders.
-        if (!fs.existsSync(logDir)) {
-            fs.mkdirSync(logDir, { recursive: true });
-        }
-        
-        // Append the log entry followed by a newline character
-        fs.appendFileSync(filePath, logEntry + '\n');
+        const logsCollectionRef = collection(db, `artifacts/${appId}/public/data/logs`);
+        await addDoc(logsCollectionRef, logData);
     } catch (error) {
-        console.error(`[LOGGER] Failed to write log to file:`, error);
+        console.error("[LOGGER] Failed to write log to Firestore:", error);
     }
 }
 
 /**
- * Formats a Discord message into a raw, parsable log entry.
- * NOTE: For messageDelete, message content/author might be partial/unavailable if uncached.
- * @param {import('discord.js').Message} message The Discord message object (or partial object).
+ * Formats a Discord message into a structured object for Firestore.
+ * @param {import('discord.js').Message} message The Discord message object.
  * @param {string} actionType A short description of the action (e.g., 'MESSAGE_DELETE').
- * @returns {string} The raw log line.
+ * @returns {object} The structured log entry.
  */
 function generateLogEntry(message, actionType) {
-    const now = new Date();
-    // Timestamp format: YYYY-MM-DD HH:MM:SS
-    const timestamp = now.toISOString().replace(/T/, ' ').substring(0, 19);
-    
     // Check if guild and author properties are available (may be missing for uncached messages)
     const guildId = message.guild ? message.guild.id : 'N/A';
     const channelId = message.channel ? message.channel.id : 'N/A';
     const userId = message.author ? message.author.id : 'N/A (Uncached)';
     
-    // Use message content if available, otherwise use a placeholder
-    const content = message.content 
-        ? message.content.replace(/[\r\n]/g, ' \\n ')
-        : 'CONTENT_UNAVAILABLE'; 
-
-    return `[${timestamp}] [GUILD:${guildId}] [CHANNEL:${channelId}] [USER:${userId}] [ACTION:${actionType}] | ${content}`;
+    return {
+        timestamp: new Date().toISOString(),
+        action: actionType,
+        guildId: guildId,
+        channelId: channelId,
+        userId: userId,
+        messageId: message.id || 'N/A',
+        content: message.content || 'CONTENT_UNAVAILABLE', 
+    };
 }
 
 module.exports = {
-    // This event listens for a message being deleted
     name: 'messageDelete', 
     once: false,
-    async execute(message) {
-        // Only proceed if logging is enabled globally
-        if (!LOGGING_ENABLED) {
+    // The event now receives Firebase context: db and APP_ID_FOR_FIRESTORE
+    async execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
+        // Only proceed if logging is enabled globally and Firestore is ready
+        if (!LOGGING_ENABLED || !isFirestoreReady) {
             return;
         }
 
@@ -76,9 +65,9 @@ module.exports = {
         }
 
         // Log the deletion action
-        const logEntry = generateLogEntry(message, 'MESSAGE_DELETE');
-        writeLogToFile(logEntry);
+        const logData = generateLogEntry(message, 'MESSAGE_DELETE');
+        await writeLogToFirestore(logData, db, APP_ID_FOR_FIRESTORE);
         
-        console.log(`[LOGGER] Logged Message Delete from #${message.channel.name}`);
+        console.log(`[LOGGER] Logged Message Delete from #${message.channel.name} to Firestore.`);
     },
 };
