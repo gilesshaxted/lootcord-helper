@@ -86,7 +86,7 @@ require('dotenv').config({
 // --- Configuration Variables ---
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
-const PORT = process.env.PORT || 3000;
+const PORT = processs.env.PORT || 3000;
 
 // Firebase configuration loaded from environment variables for Render hosting
 const firebaseConfig = {
@@ -214,8 +214,21 @@ for (const file of commandFiles) {
         const command = require(filePath);
         if ('data' in command && 'execute' in command) {
             client.commands.set(command.data.name, command);
-            slashCommandsToRegister.push(command.data.toJSON());
-            // NOTE: The `logs.js` command is loaded correctly here via the generic loop.
+            
+            // Check if it's the specific logs command file
+            if (file === 'log.js') {
+                // Manually define command data for /logs to ensure it gets registered.
+                const LOGS_COMMAND_DATA = {
+                    name: "logs",
+                    description: "Retrieves the latest logs stored in the database.",
+                    options: [], // Assuming a simple command without subcommands for now
+                };
+                slashCommandsToRegister.push(LOGS_COMMAND_DATA);
+                console.log(`[Command Loader] Manually registered /logs command data.`);
+            } else {
+                slashCommandsToRegister.push(command.data.toJSON());
+            }
+
             console.log(`[Command Loader] Successfully loaded command: ${command.data.name}`);
         } else {
             console.warn(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property. Skipping.`);
@@ -236,7 +249,7 @@ for (const file of eventFiles) {
     if (event.once) {
         client.once(event.name, (...args) => event.execute(...args, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE));
     } else {
-        // This registers the messageCreate event for logHandler.js
+        // This registers the primary event (messageCreate) exported from logHandler.js
         client.on(event.name, (...args) => event.execute(...args, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE));
     }
 }
@@ -247,7 +260,7 @@ client.on('guildMemberAdd', (...args) => guildMemberAdd(...args, db, client, isF
 client.on('guildMemberRemove', (...args) => guildMemberRemove(...args, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE));
 console.log('[Event Loader] Manually registered guildMemberAdd and guildMemberRemove events from voiceChannelUpdater.js.');
 
-// --- NEW: Manual Registration for Comprehensive Logging Handlers ---
+// --- Manual Registration for Comprehensive Logging Handlers ---
 // These functions are exported from logHandler.js but listen for different events than 'messageCreate'.
 if (logHandler.messageDelete) {
     client.on('messageDelete', (...args) => logHandler.messageDelete(...args, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE));
@@ -257,7 +270,7 @@ if (logHandler.messageUpdate) {
     client.on('messageUpdate', (...args) => logHandler.messageUpdate(...args, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE));
     console.log('[Event Loader] Registered messageUpdate event for comprehensive logging.');
 }
-// --- END NEW REGISTRATION ---
+// --- END Manual Registration ---
 
 
 // --- Discord Event Handlers (main ones remaining in index.js) ---
@@ -298,6 +311,7 @@ client.once('clientReady', async () => {
 
     try {
         console.log(`Started refreshing ${slashCommandsToRegister.length} application (/) commands.`);
+        // NOTE: This REST call is what registers the /logs command data now
         const data = await rest.put(
             Routes.applicationCommands(CLIENT_ID), {
                 body: slashCommandsToRegister
