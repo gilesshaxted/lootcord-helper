@@ -1,105 +1,231 @@
-const { collection, addDoc } = require('firebase/firestore'); // Import Firestore methods
+const { collection, doc, setDoc, getDoc, deleteDoc } = require('firebase/firestore');
+const { AttachmentBuilder } = require('discord.js');
 
-// Logging Configuration Variables
-// 1. Variable to enable/disable logging
-const LOGGING_ENABLED = true; 
-// 2. The channel ID where events MUST originate from to be logged (The channel you specified)
-const LOG_CHANNEL_ID = '1429872409233850478'; 
+// --- Configuration Variables (MUST BE EDITED) ---
+const LOGGING_ENABLED = true; 
+// 1. The channel ID where game events MUST originate from.
+const LOG_GAME_CHANNEL_ID = '1429872409233850478'; 
+// 2. The channel ID where the finished log file (.txt) is sent.
+const LOG_OUTPUT_CHANNEL_ID = '1394316724819591318'; // CHANGE THIS to a separate log channel ID
+// 3. The ID of the bot whose messages we want to monitor.
+const TARGET_BOT_ID = '493316754689359874'; 
+
+// --- In-Memory Log Cache ---
+// Key: Channel ID, Value: Array of raw log strings
+const logCache = new Map();
+// Key: Channel ID, Value: Unix Timestamp when logging started
+const sessionStartTime = new Map();
+
+// --- Log Game End Conditions (Bot Message Content Starts With) ---
+const GAME_END_REGEX = /^(You won|You've exhausted all of your guesses|You ran out of time to guess the correct word)/i;
+
+// --- Firestore State Management ---
+// Used to maintain the logging session status across function calls
+const FIREBASE_LOG_STATE_PATH = 'BotConfigs/loggingState'; 
 
 /**
- * Writes the structured log entry to the public Firestore logs collection.
- * Path: artifacts/{appId}/public/data/logs
- * @param {object} logData The log object to save.
+ * Utility to fetch the current active logging state from Firestore.
  * @param {object} db Firestore instance.
- * @param {string} appId The application ID for the artifact path.
+ * @returns {Promise<object|null>} The active state object or null.
  */
-async function writeLogToFirestore(logData, db, appId) {
-    if (!db || !appId) {
-        console.error("[LOGGER] Firestore or APP_ID not available for logging.");
-        return;
-    }
+async function getLogState(db) {
+    if (!db) return null;
     try {
-        const logsCollectionRef = collection(db, `artifacts/${appId}/public/data/logs`);
-        await addDoc(logsCollectionRef, logData);
+        const docSnap = await getDoc(doc(db, FIREBASE_LOG_STATE_PATH));
+        return docSnap.exists() ? docSnap.data() : { isActive: false };
     } catch (error) {
-        console.error("[LOGGER] Failed to write log to Firestore:", error);
+        console.error("[LOGGER] Failed to read log state from Firestore:", error);
+        return { isActive: false };
     }
 }
 
 /**
- * Formats a Discord message into a structured object for Firestore.
- * @param {import('discord.js').Message} message The Discord message object.
- * @param {string} actionType A short description of the action (e.g., 'MESSAGE_DELETE').
- * @param {string|null} [oldContent=null] Original content for message updates.
- * @returns {object} The structured log entry.
+ * Utility to set the active logging state in Firestore.
+ * @param {object} db Firestore instance.
+ * @param {object} state The state object to save.
  */
-function generateLogEntry(message, actionType, oldContent = null) {
-    // Check if guild and author properties are available (may be missing for uncached messages)
-    const guildId = message.guild ? message.guild.id : 'N/A';
-    const channelId = message.channel ? message.channel.id : 'N/A';
-    const userId = message.author ? message.author.id : 'N/A (Uncached)';
-    const content = message.content || 'CONTENT_UNAVAILABLE';
+async function setLogState(db, state) {
+    if (!db) return;
+    try {
+        await setDoc(doc(db, FIREBASE_LOG_STATE_PATH), state, { merge: true });
+    } catch (error) {
+        console.error("[LOGGER] Failed to write log state to Firestore:", error);
+    }
+}
+
+/**
+ * Formats Discord message data (including embeds) into a single raw log string.
+ * @param {import('discord.js').Message|import('discord.js').PartialMessage} message The message object.
+ * @param {string} actionType A short description of the action (e.g., 'MESSAGE_CREATE').
+ * @param {string|null} [oldContent=null] Original content for message updates.
+ * @returns {string} A raw, multi-line log entry.
+ */
+function formatLogEntry(message, actionType, oldContent = null) {
+    const time = new Date().toISOString();
+    const authorTag = message.author ? message.author.tag : 'N/A (Uncached)';
+    const authorId = message.author ? message.author.id : 'N/A';
+    const messageId = message.id || 'N/A';
     
-    const logEntry = {
-        timestamp: new Date().toISOString(),
-        action: actionType,
-        guildId: guildId,
-        channelId: channelId,
-        userId: userId,
-        messageId: message.id || 'N/A',
-    };
+    let log = `[${time}] | ${actionType} | ID:${messageId} | User:${authorTag} (${authorId})\n`;
 
     if (actionType === 'MESSAGE_EDIT') {
-        logEntry.oldContent = oldContent;
-        logEntry.newContent = content;
+        log += `  -> Old Content: "${oldContent || 'CONTENT_UNAVAILABLE (Uncached)'}"\n`;
+        log += `  -> New Content: "${message.content || 'CONTENT_UNAVAILABLE'}"\n`;
     } else {
-        logEntry.content = content;
+        log += `  -> Content: "${message.content || 'CONTENT_UNAVAILABLE'}"\n`;
     }
 
-    return logEntry;
+    if (message.embeds && message.embeds.length > 0) {
+        log += `  -> Embeds (${message.embeds.length}):\n`;
+        message.embeds.forEach((embed, index) => {
+            log += `     [Embed ${index + 1}] Title: ${embed.title || 'N/A'} | Description: ${embed.description ? embed.description.replace(/\n/g, ' ') : 'N/A'}\n`;
+            if (embed.fields) {
+                embed.fields.forEach(field => {
+                    log += `     [Field] ${field.name}: ${field.value.replace(/\n/g, ' ')}\n`;
+                });
+            }
+        });
+    }
+
+    return log;
 }
+
+/**
+ * Ends the logging session, dumps the cache to a TXT file, and sends it to the output channel.
+ * @param {import('discord.js').Client} client The Discord client instance.
+ * @param {object} db Firestore instance.
+ */
+async function endLoggingSession(client, db) {
+    const channelId = LOG_GAME_CHANNEL_ID;
+    const cache = logCache.get(channelId);
+    
+    if (!cache || cache.length === 0) {
+        await setLogState(db, { isActive: false }); // Clear state even if empty cache
+        logCache.delete(channelId);
+        sessionStartTime.delete(channelId);
+        return;
+    }
+
+    const logContent = cache.join('\n---\n');
+    const logsFileName = `wordle_log_${new Date().getTime()}.txt`;
+    const logsFile = new AttachmentBuilder(Buffer.from(logContent, 'utf-8'), { name: logsFileName });
+
+    const outputChannel = client.channels.cache.get(LOG_OUTPUT_CHANNEL_ID);
+    const startTime = sessionStartTime.get(channelId);
+    const duration = startTime ? (Date.now() - startTime) / 1000 : 0; // Duration in seconds
+
+    let replyMessage = `✅ **Log Session Complete for <#${channelId}>**\n`;
+    replyMessage += `Duration: ${duration.toFixed(0)} seconds (${Math.round(duration / 60)} minutes)\n`;
+    replyMessage += `Total Entries: ${cache.length}\n\n**Log file attached.**`;
+
+    if (outputChannel && outputChannel.isTextBased()) {
+        try {
+            await outputChannel.send({ content: replyMessage, files: [logsFile] });
+            console.log(`[LOGGER] Log file sent to output channel #${outputChannel.name}. Entries: ${cache.length}`);
+        } catch (error) {
+            console.error("[LOGGER] Failed to send log file:", error);
+        }
+    } else {
+        console.error("[LOGGER] Output channel not found or not text-based:", LOG_OUTPUT_CHANNEL_ID);
+    }
+    
+    // Clean up state and cache
+    await setLogState(db, { isActive: false });
+    logCache.delete(channelId);
+    sessionStartTime.delete(channelId);
+}
+
+/**
+ * Pushes a log entry into the cache if logging is active.
+ * @param {import('discord.js').Message|import('discord.js').PartialMessage} message Message data.
+ * @param {string} actionType Type of action.
+ * @param {string|null} [oldContent=null] Old content for edits.
+ */
+function cacheLogEntry(message, actionType, oldContent = null) {
+    const logEntry = formatLogEntry(message, actionType, oldContent);
+    const channelId = LOG_GAME_CHANNEL_ID;
+    
+    if (!logCache.has(channelId)) {
+        logCache.set(channelId, []);
+    }
+    logCache.get(channelId).push(logEntry);
+}
+
 
 // --- Event Handlers ---
 
-// 1. Logs all newly created messages
+// 1. Logs all newly created messages (used for START/STOP detection)
 async function handleMessageCreate(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
-    // FIX: Filtering to the specific channel ID
-    if (!message.guild || message.channel.id !== LOG_CHANNEL_ID || !isFirestoreReady || !LOGGING_ENABLED) return;
-    // Ignore messages from bots or from this bot itself
-    if (message.author.bot || message.author.id === client.user.id) return;
+    if (!message.guild || message.channel.id !== LOG_GAME_CHANNEL_ID || !isFirestoreReady || !LOGGING_ENABLED) return;
+
+    const logState = await getLogState(db);
+    const isTargetBot = message.author.id === TARGET_BOT_ID;
+    const isSelfBot = message.author.id === client.user.id;
     
-    const logData = generateLogEntry(message, 'MESSAGE_CREATE');
-    await writeLogToFirestore(logData, db, APP_ID_FOR_FIRESTORE);
-    console.log(`[LOGGER] Logged Message Create from ${message.author.tag} in #${message.channel.name} to Firestore.`);
+    // Filter Source: Only log messages from users, or the target bot
+    if (isSelfBot || (message.author.bot && !isTargetBot)) return;
+
+    // --- LOGGING SESSION START ---
+    if (!logState.isActive) {
+        // Check for the 't-wordle' initiation command from a user
+        if (!isTargetBot && message.content.toLowerCase().startsWith('t-wordle')) {
+            await setLogState(db, { isActive: true, initiatorId: message.author.id, gameStartedAt: Date.now() });
+            sessionStartTime.set(LOG_GAME_CHANNEL_ID, Date.now());
+            cacheLogEntry(message, 'SESSION_START_COMMAND');
+            console.log(`[LOGGER] Started new logging session in #${message.channel.name} by ${message.author.tag}.`);
+            return;
+        }
+        return;
+    }
+    
+    // --- LOGGING SESSION ACTIVE ---
+    
+    // Cache the created message
+    cacheLogEntry(message, 'MESSAGE_CREATE');
+    
+    // --- LOGGING SESSION END ---
+    if (isTargetBot && message.content && GAME_END_REGEX.test(message.content)) {
+        console.log(`[LOGGER] Detected game end message: "${message.content.substring(0, 50)}..." in #${message.channel.name}. Dumping logs.`);
+        await endLoggingSession(client, db);
+    }
 }
 
 
 // 2. Logs deleted messages
 async function handleMessageDelete(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
-    // FIX: Filtering to the specific channel ID
-    if (!message.guild || message.channel.id !== LOG_CHANNEL_ID || !isFirestoreReady || !LOGGING_ENABLED) return;
+    if (!message.guild || message.channel.id !== LOG_GAME_CHANNEL_ID || !isFirestoreReady || !LOGGING_ENABLED) return;
+    
+    const logState = await getLogState(db);
+    if (!logState.isActive) return;
 
-    // Ignore logging deletions by the bot itself
-    if (message.author && message.author.id === client.user.id) return;
+    const isTargetBot = message.author.id === TARGET_BOT_ID;
+    const isSelfBot = message.author.id === client.user.id;
+    
+    if (isSelfBot || (message.author.bot && !isTargetBot)) return;
 
-    const logData = generateLogEntry(message, 'MESSAGE_DELETE');
-    await writeLogToFirestore(logData, db, APP_ID_FOR_FIRESTORE);
-    console.log(`[LOGGER] Logged Message Delete (ID: ${message.id}) from #${message.channel.name} to Firestore.`);
+    cacheLogEntry(message, 'MESSAGE_DELETE');
+    console.log(`[LOGGER] Cached Message Delete (ID: ${message.id}) from #${message.channel.name}.`);
 }
 
 // 3. Logs edited messages
 async function handleMessageUpdate(oldMessage, newMessage, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
-    // FIX: Filtering to the specific channel ID
-    if (!newMessage.guild || newMessage.channel.id !== LOG_CHANNEL_ID || !isFirestoreReady || !LOGGING_ENABLED) return;
+    if (!newMessage.guild || newMessage.channel.id !== LOG_GAME_CHANNEL_ID || !isFirestoreReady || !LOGGING_ENABLED) return;
+    
+    const logState = await getLogState(db);
+    if (!logState.isActive) return;
+    
+    const isTargetBot = newMessage.author.id === TARGET_BOT_ID;
+    const isSelfBot = newMessage.author.id === client.user.id;
+
+    if (isSelfBot || (newMessage.author.bot && !isTargetBot)) return;
     
     // Ignore if content hasn't changed or if message is partial/bot message
-    if (oldMessage.content === newMessage.content || newMessage.author.bot) return;
+    if (oldMessage.content === newMessage.content) return;
 
     const oldContent = oldMessage.content || 'CONTENT_UNAVAILABLE (Uncached Old)';
     
-    const logData = generateLogEntry(newMessage, 'MESSAGE_EDIT', oldContent);
-    await writeLogToFirestore(logData, db, APP_ID_FOR_FIRESTORE);
-    console.log(`[LOGGER] Logged Message Edit (ID: ${newMessage.id}) in #${newMessage.channel.name} to Firestore.`);
+    cacheLogEntry(newMessage, 'MESSAGE_EDIT', oldContent);
+    console.log(`[LOGGER] Cached Message Edit (ID: ${newMessage.id}) in #${newMessage.channel.name}.`);
 }
 
 
