@@ -137,10 +137,11 @@ module.exports = {
         const deathRevertCondition = message.content.includes('DIED!');
         
         // 2. Condition for Mob Escaped/Left (Embed Title ending in 'left...' AND Description is 'Nobody defeated the mob!')
+        // Alternative Escape Revert Condition (more lenient on whitespace)
         const escapeRevertCondition = (
             embed &&
             embed.description &&
-            embed.description.includes('Nobody defeated the mob!')
+            /Nobody\s+defeated\s+the\s+mob!/i.test(embed.description) 
         );
         
         // 3. NEW: Condition for 'No Enemies Spawned Here' message (Updated to include ❌ emoji)
