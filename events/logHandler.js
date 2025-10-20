@@ -16,8 +16,9 @@ const logCache = new Map();
 // Key: Channel ID, Value: Unix Timestamp when logging started
 const sessionStartTime = new Map();
 
-// --- Log Game End Conditions (Bot Message Content Starts With) ---
-const GAME_END_REGEX = /^(You won|You've exhausted all of your guesses|You ran out of time to guess the correct word)/i;
+// --- Log Game End Conditions (Bot Message Content) ---
+// Now checks if content CONTAINS "WOOooo" OR STARTS WITH one of the two loss messages.
+const GAME_END_REGEX = /(WOOooo|^(You've exhausted all of your guesses|You ran out of time to guess the correct word))/i;
 
 // --- Firestore State Management ---
 // Used to maintain the logging session status across function calls
