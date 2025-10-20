@@ -1,5 +1,5 @@
-const { collection, doc, setDoc, getDoc, deleteDoc, PermissionsBitField } = require('firebase/firestore'); // Added PermissionsBitField import
-const { AttachmentBuilder } = require('discord.js');
+const { collection, doc, setDoc, getDoc, deleteDoc } = require('firebase/firestore');
+const { AttachmentBuilder, PermissionsBitField } = require('discord.js'); // FIX: Added PermissionsBitField to the import
 
 // --- Configuration Variables (MUST BE EDITED) ---
 const LOGGING_ENABLED = true; 
@@ -55,6 +55,10 @@ async function setLogState(db, state) {
 
 /**
  * Formats Discord message data (including embeds) into a single raw log string.
+ * @param {import('discord.js').Message|import('discord.js').PartialMessage} message The message object.
+ * @param {string} actionType A short description of the action (e.g., 'MESSAGE_CREATE').
+ * @param {string|null} [oldContent=null] Original content for message updates.
+ * @returns {string} A raw, multi-line log entry.
  */
 function formatLogEntry(message, actionType, oldContent = null) {
     const time = new Date().toISOString();
@@ -111,19 +115,21 @@ async function endLoggingSession(client, db, isManualDump = false) {
     let finalStatus = { success: false, message: "Unknown error." };
 
     try {
-        // Attempt to fetch the channel reliably
+        // Fetch the channel reliably
         outputChannel = await client.channels.fetch(LOG_OUTPUT_CHANNEL_ID);
     } catch (e) {
         finalStatus.message = `❌ Failed to fetch output channel ${LOG_OUTPUT_CHANNEL_ID}.`;
         console.error(`[LOGGER] ${finalStatus.message}:`, e.message);
-        // Continue cleanup but log failure
     }
 
     if (outputChannel && outputChannel.isTextBased()) {
         try {
             // Check permissions before sending
             const permissions = outputChannel.permissionsFor(client.user.id);
-            if (!permissions.has(PermissionsBitField.Flags.SendMessages)) {
+            if (!permissions) {
+                finalStatus.message = `❌ Bot has no permissions defined for output channel.`;
+                console.error(`[LOGGER] ${finalStatus.message}`);
+            } else if (!permissions.has(PermissionsBitField.Flags.SendMessages)) {
                 finalStatus.message = `❌ Missing 'Send Messages' permission in <#${LOG_OUTPUT_CHANNEL_ID}>.`;
                 console.error(`[LOGGER] ${finalStatus.message}`);
             } else if (!permissions.has(PermissionsBitField.Flags.AttachFiles)) {
@@ -151,7 +157,7 @@ async function endLoggingSession(client, db, isManualDump = false) {
         }
     }
     
-    // Clean up state and cache only if it wasn't a manual dump (Manual dumps keep state for feedback)
+    // Clean up state and cache only if it wasn't a manual dump
     if (!isManualDump) {
         await setLogState(db, { isActive: false });
         logCache.delete(channelId);
@@ -163,6 +169,9 @@ async function endLoggingSession(client, db, isManualDump = false) {
 
 /**
  * Pushes a log entry into the cache if logging is active.
+ * @param {import('discord.js').Message|import('discord.js').PartialMessage} message Message data.
+ * @param {string} actionType Type of action.
+ * @param {string|null} [oldContent=null] Old content for edits.
  */
 function cacheLogEntry(message, actionType, oldContent = null) {
     const logEntry = formatLogEntry(message, actionType, oldContent);
