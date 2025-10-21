@@ -1,5 +1,5 @@
-const { collection, doc, setDoc, getDoc, deleteDoc, PermissionsBitField } = require('firebase/firestore');
-const { AttachmentBuilder } = require('discord.js');
+const { collection, doc, setDoc, getDoc, deleteDoc } = require('firebase/firestore');
+const { AttachmentBuilder, PermissionsBitField } = require('discord.js'); // FIX: Correctly import PermissionsBitField from discord.js
 
 // --- Configuration Variables (MUST BE EDITED) ---
 const LOGGING_ENABLED = true; 
@@ -17,8 +17,8 @@ const logCache = new Map();
 const sessionStartTime = new Map();
 
 // --- Log Game End Conditions (Bot Message Content) ---
-// FIX: Removed the start-of-string anchor (^) to allow matching after hidden characters.
-const GAME_END_REGEX = /(WOOooo|You've exhausted all of your guesses|You ran out of time to guess the correct word)/i;
+// Checks if content CONTAINS "WOOooo" OR STARTS WITH one of the two loss messages.
+const GAME_END_REGEX = /(WOOooo|^(You've exhausted all of your guesses|You ran out of time to guess the correct word))/i;
 
 // --- Firestore State Management ---
 const FIREBASE_LOG_STATE_PATH = 'BotConfigs/loggingState'; 
