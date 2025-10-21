@@ -3,7 +3,9 @@ const { WORD_LENGTH, parseEmojiRow, updateWordleGameState, getLLMWordleSuggestio
 const statsTracker = require('../utils/statsTracker');
 
 // Configuration specific to this listener
+// The channel ID where Wordle games will be played (matches LOG_GAME_CHANNEL_ID)
 const TARGET_WORDLE_CHANNEL_ID = '1429872409233850478'; 
+// FIX: Define TARGET_BOT_ID locally as requested
 const TARGET_BOT_ID = '493316754689359874'; 
 
 
@@ -201,21 +203,18 @@ module.exports = {
         const isGameBot = message.author.id === TARGET_BOT_ID;
         const isUserInitiating = message.content.toLowerCase().startsWith('t-wordle');
 
+        // Only process t-wordle initiation command
         if (isUserInitiating) {
-            // Check if the instructional message is already in the cache (meaning a game is starting)
-            const recentMessages = await message.channel.messages.fetch({ limit: 5 });
-            const instructionalMessage = recentMessages.find(m => m.author.id === TARGET_BOT_ID && m.content.includes('You will have 6 tries to guess the word correctly'));
-            
-            if (instructionalMessage) {
-                 // Ignore the t-wordle message here; the subsequent messageEdit will handle the initialization.
-                 // This ensures the solver doesn't try to run until the grid is available.
-                 return;
+            // Fetch the game status to prevent redundant initialization if a game is already active
+            const gameDocRef = doc(collection(db, `WordleGames`), message.channel.id);
+            const gameDocSnap = await getDoc(gameDocRef);
+            if (gameDocSnap.exists() && gameDocSnap.data().status === 'active') {
+                console.log(`[Wordle Solver - Debug] Game already active, ignoring t-wordle command.`);
+                return;
             }
-        }
-        
-        // If the game bot sends the initial instructional message (pre-edit)
-        if (isGameBot && message.content.includes('You will have 6 tries to guess the word correctly') && message.embeds.length > 0) {
-             return;
+            
+            // Allow the flow to continue to the messageUpdate handler which will pick up the bot's response.
+            return;
         }
 
         // --- Game End Detection (Final message for missed games) ---
@@ -255,7 +254,7 @@ module.exports = {
             const gameDocSnap = await getDoc(gameDocRef);
 
             // 1. INITIALIZATION: If state does not exist OR if it's the very first guess being processed
-            if (!gameDocSnap.exists() || gameDocSnap.data().guessesMade.length === 0) {
+            if (!gameDocSnap.exists() || gameDocSnap.data().currentGuessNumber === 0) {
                 // Check for the initial grid pattern that confirms this is Guess #1
                 const allGraySquaresRegex = /Reward:.*?\n\n(<:medium_gray_square:\d+>){5}/s;
                 if (allGraySquaresRegex.test(newMessage.embeds?.[0]?.description)) {
