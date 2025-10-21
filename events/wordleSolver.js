@@ -33,6 +33,7 @@ async function processGuessAcknowledgement(message, db, client, isFirestoreReady
     let gameState = gameDocSnap.exists() && gameDocSnap.data().status === 'active' ? gameDocSnap.data() : null;
 
     if (!gameState) {
+        console.log(`[Wordle Solver - Process] No active state found for Guess #${currentGuessNumber}. Exiting.`);
         return; // Should have been initialized or ended already
     }
 
@@ -45,6 +46,8 @@ async function processGuessAcknowledgement(message, db, client, isFirestoreReady
     if (currentGuessNumber !== gameState.currentGuessNumber + 1) {
         return;
     }
+    
+    console.log(`[Wordle Solver - Process] SUCCESS: Processing sequential Guess #${currentGuessNumber}.`);
 
     // --- Acknowledge the Guess ---
     await message.channel.send({ content: `✅ Detected **Guess #${currentGuessNumber}**. Ready for the next input.` });
@@ -64,6 +67,8 @@ async function initializeGameStateAndSuggestWord(message, db, client, isFirestor
     const userId = client.user.id; 
     const gameDocRef = getGameDocRef(db, channelId, APP_ID_FOR_FIRESTORE, userId);
 
+    console.log(`[Wordle Solver - Initialization] ATTEMPTING INITIALIZATION (Guess #1 Edit).`);
+
     let playerUserId = null;
     try {
          // Find the user who sent the initiating 't-wordle' command
@@ -71,8 +76,9 @@ async function initializeGameStateAndSuggestWord(message, db, client, isFirestor
              msgs.find(m => !m.author.bot && m.content.toLowerCase().startsWith('t-wordle'))
          );
          playerUserId = userStartMessage ? userStartMessage.author.id : null;
+         console.log(`[Wordle Solver - Initialization] Player ID identified: ${playerUserId}`);
     } catch(e) {
-        console.error("Wordle Solver: Failed to fetch player ID during startup.", e.message);
+        console.error("[Wordle Solver - Initialization] ERROR fetching player ID.", e.message);
     }
 
     const initialGameState = {
@@ -89,6 +95,7 @@ async function initializeGameStateAndSuggestWord(message, db, client, isFirestor
 
     try {
         await setDoc(gameDocRef, initialGameState);
+        console.log(`[Wordle Solver - Initialization] SUCCESS: Fresh game state saved to Firestore.`);
 
         // After setting the initial state (currentGuessNumber: 0), immediately process the Guess #1 result
         await processGuessAcknowledgement(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE);
@@ -116,9 +123,13 @@ module.exports = {
             const gameDocRef = getGameDocRef(db, message.channel.id, APP_ID_FOR_FIRESTORE, client.user.id);
             const gameDocSnap = await getDoc(gameDocRef);
             
+            console.log(`[Wordle Solver - Execute] User initiated t-wordle. Checking active state...`);
+            
             if (gameDocSnap.exists() && gameDocSnap.data().status === 'active') {
+                console.log(`[Wordle Solver - Execute] Game already active, ignoring t-wordle command.`);
                 return;
             }
+            // Allow the flow to continue to the messageUpdate handler which will pick up the bot's response.
             return;
         }
 
@@ -126,6 +137,7 @@ module.exports = {
         if (isGameBot && (message.content.includes("You've exhausted all of your guesses. The word was **") || message.content.includes("You won"))) {
              const gameDocRef = getGameDocRef(db, message.channel.id, APP_ID_FOR_FIRESTORE, client.user.id);
              await updateDoc(gameDocRef, { status: 'finished' });
+             console.log(`Wordle Solver: Game state marked as finished.`);
         }
     },
     
@@ -140,12 +152,17 @@ module.exports = {
             const gameDocRef = getGameDocRef(db, newMessage.channel.id, APP_ID_FOR_FIRESTORE, client.user.id);
             const gameDocSnap = await getDoc(gameDocRef);
 
+            console.log(`[Wordle Solver - MessageUpdate] Game Bot Edit Detected. Checking state existence...`);
+
             // 1. INITIALIZATION: If state does not exist 
             if (!gameDocSnap.exists()) {
+                console.log(`[Wordle Solver - MessageUpdate] DEBUG: State NOT found. Checking if this is Guess #1.`);
+                
                 // Check if this is the initial Guess #1 content edit
                 const isGuessOne = newMessage.content.includes('Guess #1') && newMessage.content.includes('6 guesses remaining');
                 
                 if (isGuessOne) {
+                    console.log(`[Wordle Solver - MessageUpdate] START TRIGGERED: Initializing Guess #1 state.`);
                     await initializeGameStateAndSuggestWord(newMessage, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE);
                     return;
                 }
@@ -153,6 +170,7 @@ module.exports = {
             
             // 2. SUBSEQUENT GUESSES: If state exists and is active, process the result.
             if (gameDocSnap.exists() && gameDocSnap.data().status === 'active') {
+                console.log(`[Wordle Solver - MessageUpdate] DEBUG: Active state found. Processing guess result.`);
                 await processGuessAcknowledgement(newMessage, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE);
             }
         }
