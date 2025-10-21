@@ -1,11 +1,12 @@
 const { collection, doc, getDoc, setDoc, updateDoc } = require('firebase/firestore');
-const { TARGET_GAME_BOT_ID, WORD_LENGTH, parseEmojiRow, updateWordleGameState, getLLMWordleSuggestion } = require('../utils/wordleHelpers');
+// FIX: Removed TARGET_GAME_BOT_ID import since it's defined locally below.
+const { WORD_LENGTH, parseEmojiRow, updateWordleGameState, getLLMWordleSuggestion } = require('../utils/wordleHelpers');
 const statsTracker = require('../utils/statsTracker');
 
 // Configuration specific to this listener
 // The channel ID where Wordle games will be played (matches LOG_GAME_CHANNEL_ID)
 const TARGET_WORDLE_CHANNEL_ID = '1429872409233850478'; 
-// FIX: Define TARGET_BOT_ID locally to prevent ReferenceError
+// FIX: Define TARGET_BOT_ID locally as requested
 const TARGET_BOT_ID = '493316754689359874'; 
 
 
