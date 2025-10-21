@@ -3,9 +3,8 @@ const { TARGET_GAME_BOT_ID, WORD_LENGTH, parseEmojiRow, updateWordleGameState, g
 const statsTracker = require('../utils/statsTracker');
 
 // Configuration specific to this listener
-const TARGET_WORDLE_CHANNEL_ID = '1429872409233850478'; // The channel where Wordle games will be played
-
-// REMOVED: USER_GUESS_REGEX is no longer needed since input is via modal/button.
+// The channel ID where Wordle games will be played (matches LOG_GAME_CHANNEL_ID)
+const TARGET_WORDLE_CHANNEL_ID = '1429872409233850478'; 
 
 module.exports = {
     name: 'messageCreate',
@@ -16,24 +15,21 @@ module.exports = {
             return; 
         }
 
-        // Ignore messages not from the target game bot or from this bot itself
-        if (message.author.id !== TARGET_GAME_BOT_ID && message.author.id !== client.user.id) {
-            // Check if a user is trying to start the game (we still need this to initialize state)
-            if (message.content.toLowerCase().startsWith('t-wordle')) {
-                // Do not return; let it process the game start detection below.
-            } else {
-                return;
+        // --- Determine Message Source and Intent ---
+        const isGameBot = message.author.id === TARGET_GAME_BOT_ID;
+        const isSelfBot = message.author.id === client.user.id;
+        const isUserInitiating = message.content.toLowerCase().startsWith('t-wordle');
+
+        // Ignore messages from this bot, or from non-target bots/non-initiating users
+        if (!isGameBot && !isUserInitiating) {
+            if (isSelfBot) {
+                console.log(`[Wordle Solver - Debug] Ignoring message in target channel: From self (${message.author.tag}).`);
             }
-        }
-        
-        if (message.author.id === client.user.id) {
-            console.log(`[Wordle Solver - Debug] Ignoring message in target channel: From self (${message.author.tag}).`);
             return;
         }
-        
+
         // Only process messages in guilds
         if (!message.guild) {
-            console.log(`[Wordle Solver - Debug] Ignoring message: Not in a guild.`);
             return;
         }
 
@@ -46,20 +42,32 @@ module.exports = {
         const channelId = message.channel.id;
         const gameDocRef = doc(collection(db, `WordleGames`), channelId);
 
-        // --- Game Start Detection (The game bot's initial message) ---
-        if (message.content.includes('You will have 6 tries to guess the word correctly') && message.embeds.length > 0) {
+
+        // 1. --- Game Start Detection (The game bot's initial message) ---
+        // This targets the initial instructional message sent by Lootcord.
+        if (isGameBot && message.content.includes('You will have 6 tries to guess the word correctly') && message.embeds.length > 0) {
             const embedDescription = message.embeds[0].description;
             const initialRewardRegex = /Reward:.*?\n\n(<:medium_gray_square:\d+>){5}/s;
             
             if (embedDescription && initialRewardRegex.test(embedDescription)) {
                 console.log(`Wordle Solver: Detected new game start in #${message.channel.name}. Initializing game state.`);
                 await message.channel.send('Wordle Solver: Game detected! Initializing...'); 
-
-                // Reset game state, ensuring playerUserId is null until the first guess is inferred.
+                
+                // Fetch the player ID: look for the most recent t-wordle message from a user
+                let playerUserId = null;
+                try {
+                     const userStartMessage = await message.channel.messages.fetch({ limit: 5 }).then(msgs => 
+                         msgs.find(m => !m.author.bot && m.content.toLowerCase().startsWith('t-wordle'))
+                     );
+                     playerUserId = userStartMessage ? userStartMessage.author.id : null;
+                } catch(e) {
+                    console.error("Wordle Solver: Failed to fetch player ID during startup.", e.message);
+                }
+                
                 const initialGameState = {
                     channelId: channelId,
-                    userId: message.author.id, // Bot's message author
-                    playerUserId: null, 
+                    userId: message.author.id, // Bot's message author (Lootcord)
+                    playerUserId: playerUserId, // Store the ID of the person who typed t-wordle
                     status: 'active',
                     wordLength: WORD_LENGTH,
                     guessesMade: [],
@@ -73,12 +81,15 @@ module.exports = {
 
                 try {
                     await setDoc(gameDocRef, initialGameState);
-                    console.log(`[Wordle Solver - Debug] Initialized game state for channel ${channelId}.`);
+                    console.log(`[Wordle Solver - Debug] Initialized game state for channel ${channelId}. Player ID: ${playerUserId}`);
 
                     const bestStartingWord = await getLLMWordleSuggestion(initialGameState, client);
 
                     if (bestStartingWord) {
-                        // Suggest the user types the word for the modal input
+                        // FIX: Store the initial suggestion as the word for Guess #1 so the next result handler can infer it.
+                        initialGameState.guessesMade.push({ suggestedWord: bestStartingWord });
+                        await updateDoc(gameDocRef, { guessesMade: initialGameState.guessesMade, playerUserId: playerUserId }); 
+                        
                         await message.channel.send({ content: `Wordle Solver: My best starting word is: \`${bestStartingWord}\`\n\n**Please input this word into the game modal.**` });
                         statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
                         console.log(`Wordle Solver: Suggested first word '${bestStartingWord}' in #${message.channel.name}`);
@@ -89,14 +100,15 @@ module.exports = {
                     console.error(`Wordle Solver: Error starting game in #${message.channel.name}:`, error);
                     await message.channel.send('Wordle Solver: An error occurred during game initialization. Please try starting a new game.');
                 }
-                return; 
+                return; 
             }
         }
 
-        // --- Subsequent Guess Results Detection (The game bot's edited message) ---
+
+        // 2. --- Subsequent Guess Results Detection (The game bot's edited message) ---
         const guessContentMatch = message.content.match(/Guess #(\d+)\s*·\s*\*\*(\d+)\*\* guesses remaining/);
         
-        if (guessContentMatch && message.embeds.length > 0) {
+        if (isGameBot && guessContentMatch && message.embeds.length > 0) {
             const currentGuessNumber = parseInt(guessContentMatch[1], 10);
             const embedDescription = message.embeds[0].description;
 
@@ -111,37 +123,21 @@ module.exports = {
             let gameState = gameDocSnap.data();
 
             // Ensure we are processing the next expected guess
+            // Note: This check relies on the fact that Guess #N is triggered by processing the result of Guess #N-1
             if (currentGuessNumber !== gameState.currentGuessNumber + 1) {
                 console.log(`Wordle Solver: Ignoring out-of-order guess #${currentGuessNumber} (expected #${gameState.currentGuessNumber + 1}) in #${message.channel.name}.`);
                 return;
             }
 
-            // --- CRITICAL FIX: Infer the guessed word from the solver's last suggestion ---
-            // We assume the user followed the last *successful* suggestion.
+            // --- CRITICAL FIX: Infer the guessed word from the state memory ---
             let guessedWord = 'UNKNOWN';
+            // The word submitted for *this* result (Guess #N) is the word suggested at the end of the *previous* turn (Guess #N-1).
+            const guessIndex = currentGuessNumber - 1; // 0 for Guess #1, 1 for Guess #2, etc.
             
-            // The word for Guess #1 comes from the response to the initialization.
-            if (gameState.guessesMade.length === 0) {
-                 // Fetch the bot's suggestion message to get the word
-                 try {
-                     const lastBotMessage = await message.channel.messages.fetch({ limit: 5 }).then(msgs => 
-                         msgs.find(m => m.author.id === client.user.id && m.content.includes('My best starting word is:'))
-                     );
-                     const wordMatch = lastBotMessage?.content.match(/`(\w+)`/);
-                     if (wordMatch) {
-                         guessedWord = wordMatch[1].toUpperCase();
-                         // We still don't know who the player is, but we have the word.
-                     }
-                 } catch (error) {
-                     console.error("Wordle Solver: Failed to fetch bot's starting word suggestion.", error);
-                 }
-            } else {
-                // For subsequent guesses, use the word suggested for the *previous* turn (if available)
-                // This assumes the bot suggests Guess #N, and we are processing result for Guess #N.
-                // The previous guess's suggested word is the word submitted for this result.
-                guessedWord = gameState.guessesMade[gameState.guessesMade.length - 1].suggestedWord || 'UNKNOWN';
+            // The word is inferred from the 'suggestedWord' field of the array entry corresponding to the current guess number.
+            if (gameState.guessesMade.length > guessIndex && gameState.guessesMade[guessIndex].suggestedWord) {
+                guessedWord = gameState.guessesMade[guessIndex].suggestedWord;
             }
-
 
             if (guessedWord === 'UNKNOWN') {
                 console.error(`Wordle Solver: Could not infer guessed word for guess #${currentGuessNumber}. Cannot proceed.`);
@@ -152,9 +148,9 @@ module.exports = {
 
 
             // --- Extract Emoji Results ---
-            const rawEmojiRows = embedDescription.split('\n').slice(2); 
-            const emojiRows = rawEmojiRows.filter(row => row.includes('<:')); 
-            const currentGuessEmojiRow = emojiRows[currentGuessNumber - 1]; 
+            const rawEmojiRows = embedDescription.split('\n').slice(2); 
+            const emojiRows = rawEmojiRows.filter(row => row.includes('<:')); 
+            const currentGuessEmojiRow = emojiRows[guessIndex]; // Use the current guess index to get the correct row
 
             if (!currentGuessEmojiRow || currentGuessEmojiRow.length === 0) {
                 console.warn(`Wordle Solver: Could not find valid emoji row for guess #${currentGuessNumber} in #${message.channel.name}.`);
@@ -195,9 +191,10 @@ module.exports = {
                 const nextSuggestedWord = await getLLMWordleSuggestion(gameState, client);
 
                 if (nextSuggestedWord) {
-                    // Update gameState again to store the suggestion for the *next* turn's inference
-                    gameState.guessesMade[gameState.guessesMade.length - 1].suggestedWord = nextSuggestedWord;
-                    await updateDoc(gameDocRef, gameState); 
+                    // Store the suggestion for the *next* guess (Guess #N+1).
+                    // This creates the placeholder for the next inference loop.
+                    gameState.guessesMade.push({ suggestedWord: nextSuggestedWord }); 
+                    await updateDoc(gameDocRef, { guessesMade: gameState.guessesMade });
                     
                     // Suggest the user types the next suggested word
                     await message.channel.send({ content: `Wordle Solver: My suggestion for guess #${currentGuessNumber + 1} is: \`${nextSuggestedWord}\`\n\n**Please input this word into the game modal.**` });
@@ -206,53 +203,37 @@ module.exports = {
                 } else {
                     await message.channel.send({ content: 'Wordle Solver: Could not determine a good next word. Please try your best!' });
                 }
-            } else {
-                // Game ended, send final message
-                let finalWord = guessedWord;
-                // If solved here, the word is the guessedWord. If lost, the next message handles the word extraction.
-                if (gameState.status === 'solved') {
-                    await message.channel.send({ content: `Wordle Solver: Game SOLVED! The word was \`${finalWord}\`.` });
-                }
+            } else if (gameState.status === 'solved') {
+                // If solved here, the word is the guessedWord. 
+                await message.channel.send({ content: `Wordle Solver: Game SOLVED! The word was \`${guessedWord}\`.` });
             }
+            // If lost here, the final message handler below will catch the word.
         }
         
-        // --- Game End Detection (Final message for lost games) ---
+        // 3. --- Game End Detection (Final message for lost/missed games) ---
         // This handler catches the final message from the game bot confirming the loss or win.
-        if (message.content.includes("You've exhausted all of your guesses. The word was **") || message.content.includes("You won") && message.embeds.length > 0) {
+        if (isGameBot && (message.content.includes("You've exhausted all of your guesses. The word was **") || message.content.includes("You won") || message.content.includes("You ran out of time to guess the correct word"))) {
             const gameDocSnap = await getDoc(gameDocRef);
-            if (gameDocSnap.exists() && gameState.status === 'active') { // Check if game state wasn't updated in the previous block
+            if (gameDocSnap.exists() && gameDocSnap.data().status === 'active') { 
                 let gameState = gameDocSnap.data();
-                
-                // If we reach here, and the status is active, it means the win/loss wasn't processed in the main block.
-                // Force status update and extract the final word.
                 
                 const lostWordMatch = message.content.match(/The word was \*\*(.*?)\*\*/);
                 const finalWord = lostWordMatch ? lostWordMatch[1].toUpperCase() : 'UNKNOWN';
 
-                if (message.content.includes("You've exhausted all of your guesses.")) {
+                if (message.content.includes("You've exhausted all of your guesses.") || message.content.includes("You ran out of time to guess the correct word")) {
                     gameState.status = 'lost';
                 } else if (message.content.includes("You won")) {
                     gameState.status = 'solved';
                 }
                 
-                // Update the last guess's word if it was 'UNKNOWN' or not set (using the final word provided by the bot)
-                if (gameState.guessesMade.length > 0) {
-                    const lastGuessIndex = gameState.guessesMade.length - 1;
-                    if (gameState.guessesMade[lastGuessIndex].word === 'UNKNOWN' || !gameState.guessesMade[lastGuessIndex].word) {
-                        // The user's last guess was the solution, but we didn't know the word until now.
-                        gameState.guessesMade[lastGuessIndex].word = finalWord;
-                    }
-                }
-
-                try {
-                    await updateDoc(gameDocRef, gameState);
-                    console.log(`Wordle Solver: Game ENDED (Final message caught) in #${message.channel.name}. Status: ${gameState.status}, Word: ${finalWord}.`);
-                    // Only send a final message if the game was truly lost, as the "all green" detection sends the win message.
-                    if (gameState.status === 'lost') {
-                       await message.channel.send({ content: `Wordle Solver: Game LOST! The word was \`${finalWord}\`.` });
-                    }
-                } catch (error) {
-                    console.error(`Wordle Solver: Error updating game state on final message for #${message.channel.name}:`, error);
+                // Final update, ensuring the status is marked as finished.
+                await updateDoc(gameDocRef, { status: gameState.status });
+                
+                console.log(`Wordle Solver: Game ENDED (Final message caught) in #${message.channel.name}. Status: ${gameState.status}, Word: ${finalWord}.`);
+                
+                // Only send a final message if the main guess handler didn't (e.g., if it was lost)
+                if (gameState.status === 'lost') {
+                   await message.channel.send({ content: `Wordle Solver: Game LOST! The word was \`${finalWord}\`.` });
                 }
             }
         }
