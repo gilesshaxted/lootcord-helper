@@ -5,6 +5,9 @@ const statsTracker = require('../utils/statsTracker');
 // Configuration specific to this listener
 // The channel ID where Wordle games will be played (matches LOG_GAME_CHANNEL_ID)
 const TARGET_WORDLE_CHANNEL_ID = '1429872409233850478'; 
+// FIX: Define TARGET_BOT_ID locally to prevent ReferenceError
+const TARGET_BOT_ID = '493316754689359874'; 
+
 
 module.exports = {
     name: 'messageCreate',
@@ -65,7 +68,7 @@ module.exports = {
                 const initialGameState = {
                     channelId: channelId,
                     userId: message.author.id, // Bot's message author (Lootcord)
-                    playerUserId: playerUserId, 
+                    playerUserId: playerUserId, // Store the ID of the person who typed t-wordle
                     status: 'active',
                     wordLength: WORD_LENGTH,
                     guessesMade: [],
