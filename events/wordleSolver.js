@@ -1,7 +1,7 @@
 const { collection, doc, getDoc, setDoc, updateDoc } = require('firebase/firestore');
-// Only import necessary helpers for basic game state structure
-const { WORD_LENGTH, parseEmojiRow, updateWordleGameState } = require('../utils/wordleHelpers');
-const statsTracker = require('../utils/statsTracker'); // Still required for stats
+// NOTE: We only keep helpers required for the necessary path and basic structure.
+const { WORD_LENGTH } = require('../utils/wordleHelpers');
+const statsTracker = require('../utils/statsTracker'); 
 
 // Configuration specific to this listener
 const TARGET_WORDLE_CHANNEL_ID = '1429872409233850478'; 
@@ -38,17 +38,20 @@ async function processGuessAcknowledgement(message, db, client, isFirestoreReady
         return;
     }
 
-    // Determine the expected guess number (for tracking purposes, though not strictly necessary for this task)
-    const expectedGuessNumber = gameState.currentGuessNumber + 1;
-
     // Check if we already processed this exact guess result. Prevents double-sending messages.
     if (currentGuessNumber <= gameState.currentGuessNumber) {
         console.log(`[Wordle Solver - Debug] Ignoring Guess #${currentGuessNumber}: Already processed or out-of-order.`);
         return;
     }
+    
+    // Check if this is the expected next sequential guess
+    if (currentGuessNumber !== gameState.currentGuessNumber + 1) {
+        console.warn(`Wordle Solver: Ignoring out-of-order guess #${currentGuessNumber} (expected #${gameState.currentGuessNumber + 1}).`);
+        return;
+    }
 
     // --- Acknowledge the Guess ---
-    await message.channel.send({ content: `✅ Guess **#${currentGuessNumber}** has been recorded.` });
+    await message.channel.send({ content: `✅ Detected **Guess #${currentGuessNumber}**. Ready for the next input.` });
     console.log(`Wordle Solver: Acknowledged Guess #${currentGuessNumber}.`);
 
 
@@ -57,10 +60,8 @@ async function processGuessAcknowledgement(message, db, client, isFirestoreReady
     await updateDoc(gameDocRef, {
         currentGuessNumber: currentGuessNumber,
         lastGuessMessageId: message.id,
-        playerUserId: gameState.playerUserId || 'N/A' // Keep the player ID if it was found earlier
+        // In a non-simple version, we would also update the word here
     });
-    
-    // NOTE: Full solver logic (LLM calls, complex state updates) would go here in a final version.
 }
 
 // Helper function that handles the initial game state creation
@@ -85,7 +86,7 @@ async function initializeGameStateAndSuggestWord(message, db, client, isFirestor
         userId: message.author.id, // Bot's message author (Lootcord)
         playerUserId: playerUserId, 
         status: 'active',
-        wordLength: WORD_LENGTH, // Assume 5
+        wordLength: WORD_LENGTH, // This assumes a constant Wordle length, must be defined in helpers
         guessesMade: [],
         currentGuessNumber: 0, // Set to 0 initially
         gameStartedAt: new Date().toISOString(),
@@ -98,7 +99,7 @@ async function initializeGameStateAndSuggestWord(message, db, client, isFirestor
 
     // After setting the initial state (currentGuessNumber: 0), immediately process the Guess #1 result
     // to mark it as Guess #1 and send the first acknowledgment message.
-    await processGuessResult(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE);
+    await processGuessAcknowledgement(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE);
 
     return initialGameState;
 }
@@ -111,9 +112,10 @@ module.exports = {
     async execute(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
         if (message.channel.id !== TARGET_WORDLE_CHANNEL_ID || !message.guild || !isFirestoreReady) return;
         
+        const isGameBot = message.author.id === TARGET_BOT_ID;
         const isUserInitiating = message.content.toLowerCase().startsWith('t-wordle');
-        
-        // Only process t-wordle initiation command to prevent redundant initialization
+
+        // Only process t-wordle initiation command
         if (isUserInitiating) {
             const gameDocRef = getGameDocRef(db, message.channel.id, APP_ID_FOR_FIRESTORE, client.user.id);
             const gameDocSnap = await getDoc(gameDocRef);
@@ -127,8 +129,7 @@ module.exports = {
         }
 
         // --- Game End Detection (Final message for lost/missed games) ---
-        // This remains simple to catch the final message.
-        if (message.author.id === TARGET_BOT_ID && (message.content.includes("You've exhausted all of your guesses. The word was **") || message.content.includes("You won"))) {
+        if (isGameBot && (message.content.includes("You've exhausted all of your guesses. The word was **") || message.content.includes("You won"))) {
              const gameDocRef = getGameDocRef(db, message.channel.id, APP_ID_FOR_FIRESTORE, client.user.id);
              await updateDoc(gameDocRef, { status: 'finished' });
              console.log(`Wordle Solver: Game state marked as finished.`);
@@ -146,7 +147,7 @@ module.exports = {
             const gameDocRef = getGameDocRef(db, newMessage.channel.id, APP_ID_FOR_FIRESTORE, client.user.id);
             const gameDocSnap = await getDoc(gameDocRef);
 
-            // 1. INITIALIZATION: If state does not exist OR if it's the very first guess being processed
+            // 1. INITIALIZATION: If state does not exist 
             if (!gameDocSnap.exists()) {
                 // Check if this is the initial Guess #1 content edit
                 const isGuessOne = newMessage.content.includes('Guess #1') && newMessage.content.includes('6 guesses remaining');
@@ -158,10 +159,9 @@ module.exports = {
                 }
             }
             
-            // 2. SUBSEQUENT GUESSES: If state exists and is active, process the result and suggest the next word.
-            // This is the common path for Guess #2 through #6 results.
+            // 2. SUBSEQUENT GUESSES: If state exists and is active, process the result.
             if (gameDocSnap.exists() && gameDocSnap.data().status === 'active') {
-                await processGuessResult(newMessage, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE);
+                await processGuessAcknowledgement(newMessage, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE);
             }
         }
     }
