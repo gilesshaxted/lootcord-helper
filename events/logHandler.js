@@ -17,8 +17,8 @@ const logCache = new Map();
 const sessionStartTime = new Map();
 
 // --- Log Game End Conditions (Bot Message Content) ---
-// Checks if content CONTAINS "WOOooo" OR STARTS WITH one of the two loss messages.
-const GAME_END_REGEX = /(WOOooo|^(You've exhausted all of your guesses|You ran out of time to guess the correct word))/i;
+// FIX: Removed the start-of-string anchor (^) to allow matching after hidden characters.
+const GAME_END_REGEX = /(WOOooo|You won|You've exhausted all of your guesses|You ran out of time to guess the correct word)/i;
 
 // --- Firestore State Management ---
 const FIREBASE_LOG_STATE_PATH = 'BotConfigs/loggingState'; 
