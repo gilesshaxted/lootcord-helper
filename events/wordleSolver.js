@@ -33,13 +33,11 @@ async function processGuessResult(message, db, client, isFirestoreReady, APP_ID_
 
     // --- State Initialization or Error Check ---
     if (!gameState) {
-        // This case should only happen on the very first Guess #1 edit if the initialization helper failed.
         console.warn(`Wordle Solver: No active game state found. Cannot process guess #${currentGuessNumber}.`);
         return;
     }
 
     // Ensure we are processing the next expected guess
-    // NOTE: For Guess #1, gameState.currentGuessNumber is 0, so 1 === 1. For Guess #2, 2 === 1+1.
     if (currentGuessNumber !== gameState.currentGuessNumber + 1) {
         console.log(`Wordle Solver: Ignoring out-of-order guess #${currentGuessNumber} (expected #${gameState.currentGuessNumber + 1}) in #${message.channel.name}.`);
         return;
@@ -254,6 +252,7 @@ module.exports = {
             const gameDocSnap = await getDoc(gameDocRef);
 
             // 1. INITIALIZATION: If state does not exist OR if it's the very first guess being processed
+            // This is the CRITICAL start point for the solver.
             if (!gameDocSnap.exists() || gameDocSnap.data().currentGuessNumber === 0) {
                 // Check for the initial grid pattern that confirms this is Guess #1
                 const allGraySquaresRegex = /Reward:.*?\n\n(<:medium_gray_square:\d+>){5}/s;
