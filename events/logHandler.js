@@ -17,8 +17,8 @@ const logCache = new Map();
 const sessionStartTime = new Map();
 
 // --- Log Game End Conditions (Bot Message Content) ---
-// Checks if content CONTAINS one of the win/loss phrases.
-const GAME_END_REGEX = /(WOOooo|You won|You've exhausted all of your guesses|You ran out of time to guess the correct word)/i;
+// FIX: Using a more robust regex that ensures the message CONTAINS the win phrase or the loss phrase.
+const GAME_END_REGEX = /(You won.*WOOooo|You've exhausted all of your guesses|You ran out of time to guess the correct word)/i;
 
 // NEW: Regex to detect cooldown/denied message.
 const COOLDOWN_REGEX = /❌ You will have to wait `.*?` before you can play/i;
