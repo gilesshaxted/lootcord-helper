@@ -16,6 +16,7 @@ function getGameDocRef(db, channelId, APP_ID_FOR_FIRESTORE, userId) {
 // --- CORE GAME PROCESSOR (Simplified for Acknowledgment) ---
 async function processGuessAcknowledgement(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
     const isGameBot = message.author.id === TARGET_BOT_ID;
+    // Regex to capture the current guess number
     const guessContentMatch = message.content.match(/Guess #(\d+)\s*·/); 
     
     if (!isGameBot || !guessContentMatch || message.embeds.length === 0) {
@@ -38,11 +39,13 @@ async function processGuessAcknowledgement(message, db, client, isFirestoreReady
 
     // Check if we already processed this exact guess result. Prevents double-sending messages.
     if (currentGuessNumber <= gameState.currentGuessNumber) {
+        console.log(`[Wordle Solver - Process] IGNORING: Already processed Guess #${currentGuessNumber} (State: ${gameState.currentGuessNumber}).`);
         return;
     }
     
     // Check if this is the expected next sequential guess
     if (currentGuessNumber !== gameState.currentGuessNumber + 1) {
+        console.log(`[Wordle Solver - Process] IGNORING: Out-of-order Guess #${currentGuessNumber}. Expected #${gameState.currentGuessNumber + 1}.`);
         return;
     }
     
@@ -57,6 +60,13 @@ async function processGuessAcknowledgement(message, db, client, isFirestoreReady
         currentGuessNumber: currentGuessNumber,
         lastGuessMessageId: message.id,
     });
+    console.log(`[Wordle Solver - Process] DEBUG: State updated to currentGuessNumber: ${currentGuessNumber}.`);
+    
+    // --- Simplified Game End Check ---
+    if (message.content.includes('1 guesses remaining') || message.content.includes('0 guesses remaining')) {
+        console.log(`[Wordle Solver - Process] DEBUG: Final guess detected, marking state for cleanup.`);
+        await updateDoc(gameDocRef, { status: 'finished' });
+    }
 }
 
 // Helper function that handles the initial game state creation
@@ -97,7 +107,6 @@ async function initializeGameStateAndSuggestWord(message, db, client, isFirestor
 
         // After setting the initial state (currentGuessNumber: 0), immediately process the Guess #1 result
         // to mark it as Guess #1 and send the first acknowledgment message.
-        // We call the acknowledgement function which will see currentGuessNumber: 0 and process Guess #1
         await processGuessAcknowledgement(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE);
         
         return initialGameState;
@@ -159,7 +168,8 @@ module.exports = {
                 console.log(`[Wordle Solver - MessageUpdate] DEBUG: State NOT found. Checking if this is Guess #1.`);
                 
                 // Check if this is the initial Guess #1 content edit
-                const isGuessOne = newMessage.content.includes('Guess #1') && newMessage.content.includes('6 guesses remaining');
+                // FIX: Use a robust regex to verify the start message without being brittle on spaces/formatting.
+                const isGuessOne = /^Guess #1.*?6 guesses remaining$/s.test(newMessage.content) && newMessage.embeds?.[0]?.description;
                 
                 if (isGuessOne) {
                     console.log(`[Wordle Solver - MessageUpdate] START TRIGGERED: Initializing Guess #1 state.`);
