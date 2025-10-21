@@ -270,6 +270,15 @@ async function handleMessageUpdate(oldMessage, newMessage, db, client, isFiresto
     // Ignore if content hasn't changed or if message is partial/bot message
     if (oldMessage.content === newMessage.content) return;
 
+    // --- LOGGING SESSION END CHECK ON EDIT ---
+    // If the content changes and meets the game end condition, dump the logs immediately.
+    if (isTargetBot && newMessage.content && GAME_END_REGEX.test(newMessage.content)) {
+        cacheLogEntry(newMessage, 'MESSAGE_EDIT');
+        console.log(`[LOGGER] SESSION END DETECTED (EDIT): Game end message: "${newMessage.content.substring(0, 50)}..." in #${newMessage.channel.name}. Dumping logs.`);
+        await endLoggingSession(client, db, false, 'Game End Condition Met (Edit)');
+        return; // Session is over, exit handler
+    }
+
     const oldContent = oldMessage.content || 'CONTENT_UNAVAILABLE (Uncached Old)';
     
     cacheLogEntry(newMessage, 'MESSAGE_EDIT', oldContent);
