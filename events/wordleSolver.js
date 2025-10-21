@@ -9,6 +9,13 @@ const TARGET_WORDLE_CHANNEL_ID = '1429872409233850478';
 const TARGET_BOT_ID = '493316754689359874'; 
 
 
+// --- Utility to get the correct game doc reference ---
+function getGameDocRef(db, channelId, APP_ID_FOR_FIRESTORE, userId) {
+    // FIX: Use the standardized user artifact path for persistence:
+    const gameCollectionPath = `artifacts/${APP_ID_FOR_FIRESTORE}/users/${userId}/WordleGames`;
+    return doc(collection(db, gameCollectionPath), channelId);
+}
+
 // --- Utility to handle the core guess result logic ---
 async function processGuessResult(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
     const isGameBot = message.author.id === TARGET_BOT_ID;
@@ -25,7 +32,10 @@ async function processGuessResult(message, db, client, isFirestoreReady, APP_ID_
     console.log(`[Wordle Solver - Debug] Detected guess result message for Guess #${currentGuessNumber}.`);
 
     const channelId = message.channel.id;
-    const gameDocRef = doc(collection(db, `WordleGames`), channelId);
+    // Get the User ID from the client instance (set during anonymous sign-in in index.js)
+    const userId = client.user.id; 
+    const gameDocRef = getGameDocRef(db, channelId, APP_ID_FOR_FIRESTORE, userId);
+
 
     // Fetch current game state
     const gameDocSnap = await getDoc(gameDocRef);
@@ -144,7 +154,8 @@ async function processGuessResult(message, db, client, isFirestoreReady, APP_ID_
 // Helper function that contains the logic to initialize the state and send the first suggestion
 async function initializeGameStateAndSuggestWord(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
     const channelId = message.channel.id;
-    const gameDocRef = doc(collection(db, `WordleGames`), channelId);
+    const userId = client.user.id; 
+    const gameDocRef = getGameDocRef(db, channelId, APP_ID_FOR_FIRESTORE, userId);
 
     let playerUserId = null;
     try {
@@ -172,6 +183,7 @@ async function initializeGameStateAndSuggestWord(message, db, client, isFirestor
         gameBotMessageId: message.id
     };
 
+    // FIX: Use setDoc and updateDoc directly on the new path
     await setDoc(gameDocRef, initialGameState);
     console.log(`[Wordle Solver - Debug] Initialized game state for channel ${channelId}. Player ID: ${playerUserId}`);
 
@@ -203,9 +215,10 @@ module.exports = {
 
         // Only process t-wordle initiation command
         if (isUserInitiating) {
-            // Fetch the game status to prevent redundant initialization if a game is already active
-            const gameDocRef = doc(collection(db, `WordleGames`), message.channel.id);
+            const gameDocRef = getGameDocRef(db, message.channel.id, APP_ID_FOR_FIRESTORE, client.user.id);
             const gameDocSnap = await getDoc(gameDocRef);
+            
+            // Fetch the game status to prevent redundant initialization if a game is already active
             if (gameDocSnap.exists() && gameDocSnap.data().status === 'active') {
                 console.log(`[Wordle Solver - Debug] Game already active, ignoring t-wordle command.`);
                 return;
@@ -217,9 +230,7 @@ module.exports = {
 
         // --- Game End Detection (Final message for missed games) ---
         if (isGameBot && (message.content.includes("You've exhausted all of your guesses. The word was **") || message.content.includes("You won") || message.content.includes("You ran out of time to guess the correct word"))) {
-             // We allow the messageUpdate handler to deal with the primary state, 
-             // but this catches the message if the user ran a command after the game ended
-             const gameDocRef = doc(collection(db, `WordleGames`), message.channel.id);
+             const gameDocRef = getGameDocRef(db, message.channel.id, APP_ID_FOR_FIRESTORE, client.user.id);
              const gameDocSnap = await getDoc(gameDocRef);
              
              if (gameDocSnap.exists() && gameDocSnap.data().status === 'active') { 
@@ -248,7 +259,7 @@ module.exports = {
         
         // The core game loop happens ONLY on the message edit from the game bot
         if (isGameBot && newMessage.content.includes('Guess #')) {
-            const gameDocRef = doc(collection(db, `WordleGames`), newMessage.channel.id);
+            const gameDocRef = getGameDocRef(db, newMessage.channel.id, APP_ID_FOR_FIRESTORE, client.user.id);
             const gameDocSnap = await getDoc(gameDocRef);
 
             // 1. INITIALIZATION: If state does not exist OR if it's the very first guess being processed
