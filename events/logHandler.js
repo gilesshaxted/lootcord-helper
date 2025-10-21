@@ -1,5 +1,5 @@
 const { collection, doc, setDoc, getDoc, deleteDoc } = require('firebase/firestore');
-const { AttachmentBuilder, PermissionsBitField } = require('discord.js'); // FIX: Correctly import PermissionsBitField from discord.js
+const { AttachmentBuilder, PermissionsBitField } = require('discord.js'); 
 
 // --- Configuration Variables (MUST BE EDITED) ---
 const LOGGING_ENABLED = true; 
@@ -17,8 +17,11 @@ const logCache = new Map();
 const sessionStartTime = new Map();
 
 // --- Log Game End Conditions (Bot Message Content) ---
-// FIX: Removed the start-of-string anchor (^) to allow matching after hidden characters.
+// Checks if content CONTAINS one of the win/loss phrases.
 const GAME_END_REGEX = /(WOOooo|You won|You've exhausted all of your guesses|You ran out of time to guess the correct word)/i;
+
+// NEW: Regex to detect cooldown/denied message.
+const COOLDOWN_REGEX = /❌ You will have to wait `.*?` before you can play/i;
 
 // --- Firestore State Management ---
 const FIREBASE_LOG_STATE_PATH = 'BotConfigs/loggingState'; 
@@ -95,11 +98,13 @@ function formatLogEntry(message, actionType, oldContent = null) {
  * @param {import('discord.js').Client} client The Discord client instance.
  * @param {object} db Firestore instance.
  * @param {boolean} [isManualDump=false] Indicates if triggered by a command.
+ * @param {string|null} [terminationReason=null] Specific reason for termination (e.g., 'COOLDOWN').
  */
-async function endLoggingSession(client, db, isManualDump = false) {
+async function endLoggingSession(client, db, isManualDump = false, terminationReason = null) {
     const channelId = LOG_GAME_CHANNEL_ID;
     const cache = logCache.get(channelId);
     
+    // Always clear state/cache if not manual dump, even if cache is empty
     if (!cache || cache.length === 0) {
         await setLogState(db, { isActive: false }); 
         logCache.delete(channelId);
@@ -138,8 +143,9 @@ async function endLoggingSession(client, db, isManualDump = false) {
             } else {
                 const startTime = sessionStartTime.get(channelId);
                 const duration = startTime ? (Date.now() - startTime) / 1000 : 0; // Duration in seconds
+                const reasonText = terminationReason ? ` (Reason: ${terminationReason})` : '';
 
-                let replyMessage = isManualDump ? `Manual Log Dump for <#${channelId}>` : `✅ **Log Session Complete for <#${channelId}>**`;
+                let replyMessage = isManualDump ? `Manual Log Dump for <#${channelId}>` : `✅ **Log Session Complete for <#${channelId}>**${reasonText}`;
                 replyMessage += `\nDuration: ${duration.toFixed(0)} seconds (${Math.round(duration / 60)} minutes)\n`;
                 replyMessage += `Total Entries: ${cache.length}\n\n**Log file attached.**`;
 
@@ -197,6 +203,16 @@ async function handleMessageCreate(message, db, client, isFirestoreReady, APP_ID
     // Filter Source: Only log messages from users, or the target bot
     if (isSelfBot || (message.author.bot && !isTargetBot)) return;
 
+    // --- COOLDOWN CHECK (Highest priority to exit session immediately) ---
+    if (logState.isActive && isTargetBot && COOLDOWN_REGEX.test(message.content)) {
+        cacheLogEntry(message, 'SESSION_END_COOLDOWN');
+        console.log(`[LOGGER] SESSION END DETECTED: Cooldown message received. Dumping and resetting state.`);
+        // Pass the reason to the end function so it shows up in the output message
+        await endLoggingSession(client, db, false, 'Cooldown/Game Denied'); 
+        return;
+    }
+
+
     // --- LOGGING SESSION START ---
     if (!logState.isActive) {
         // Check for the 't-wordle' initiation command from a user
@@ -204,7 +220,7 @@ async function handleMessageCreate(message, db, client, isFirestoreReady, APP_ID
             await setLogState(db, { isActive: true, initiatorId: message.author.id, gameStartedAt: Date.now() });
             sessionStartTime.set(LOG_GAME_CHANNEL_ID, Date.now());
             cacheLogEntry(message, 'SESSION_START_COMMAND');
-            console.log(`[LOGGER] SESSION START: Logging began in #${message.channel.name} by ${message.author.tag}.`); // New console log
+            console.log(`[LOGGER] SESSION START: Logging began in #${message.channel.name} by ${message.author.tag}.`); 
             return;
         }
         return;
@@ -217,8 +233,8 @@ async function handleMessageCreate(message, db, client, isFirestoreReady, APP_ID
     
     // --- LOGGING SESSION END ---
     if (isTargetBot && message.content && GAME_END_REGEX.test(message.content)) {
-        console.log(`[LOGGER] SESSION END DETECTED: Game end message: "${message.content.substring(0, 50)}..." in #${message.channel.name}. Dumping logs.`); // New console log
-        await endLoggingSession(client, db);
+        console.log(`[LOGGER] SESSION END DETECTED: Game end message: "${message.content.substring(0, 50)}..." in #${message.channel.name}. Dumping logs.`); 
+        await endLoggingSession(client, db, false, 'Game End Condition Met');
     }
 }
 
