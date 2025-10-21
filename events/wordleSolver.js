@@ -16,7 +16,6 @@ function getGameDocRef(db, channelId, APP_ID_FOR_FIRESTORE, userId) {
 // --- CORE GAME PROCESSOR (Simplified for Acknowledgment) ---
 async function processGuessAcknowledgement(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
     const isGameBot = message.author.id === TARGET_BOT_ID;
-    // Regex to capture the current guess number
     const guessContentMatch = message.content.match(/Guess #(\d+)\s*·/); 
     
     if (!isGameBot || !guessContentMatch || message.embeds.length === 0) {
@@ -34,7 +33,7 @@ async function processGuessAcknowledgement(message, db, client, isFirestoreReady
 
     if (!gameState) {
         console.log(`[Wordle Solver - Process] No active state found for Guess #${currentGuessNumber}. Exiting.`);
-        return; // Should have been initialized or ended already
+        return; 
     }
 
     // Check if we already processed this exact guess result. Prevents double-sending messages.
@@ -54,7 +53,6 @@ async function processGuessAcknowledgement(message, db, client, isFirestoreReady
 
 
     // --- Update Minimal Game State ---
-    // Update the tracker state to prevent future double processing of this specific guess number
     await updateDoc(gameDocRef, {
         currentGuessNumber: currentGuessNumber,
         lastGuessMessageId: message.id,
@@ -98,6 +96,8 @@ async function initializeGameStateAndSuggestWord(message, db, client, isFirestor
         console.log(`[Wordle Solver - Initialization] SUCCESS: Fresh game state saved to Firestore.`);
 
         // After setting the initial state (currentGuessNumber: 0), immediately process the Guess #1 result
+        // to mark it as Guess #1 and send the first acknowledgment message.
+        // We call the acknowledgement function which will see currentGuessNumber: 0 and process Guess #1
         await processGuessAcknowledgement(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE);
         
         return initialGameState;
@@ -152,7 +152,7 @@ module.exports = {
             const gameDocRef = getGameDocRef(db, newMessage.channel.id, APP_ID_FOR_FIRESTORE, client.user.id);
             const gameDocSnap = await getDoc(gameDocRef);
 
-            console.log(`[Wordle Solver - MessageUpdate] Game Bot Edit Detected. Checking state existence...`);
+            console.log(`[Wordle Solver - MessageUpdate] Game Bot Edit Detected.`);
 
             // 1. INITIALIZATION: If state does not exist 
             if (!gameDocSnap.exists()) {
