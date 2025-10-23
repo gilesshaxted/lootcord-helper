@@ -4,7 +4,7 @@ const { WORD_LENGTH } = require('../utils/wordleHelpers');
 const statsTracker = require('../utils/statsTracker'); 
 
 // Configuration specific to this listener
-const TARGET_WORDLE_CHANNEL_ID = '1429872409233850478'; 
+const TARGET_WORDLE_CHANNEL_ID = '1429874791505821726'; // Using the Channel ID from your log
 const TARGET_BOT_ID = '493316754689359874'; 
 
 // --- Utility to get the correct game doc reference ---
@@ -20,6 +20,7 @@ async function processGuessAcknowledgement(message, db, client, isFirestoreReady
     const guessContentMatch = message.content.match(/Guess #(\d+)\s*·/); 
     
     if (!isGameBot || !guessContentMatch || message.embeds.length === 0) {
+        console.log(`[Wordle Solver - Process] IGNORING: Message is not a game bot guess result.`);
         return;
     }
     
