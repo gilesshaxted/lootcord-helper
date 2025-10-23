@@ -13,7 +13,7 @@ function getGameDocRef(db, channelId, APP_ID_FOR_FIRESTORE, userId) {
     return doc(collection(db, gameCollectionPath), channelId);
 }
 
-// --- CORE GAME PROCESSOR (Acknowledgment Only) ---
+// --- CORE GAME PROCESSOR (Simplified for Acknowledgment) ---
 async function processGuessAcknowledgement(message, db, client, isFirestoreReady, APP_ID_FOR_FIRESTORE) {
     const isGameBot = message.author.id === TARGET_BOT_ID;
     // Regex to capture the current guess number
@@ -166,8 +166,8 @@ module.exports = {
             if (!gameDocSnap.exists()) {
                 console.log(`[Wordle Solver - MessageUpdate] DEBUG: State NOT found. Checking if this is Guess #1.`);
                 
-                // Check if this is the initial Guess #1 content edit
-                const isGuessOne = newMessage.content.includes('Guess #1') && newMessage.content.includes('6 guesses remaining');
+                // NEW/FIX: Use robust regex check that ignores spacing/special characters
+                const isGuessOne = /^Guess #1.*?6 guesses remaining$/s.test(newMessage.content);
                 
                 if (isGuessOne) {
                     console.log(`[Wordle Solver - MessageUpdate] START TRIGGERED: Initializing Guess #1 state.`);
