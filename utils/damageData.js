@@ -36,6 +36,12 @@ const WEAPON_DATA = {
         "12g Slug": "63 - 79",
         "Incen": "51 - 67",
     },
+    "M4": {
+        "Handmade Shell": "40 - 59",
+        "12g Buckshot": "51 - 71",
+        "12g Slug": "68 - 85",
+        "Incen": "60 - 72",
+    },
     "M92": {
         "Pistol Bullet": "28 - 35",
         "High Velocity": "28 - 35",
@@ -95,11 +101,24 @@ const WEAPON_DATA = {
         "Incen": "71 - 96",
         "Explo": "43 - 55",
     },
+        },
+    "HMLMG": {
+        "Rifle Bullet": " 63 - 82",
+        "High Velocity": "60 - 71",
+        "Incen": "62 - 72",
+        "Explo": "43 - 55 (x2)",
+    },
     "Bolt Rifle": {
         "Rifle Bullet": "79 - 84",
         "High Velocity": "79 - 84",
         "Incen": "78 - 83",
         "Explo": "50 - 54 (x2)",
+    },
+    "SKS": {
+        "Rifle Bullet": " 48 - 56",
+        "High Velocity": "46 - 55",
+        "Incen": "548 - 58",
+        "Explo": "38 - 58 (x2)",
     },
     "Assault Rifle": {
         "Rifle Bullet": "59 - 70",
