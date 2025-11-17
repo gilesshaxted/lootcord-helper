@@ -60,6 +60,9 @@ const COOLDOWN_DURATIONS_MS = {
     'stone': 10 * 60 * 1000,
     'metal': 25 * 60 * 1000,
     'high quality metal': 60 * 60 * 1000
+    'hmlmg': 1 * 60 * 60 * 1000 + 36 * 60 * 1000 + 0 * 1000,
+    'sks': 1 * 60 * 60 * 1000 + 6 * 60 * 1000 + 0 * 1000,
+    'm4 shotgun': 1 * 60 * 60 * 1000 + 15 * 60 * 1000 + 0 * 1000,
 };
 
 const ATTACK_MESSAGE_REGEX = /^(?:<a?:.+?:\d+>|\S+)\s+\*\*<@(\d+)>\*\* hit the \*\*(.*?)\*\* for \*\*(?:\d+)\*\* damage using their\s+<a?:.+?:\d+>\s+`([^`]+)`/;
