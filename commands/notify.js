@@ -1,3 +1,4 @@
+// commands/notify.js
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { doc, collection, getDoc, setDoc } = require('firebase/firestore');
 
