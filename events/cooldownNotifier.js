@@ -1,399 +1,414 @@
-const { collection, doc, setDoc, getDoc, updateDoc, deleteDoc } = require('firebase/firestore');
-const statsTracker = require('../utils/statsTracker');
+// events/cooldownNotifier.js
+const { Events } = require('discord.js');
+const { db } = require('../utils/firebase');
+const { recordHelp } = require('../utils/stats');
 
-// --- Configuration ---
-const TARGET_GAME_BOT_ID = '493316754689359874';
+const TARGET_GAME_BOT_ID = process.env.LOOTCORD_BOT_ID || '493316754689359874';
+
+// ---------------------------------------------------------------------------
+// COOLDOWN DURATIONS
+// ---------------------------------------------------------------------------
+
 const COOLDOWN_DURATIONS_MS = {
-    'bone knife': 15 * 60 * 1000 + 45 * 1000,
-    'butcher knife': 21 * 60 * 1000 + 45 * 1000,
-    'candy cane': 22 * 60 * 1000 + 9 * 1000,
-    'chain saw': 52 * 60 * 1000 + 12 * 1000,
-    'long sword': 36 * 60 * 1000 + 2 * 1000,
-    'mace': 34 * 60 * 1000 + 3 * 1000,
-    'machete': 25 * 60 * 1000 + 23 * 1000,
-    'pickaxe': 11 * 60 * 1000 + 38 * 1000,
-    'pitchfork': 42 * 60 * 1000 + 32 * 1000,
-    'rock': 9 * 60 * 1000 + 14 * 1000,
-    'salvage cleaver': 21 * 60 * 1000 + 1 * 1000,
-    'salvaged sword': 20 * 60 * 1000 + 43 * 1000,
-    'sickle': 34 * 60 * 1000 + 10 * 1000,
-    'snowball': 39 * 60 * 1000 + 12 * 1000,
-    'stone spear': 29 * 60 * 1000 + 13 * 1000,
-    'wooden spear': 15 * 60 * 1000 + 20 * 1000,
-    'bow': 26 * 60 * 1000 + 55 * 1000,
-    'crossbow': 37 * 60 * 1000 + 12 * 1000,
-    'f1 grenade': 39 * 60 * 1000 + 22 * 1000,
-    'flame thrower': 51 * 60 * 1000 + 42 * 1000,
-    'snowball gun': 1 * 60 * 60 * 1000 + 10 * 60 * 1000 + 0 * 1000,
-    'waterpipe shotgun': 45 * 60 * 1000 + 32 * 1000,
-    'pump shotgun': 57 * 60 * 1000 + 12 * 1000,
-    'spas-12': 1 * 60 * 60 * 1000 + 17 * 60 * 1000 + 0 * 1000,
-    'm92': 38 * 60 * 1000 + 22 * 1000,
-    'semi pistol': 35 * 60 * 1000 + 55 * 1000,
-    'revolver': 30 * 60 * 1000 + 35 * 1000,
-    'python': 1 * 60 * 60 * 1000 + 8 * 60 * 1000 + 0 * 1000,
-    'mp5': 1 * 60 * 60 * 1000 + 6 * 60 * 1000 + 0 * 1000,
-    'thompson': 52 * 60 * 1000 + 47 * 1000,
-    'custom smg': 48 * 60 * 1000 + 4 * 1000,
-    'semi rifle': 1 * 60 * 60 * 1000 + 5 * 60 * 1000 + 0 * 1000,
-    'm39 rifle': 1 * 60 * 60 * 1000 + 12 * 60 * 1000 + 0 * 1000,
-    'lr-300': 1 * 60 * 60 * 1000 + 10 * 60 * 1000 + 0 * 1000,
-    'm249': 2 * 60 * 60 * 1000 + 10 * 60 * 1000 + 0 * 1000,
-    'bolt rifle': 2 * 60 * 60 * 1000 + 1 * 60 * 1000 + 0 * 1000,
-    'assault rifle': 1 * 60 * 60 * 1000 + 16 * 60 * 1000 + 0 * 1000,
-    'l96': 3 * 60 * 60 * 1000 + 37 * 60 * 1000 + 0 * 1000,
-    'grenade launcher': 1 * 60 * 60 * 1000 + 45 * 60 * 1000 + 0 * 1000,
-    'rocket launcher': 2 * 60 * 60 * 1000 + 24 * 60 * 1000 + 0 * 1000,
-    'bandage': 16 * 60 * 1000 + 7 * 1000,
-    'medical syringe': 28 * 60 * 1000 + 16 * 1000,
-    'large medkit': 44 * 60 * 1000 + 42 * 1000,
-    'farming': 60 * 60 * 1000,
-    'voting': 12 * 60 * 60 * 1000,
-    'gambling': 5 * 60 * 1000,
-    'wheel': 10 * 60 * 1000,
-    'jackpot': 9 * 60 * 1000,
-    'roulette': 3 * 60 * 1000,
-    'trivia': 10 * 60 * 1000,
-    'scramble': 15 * 60 * 1000,
-    'wordle': 30 * 60 * 1000,
-    'wood': 2 * 60 * 1000,
-    'stone': 10 * 60 * 1000,
-    'metal': 25 * 60 * 1000,
-    'high quality metal': 60 * 60 * 1000, // <--- ADDED COMMA
-    'hmlmg': 1 * 60 * 60 * 1000 + 36 * 60 * 1000 + 0 * 1000,
-    'sks': 1 * 60 * 60 * 1000 + 6 * 60 * 1000 + 0 * 1000,
-    'm4 shotgun': 1 * 60 * 60 * 1000 + 15 * 60 * 1000 + 0 * 1000,
+    // Melee weapons
+    'bone knife': 945000, 'butcher knife': 1305000, 'candy cane': 1329000,
+    'chain saw': 3132000, 'long sword': 2162000, 'mace': 2043000,
+    'machete': 1523000, 'pickaxe': 698000, 'pitchfork': 2552000,
+    'rock': 554000, 'salvage cleaver': 1261000, 'salvaged sword': 1243000,
+    'sickle': 2050000, 'snowball': 2352000, 'stone spear': 1753000,
+    'wooden spear': 920000,
+    // Ranged weapons
+    'bow': 1615000, 'crossbow': 2232000, 'f1 grenade': 2362000,
+    'flame thrower': 3102000, 'snowball gun': 4200000,
+    'waterpipe shotgun': 2732000, 'pump shotgun': 3432000,
+    'spas-12': 4620000, 'm92': 2302000, 'semi pistol': 2155000,
+    'revolver': 1835000, 'python': 4080000, 'mp5': 3960000,
+    'thompson': 3167000, 'custom smg': 2884000, 'semi rifle': 3900000,
+    'm39 rifle': 4320000, 'lr-300': 4200000, 'm249': 7800000,
+    'bolt rifle': 7260000, 'assault rifle': 4560000, 'l96': 13020000,
+    'grenade launcher': 6300000, 'rocket launcher': 8640000,
+    'hmlmg': 5760000, 'sks': 3960000, 'm4 shotgun': 4500000,
+    // Meds
+    'bandage': 967000, 'medical syringe': 1696000, 'large medkit': 2682000,
+    // Activities
+    'farming': 3600000, 'voting': 43200000,
+    // Gambling
+    'gambling': 300000, 'wheel': 600000, 'jackpot': 540000, 'roulette': 180000,
+    // Loot (Lootcord mini-games)
+    'trivia': 600000, 'scramble': 900000, 'wordle': 1800000,
+    // Resources
+    'wood': 120000, 'stone': 600000, 'metal': 1500000, 'high quality metal': 3600000,
 };
 
-const ATTACK_MESSAGE_REGEX = /^(?:<a?:.+?:\d+>|\S+)\s+\*\*<@(\d+)>\*\* hit the \*\*(.*?)\*\* for \*\*(?:\d+)\*\* damage using their\s+<a?:.+?:\d+>\s+`([^`]+)`/;
-const FARM_MESSAGE_REGEX = /^You decide to\s+(?:scavenge for loot|go :axe: chop some trees|go :pick: mining).*and (?:find|receive|bring back).*`([^`]+)`!/;
-const MED_MESSAGE_REGEX = /^You use your.*`([^`]+)` to heal for \*\*(\d+)\*\* health! You now have.*\*\*(\d+)\*\* health\.?$/i;
-const VOTE_MESSAGE_REGEX = /^You received \d+x\s.+ for voting on/i;
-const REPAIR_MESSAGE_REGEX = /^✅ You used \*\*1x\*\* <a?:.+?:\d+>\s+`([^`]+)` to repair the clan!/s;
-const GAMBLING_MESSAGE_REGEX = /^You chose \*\*(heads|tails)\*\* (?:and|but) the coin landed on \*\*(heads|tails)\*\*.*$/is;
-const BLACKJACK_EMBED_AUTHOR_REGEX = /blackjack$/i;
-const SLOTS_EMBED_TITLE_REGEX = /slot machine$/i;
-const WHEEL_EMBED_TITLE_REGEX = /wheel roulette$/i;
-const JACKPOT_MESSAGE_REGEX = /^<@(\d+)> won the .* jackpot with a .*% chance of winning!$/i;
-const ROULETTE_MESSAGE_REGEX = /The gun(?: doesn't fire\.| blast)/i;
-const TRIVIA_EMBED_FIELD_REGEX = /Trivia Streak/;
-const SCRAMBLE_EMBED_DESCRIPTION_REGEX = /^Word:/;
-const WORDLE_MESSAGE_CONTENT_REGEX = /^Guess #1 \/ 6 · 6 guesses remaining/s;
+// ---------------------------------------------------------------------------
+// REGEX PATTERNS
+// From old working code — more complete than current version
+// ---------------------------------------------------------------------------
 
+const REGEX = {
+    // Attack: "<emoji> **<@userId>** hit the **target** for **N** damage using their <emoji> `weapon`"
+    attack: /\*\*<@(\d+)>\*\* hit the \*\*.*?\*\* for \*\*(?:\d+)\*\* damage using their\s+<.*?>\s+`([^`]+)`/,
 
-async function sendCooldownPing(client, db, userId, channelId, type, item, cooldownDocId, APP_ID_FOR_FIRESTORE) {
-    let notificationType;
-    let pingMessage;
+    // Farm: "You decide to scavenge/chop/mine ... and find/receive `item`!"
+    farm: /You decide to\s+(?:scavenge for loot|go .+ chop some trees|go .+ mining).*and (?:find|receive|bring back).*`([^`]+)`!/s,
 
-    switch (type) {
-        case 'attack':
-            notificationType = 'attackCooldown';
-            pingMessage = `<@${userId}> your **${item}** attack cooldown is over!`;
-            break;
-        case 'farm':
-            notificationType = 'farmCooldown';
-            pingMessage = `<@${userId}> your **farming** cooldown is over! Last find was **${item}**`;
-            break;
-        case 'med':
-            notificationType = 'medCooldown';
-            pingMessage = `<@${userId}> your **${item}** cooldown is over!`;
-            break;
-        case 'vote':
-            notificationType = 'voteCooldown';
-            pingMessage = `<@${userId}> your **${item}** cooldown is over!`;
-            break;
-        case 'repair':
-            notificationType = 'repairCooldown';
-            pingMessage = `<@${userId}> your **clan repair (${item})** cooldown is over!`;
-            break;
-        case 'gambling':
-            notificationType = 'gamblingCooldown';
-            pingMessage = `<@${userId}> your **${item}** cooldown is over!`; 
-            break;
-        case 'loot':
-            notificationType = 'lootCooldown';
-            pingMessage = `<@${userId}> your **${item}** cooldown is over!`;
-            break;
-        default:
-            await deleteDoc(doc(collection(db, `ActiveCooldowns`), cooldownDocId));
-            return;
-    }
+    // Med: "You use your `item` to heal for **N** health"
+    med: /You use your.*`([^`]+)` to heal for/i,
 
-    const userPrefsRef = doc(collection(db, `UserNotifications/${userId}/preferences`), notificationType);
-    const prefSnap = await getDoc(userPrefsRef);
-    const isNotificationEnabled = prefSnap.exists() ? prefSnap.data().enabled : false;
+    // Vote: "You received Nx ... for voting on"
+    vote: /^You received \d+x\s.+ for voting on/i,
 
-    if (!isNotificationEnabled) {
-        await deleteDoc(doc(collection(db, `ActiveCooldowns`), cooldownDocId));
-        return;
-    }
+    // Repair: "✅ You used **1x** <emoji> `item` to repair the clan!"
+    repair: /✅ You used \*\*1x\*\* <.*?>\s+`([^`]+)` to repair the clan!/s,
 
-    const channel = client.channels.cache.get(channelId);
-    if (!channel || !channel.isTextBased()) {
-        await deleteDoc(doc(collection(db, `ActiveCooldowns`), cooldownDocId));
+    // Gambling — coinflip
+    coinflip: /You chose \*\*(heads|tails)\*\* (?:and|but) the coin landed on \*\*(heads|tails)\*\*/is,
+
+    // Gambling — roulette (russian roulette)
+    roulette: /The gun(?: doesn't fire\.| blast)/i,
+
+    // Gambling — jackpot winner
+    jackpot: /^<@(\d+)> won the .* jackpot with a .*% chance of winning!/i,
+};
+
+// Embed-based detection
+const EMBED_REGEX = {
+    blackjack: /blackjack$/i,       // embed.author.name
+    slots: /slot machine$/i,         // embed.title
+    wheel: /wheel roulette$/i,       // embed.title
+    trivia: /Trivia Streak/,         // embed field name
+    scramble: /^Word:/,              // embed.description
+};
+
+// Wordle start — Lootcord sends this on first guess
+const WORDLE_START_REGEX = /Guess #1\s*[·/]\s*\*?\*?6\*?\*? guesses remaining/i;
+
+// ---------------------------------------------------------------------------
+// COOLDOWN PING
+// ---------------------------------------------------------------------------
+
+/**
+ * Fires the cooldown notification after the delay expires.
+ * Checks user preferences before sending.
+ */
+async function sendCooldownPing(client, userId, type, item, channelId, docId) {
+    const appId = process.env.CLIENT_ID || 'default-app';
+
+    // Map type to preference key
+    const prefKeyMap = {
+        attack: 'attackCooldown',
+        farm: 'farmCooldown',
+        med: 'medCooldown',
+        vote: 'voteCooldown',
+        repair: 'repairCooldown',
+        gambling: 'gamblingCooldown',
+        loot: 'lootCooldown',
+    };
+
+    const prefKey = prefKeyMap[type];
+    if (!prefKey) {
+        await cleanupCooldown(docId);
         return;
     }
 
     try {
-        await channel.send(pingMessage);
-        statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
-        await deleteDoc(doc(collection(db, `ActiveCooldowns`), cooldownDocId));
-    } catch (error) {
-        console.error(`Cooldown Notifier: Failed to send ${type} cooldown ping in #${channel.name} for ${userId}/${item}:`, error);
+        const prefRef = db.collection('artifacts').doc(appId)
+            .collection('users').doc(userId)
+            .collection('notifications').doc('settings');
+
+        const snap = await prefRef.get();
+        if (!snap.exists || snap.data()[prefKey] !== true) {
+            await cleanupCooldown(docId);
+            return;
+        }
+
+        const channel = client.channels.cache.get(channelId);
+        if (!channel || !channel.isTextBased()) {
+            await cleanupCooldown(docId);
+            return;
+        }
+
+        // Build ping message based on type
+        let pingMsg;
+        switch (type) {
+            case 'attack':
+                pingMsg = `<@${userId}> your **${item}** attack cooldown is over! ⚔️`;
+                break;
+            case 'farm':
+                pingMsg = `<@${userId}> your **farming** cooldown is over! 🌾`;
+                break;
+            case 'med':
+                pingMsg = `<@${userId}> your **${item}** cooldown is over! 💊`;
+                break;
+            case 'vote':
+                pingMsg = `<@${userId}> your **voting** cooldown is over! 🗳️`;
+                break;
+            case 'repair':
+                pingMsg = `<@${userId}> your **clan repair** cooldown is over! 🔧`;
+                break;
+            case 'gambling':
+                pingMsg = `<@${userId}> your **${item}** cooldown is over! 🎲`;
+                break;
+            case 'loot':
+                pingMsg = `<@${userId}> your **${item}** cooldown is over! 🎁`;
+                break;
+            default:
+                pingMsg = `<@${userId}> your cooldown is over! 🔔`;
+        }
+
+        await channel.send(pingMsg);
+        await recordHelp(userId);
+        await cleanupCooldown(docId);
+
+    } catch (err) {
+        console.error(`[Cooldown] Ping failed for ${userId}/${type}/${item}:`, err.message);
+        await cleanupCooldown(docId);
     }
 }
 
+async function cleanupCooldown(docId) {
+    if (!docId) return;
+    try {
+        const appId = process.env.CLIENT_ID || 'default-app';
+        await db.collection('artifacts').doc(appId)
+            .collection('public').doc('data')
+            .collection('activeCooldowns').doc(docId)
+            .delete();
+    } catch { /* already deleted or doesn't exist */ }
+}
+
+/**
+ * Saves cooldown to Firestore and schedules the ping timer.
+ */
+async function scheduleCooldown(client, userId, type, item, channelId, guildId, duration) {
+    if (!userId || !duration) return;
+
+    const appId = process.env.CLIENT_ID || 'default-app';
+    const docId = `${userId}_${type}_${item.replace(/\s+/g, '_')}`;
+    const cooldownEndsAt = Date.now() + duration;
+
+    try {
+        const cooldownRef = db.collection('artifacts').doc(appId)
+            .collection('public').doc('data')
+            .collection('activeCooldowns').doc(docId);
+
+        await cooldownRef.set({ userId, type, item, channelId, guildId, cooldownEndsAt });
+
+        const delay = cooldownEndsAt - Date.now();
+        setTimeout(async () => {
+            await sendCooldownPing(client, userId, type, item, channelId, docId);
+        }, Math.max(delay, 0));
+
+        console.log(`[Cooldown] ⏰ Scheduled ${type}/${item} for ${userId} — ${Math.round(duration / 1000)}s`);
+    } catch (err) {
+        console.error(`[Cooldown] Failed to schedule ${type}/${item} for ${userId}:`, err.message);
+    }
+}
+
+/**
+ * Fetches the previous non-bot message in the channel to identify the player.
+ */
+async function getPreviousUserMessage(channel) {
+    try {
+        const messages = await channel.messages.fetch({ limit: 2 });
+        return messages.last();
+    } catch {
+        return null;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MAIN HANDLER
+// ---------------------------------------------------------------------------
+
 module.exports = {
-    name: 'messageCreate',
-    once: false,
-    async execute(message, db, client, APP_ID_FOR_FIRESTORE) {
-        if (message.author.id !== TARGET_GAME_BOT_ID) {
-            return;
-        }
-        if (message.author.id === client.user.id) {
-            return;
-        }
+    name: Events.MessageCreate,
+    async execute(message) {
+        if (message.author.id !== TARGET_GAME_BOT_ID || !message.guild) return;
 
-        if (!message.guild) {
-            return;
-        }
+        const channelId = message.channel.id;
+        const guildId = message.guild.id;
+        const content = message.content || '';
+        const embed = message.embeds?.[0] || null;
 
-        if (!db || !APP_ID_FOR_FIRESTORE) {
-            return;
-        }
-        
-        let playerId = null;
+        let userId = null;
         let item = null;
-        let cooldownType = null;
-        let cooldownDuration = undefined;
+        let type = null;
+        let duration = null;
 
-        // --- Cooldowns already implemented (Attack, Farm, Med, Gambling, Vote, Repair) ---
-        const attackMatch = message.content.match(ATTACK_MESSAGE_REGEX);
+        // ----------------------------------------------------------------
+        // 1. ATTACK
+        // ----------------------------------------------------------------
+        const attackMatch = content.match(REGEX.attack);
         if (attackMatch) {
-            playerId = attackMatch[1];
-            item = attackMatch[3].toLowerCase();
-            cooldownType = 'attack';
-            cooldownDuration = COOLDOWN_DURATIONS_MS[item];
+            userId = attackMatch[1];
+            item = attackMatch[2].toLowerCase();
+            type = 'attack';
+            duration = COOLDOWN_DURATIONS_MS[item];
         }
 
-        const farmMatch = message.content.match(FARM_MESSAGE_REGEX);
-        if (farmMatch && !attackMatch) {
-            item = farmMatch[1].toLowerCase();
-            cooldownType = 'farm';
-            cooldownDuration = COOLDOWN_DURATIONS_MS['farming'];
-            
-            try {
-                const messages = await message.channel.messages.fetch({ limit: 2 });
-                const previousMessage = messages.last();
-                
-                if (previousMessage && !previousMessage.author.bot && previousMessage.content.toLowerCase().startsWith('t-farm')) {
-                    playerId = previousMessage.author.id;
+        // ----------------------------------------------------------------
+        // 2. FARM
+        // ----------------------------------------------------------------
+        if (!type) {
+            const farmMatch = content.match(REGEX.farm);
+            if (farmMatch) {
+                const prev = await getPreviousUserMessage(message.channel);
+                if (prev && !prev.author.bot && prev.content.toLowerCase().startsWith('t-farm')) {
+                    userId = prev.author.id;
+                    item = farmMatch[1].toLowerCase();
+                    type = 'farm';
+                    duration = COOLDOWN_DURATIONS_MS['farming'];
                 }
-            } catch (error) {
-                console.error(`Cooldown Notifier: Error fetching previous message for farm cooldown:`, error);
             }
         }
 
-        const medMatch = message.content.match(MED_MESSAGE_REGEX);
-        if (medMatch && !attackMatch && !farmMatch) {
-            item = medMatch[1].toLowerCase();
-            cooldownType = 'med';
-            cooldownDuration = COOLDOWN_DURATIONS_MS[item];
-            
-            try {
-                const messages = await message.channel.messages.fetch({ limit: 2 });
-                const previousMessage = messages.last();
-                
-                if (previousMessage && !previousMessage.author.bot && previousMessage.content.toLowerCase().startsWith('t-use')) {
-                    playerId = previousMessage.author.id;
+        // ----------------------------------------------------------------
+        // 3. MED
+        // ----------------------------------------------------------------
+        if (!type) {
+            const medMatch = content.match(REGEX.med);
+            if (medMatch) {
+                const prev = await getPreviousUserMessage(message.channel);
+                if (prev && !prev.author.bot && prev.content.toLowerCase().startsWith('t-use')) {
+                    userId = prev.author.id;
+                    item = medMatch[1].toLowerCase();
+                    type = 'med';
+                    duration = COOLDOWN_DURATIONS_MS[item];
                 }
-            } catch (error) {
-                console.error(`Cooldown Notifier: Error fetching previous message for med cooldown:`, error);
             }
         }
-        
-        const gamblingMatch = message.content.match(GAMBLING_MESSAGE_REGEX);
-        const blackjackEmbedMatch = message.embeds.length > 0 && message.embeds[0].author && message.embeds[0].author.name && BLACKJACK_EMBED_AUTHOR_REGEX.test(message.embeds[0].author.name);
-        const slotsEmbedMatch = message.embeds.length > 0 && message.embeds[0].title && SLOTS_EMBED_TITLE_REGEX.test(message.embeds[0].title);
-        const wheelEmbedMatch = message.embeds.length > 0 && message.embeds[0].title && WHEEL_EMBED_TITLE_REGEX.test(message.embeds[0].title);
-        const jackpotMessageMatch = message.content.match(JACKPOT_MESSAGE_REGEX);
-        const rouletteMessageMatch = message.content.match(ROULETTE_MESSAGE_REGEX);
 
-        if ((gamblingMatch || blackjackEmbedMatch || slotsEmbedMatch || wheelEmbedMatch || jackpotMessageMatch || rouletteMessageMatch) && !attackMatch && !farmMatch && !medMatch) {
-            cooldownType = 'gambling';
-            
-            if (gamblingMatch) {
-                item = 'coinflip';
-                cooldownDuration = COOLDOWN_DURATIONS_MS['gambling'];
-            } else if (blackjackEmbedMatch) {
-                item = 'blackjack';
-                cooldownDuration = COOLDOWN_DURATIONS_MS['gambling'];
-            } else if (slotsEmbedMatch) {
-                item = 'slots';
-                cooldownDuration = COOLDOWN_DURATIONS_MS['gambling'];
-            } else if (wheelEmbedMatch) {
-                item = 'wheel roulette';
-                cooldownDuration = COOLDOWN_DURATIONS_MS['wheel'];
-            } else if (jackpotMessageMatch) {
-                item = 'jackpot';
-                cooldownDuration = COOLDOWN_DURATIONS_MS['jackpot'];
-            } else if (rouletteMessageMatch) {
-                item = 'roulette';
-                cooldownDuration = COOLDOWN_DURATIONS_MS['roulette'];
+        // ----------------------------------------------------------------
+        // 4. VOTE
+        // ----------------------------------------------------------------
+        if (!type) {
+            if (REGEX.vote.test(content)) {
+                const prev = await getPreviousUserMessage(message.channel);
+                if (prev && !prev.author.bot) {
+                    userId = prev.author.id;
+                    item = 'voting';
+                    type = 'vote';
+                    duration = COOLDOWN_DURATIONS_MS['voting'];
+                }
             }
-            
-            try {
-                if (jackpotMessageMatch) {
-                    playerId = jackpotMessageMatch[1];
-                } else {
-                    const messages = await message.channel.messages.fetch({ limit: 2 });
-                    const previousMessage = messages.last();
-                    
-                    if (previousMessage && !previousMessage.author.bot && 
-                       (previousMessage.content.toLowerCase().startsWith('t-cf') || 
-                        previousMessage.content.toLowerCase().startsWith('t-coinflip') ||
-                        previousMessage.content.toLowerCase().startsWith('t-bj') ||
-                        previousMessage.content.toLowerCase().startsWith('t-slots') ||
-                        previousMessage.content.toLowerCase().startsWith('t-wheel') ||
-                        previousMessage.content.toLowerCase().startsWith('t-roulette'))) {
-                        playerId = previousMessage.author.id;
+        }
+
+        // ----------------------------------------------------------------
+        // 5. REPAIR
+        // ----------------------------------------------------------------
+        if (!type) {
+            const repairMatch = content.match(REGEX.repair);
+            if (repairMatch) {
+                const prev = await getPreviousUserMessage(message.channel);
+                if (prev && !prev.author.bot && prev.content.toLowerCase().startsWith('t-clan repair')) {
+                    userId = prev.author.id;
+                    item = repairMatch[1].toLowerCase();
+                    type = 'repair';
+                    duration = COOLDOWN_DURATIONS_MS[item];
+                }
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // 6. GAMBLING — coinflip, blackjack, slots, wheel, jackpot, roulette
+        // ----------------------------------------------------------------
+        if (!type) {
+            const isCoinflip = REGEX.coinflip.test(content);
+            const isBlackjack = embed?.author?.name && EMBED_REGEX.blackjack.test(embed.author.name);
+            const isSlots = embed?.title && EMBED_REGEX.slots.test(embed.title);
+            const isWheel = embed?.title && EMBED_REGEX.wheel.test(embed.title);
+            const jackpotMatch = content.match(REGEX.jackpot);
+            const isRoulette = REGEX.roulette.test(content);
+
+            if (isCoinflip || isBlackjack || isSlots || isWheel || jackpotMatch || isRoulette) {
+                type = 'gambling';
+
+                if (isCoinflip) {
+                    item = 'coinflip';
+                    duration = COOLDOWN_DURATIONS_MS['gambling'];
+                } else if (isBlackjack) {
+                    item = 'blackjack';
+                    duration = COOLDOWN_DURATIONS_MS['gambling'];
+                } else if (isSlots) {
+                    item = 'slots';
+                    duration = COOLDOWN_DURATIONS_MS['gambling'];
+                } else if (isWheel) {
+                    item = 'wheel';
+                    duration = COOLDOWN_DURATIONS_MS['wheel'];
+                } else if (jackpotMatch) {
+                    item = 'jackpot';
+                    duration = COOLDOWN_DURATIONS_MS['jackpot'];
+                    userId = jackpotMatch[1]; // Jackpot includes the winner's ID
+                } else if (isRoulette) {
+                    item = 'roulette';
+                    duration = COOLDOWN_DURATIONS_MS['roulette'];
+                }
+
+                // Fetch player from previous message if not already identified
+                if (!userId) {
+                    const prev = await getPreviousUserMessage(message.channel);
+                    if (prev && !prev.author.bot) {
+                        const prevContent = prev.content.toLowerCase();
+                        const isGamblingCommand = [
+                            't-cf', 't-coinflip', 't-bj', 't-blackjack',
+                            't-slots', 't-wheel', 't-roulette'
+                        ].some(cmd => prevContent.startsWith(cmd));
+
+                        if (isGamblingCommand) userId = prev.author.id;
                     }
                 }
-            } catch (error) {
-                console.error(`Cooldown Notifier: Error fetching previous message for gambling cooldown:`, error);
             }
         }
 
-        const voteMatch = message.content.match(VOTE_MESSAGE_REGEX);
-        if (voteMatch && !attackMatch && !farmMatch && !medMatch && !gamblingMatch && !blackjackEmbedMatch && !slotsEmbedMatch && !wheelEmbedMatch && !jackpotMessageMatch && !rouletteMessageMatch) {
-            item = 'voting';
-            cooldownType = 'vote';
-            cooldownDuration = COOLDOWN_DURATIONS_MS['voting'];
-            
-            try {
-                const messages = await message.channel.messages.fetch({ limit: 2 });
-                const previousMessage = messages.last();
-                
-                if (previousMessage && !previousMessage.author.bot) {
-                    playerId = previousMessage.author.id;
-                }
-            } catch (error) {
-                console.error(`Cooldown Notifier: Error fetching previous message for vote cooldown:`, error);
-            }
-        }
+        // ----------------------------------------------------------------
+        // 7. LOOT — trivia, scramble, wordle
+        // Detected from Lootcord's game-start messages
+        // Note: your bot intercepts t-trivia/t-scramble/t-wordle but
+        // Lootcord still sends the game embed so we can detect it here
+        // ----------------------------------------------------------------
+        if (!type && embed) {
 
-        const repairMatch = message.content.match(REPAIR_MESSAGE_REGEX);
-        if (repairMatch && !attackMatch && !farmMatch && !medMatch && !voteMatch && !gamblingMatch && !blackjackEmbedMatch && !slotsEmbedMatch && !wheelEmbedMatch && !jackpotMessageMatch && !rouletteMessageMatch) {
-            item = repairMatch[1].toLowerCase();
-            cooldownType = 'repair';
-            cooldownDuration = COOLDOWN_DURATIONS_MS[item];
-            
-            try {
-                const messages = await message.channel.messages.fetch({ limit: 2 });
-                const previousMessage = messages.last();
-                
-                if (previousMessage && !previousMessage.author.bot && previousMessage.content.toLowerCase().startsWith('t-clan repair')) {
-                    playerId = previousMessage.author.id;
-                }
-            } catch (error) {
-                console.error(`Cooldown Notifier: Error fetching previous message for repair cooldown:`, error);
-            }
-        }
-
-        // --- NEW: Loot (Trivia, Scramble, Wordle) Cooldown Logic ---
-        // Check for Trivia
-        if (!playerId && !cooldownType && message.embeds.length > 0) {
-            const embed = message.embeds[0];
-            const hasTriviaField = embed.fields?.some(field => TRIVIA_EMBED_FIELD_REGEX.test(field.name));
+            // Trivia — embed has a "Trivia Streak" field
+            const hasTriviaField = embed.fields?.some(f => EMBED_REGEX.trivia.test(f.name || ''));
             if (hasTriviaField) {
-                item = 'trivia';
-                cooldownType = 'loot';
-                cooldownDuration = COOLDOWN_DURATIONS_MS['trivia'];
-                try {
-                    const messages = await message.channel.messages.fetch({ limit: 2 });
-                    const previousMessage = messages.last();
-                    if (previousMessage && previousMessage.content.toLowerCase().startsWith('t-trivia')) {
-                        playerId = previousMessage.author.id;
-                    }
-                } catch (error) {
-                    console.error(`Cooldown Notifier: Error fetching previous message for trivia cooldown:`, error);
+                const prev = await getPreviousUserMessage(message.channel);
+                if (prev && !prev.author.bot && /^t-\s*trivia$/i.test(prev.content.trim())) {
+                    userId = prev.author.id;
+                    item = 'trivia';
+                    type = 'loot';
+                    duration = COOLDOWN_DURATIONS_MS['trivia'];
+                }
+            }
+
+            // Scramble — embed.description starts with "Word:"
+            if (!type && embed.description && EMBED_REGEX.scramble.test(embed.description)) {
+                const prev = await getPreviousUserMessage(message.channel);
+                if (prev && !prev.author.bot && /^t-\s*scramble$/i.test(prev.content.trim())) {
+                    userId = prev.author.id;
+                    item = 'scramble';
+                    type = 'loot';
+                    duration = COOLDOWN_DURATIONS_MS['scramble'];
                 }
             }
         }
 
-        // Check for Scramble
-        if (!playerId && !cooldownType && message.embeds.length > 0) {
-            const embed = message.embeds[0];
-            if (embed.description && SCRAMBLE_EMBED_DESCRIPTION_REGEX.test(embed.description)) {
-                item = 'scramble';
-                cooldownType = 'loot';
-                cooldownDuration = COOLDOWN_DURATIONS_MS['scramble'];
-                try {
-                    const messages = await message.channel.messages.fetch({ limit: 2 });
-                    const previousMessage = messages.last();
-                    if (previousMessage && previousMessage.content.toLowerCase().startsWith('t-scramble')) {
-                        playerId = previousMessage.author.id;
-                    }
-                } catch (error) {
-                    console.error(`Cooldown Notifier: Error fetching previous message for scramble cooldown:`, error);
-                }
-            }
-        }
-        
-        // Check for Wordle (using message content)
-        if (!playerId && !cooldownType && WORDLE_MESSAGE_CONTENT_REGEX.test(message.content)) {
-            item = 'wordle';
-            cooldownType = 'loot';
-            cooldownDuration = COOLDOWN_DURATIONS_MS['wordle'];
-            try {
-                const messages = await message.channel.messages.fetch({ limit: 2 });
-                const previousMessage = messages.last();
-                if (previousMessage && previousMessage.content.toLowerCase().startsWith('t-wordle')) {
-                    playerId = previousMessage.author.id;
-                }
-            } catch (error) {
-                console.error(`Cooldown Notifier: Error fetching previous message for wordle cooldown:`, error);
+        // Wordle — Lootcord sends a content message at game start
+        if (!type && WORDLE_START_REGEX.test(content)) {
+            const prev = await getPreviousUserMessage(message.channel);
+            if (prev && !prev.author.bot && /^t-\s*wordle/i.test(prev.content.trim())) {
+                userId = prev.author.id;
+                item = 'wordle';
+                type = 'loot';
+                duration = COOLDOWN_DURATIONS_MS['wordle'];
             }
         }
 
-
-        if (playerId && item && cooldownType && cooldownDuration !== undefined) {
-            if (cooldownDuration === undefined) {
-                return;
-            }
-
-            const cooldownEndsAt = Date.now() + cooldownDuration;
-            const cooldownDocId = `${playerId}_${message.channel.id}_${cooldownType}`;
-
-            const activeCooldownsRef = collection(db, `ActiveCooldowns`);
-            const cooldownDocRef = doc(activeCooldownsRef, cooldownDocId);
-
-            try {
-                await setDoc(cooldownDocRef, {
-                    userId: playerId,
-                    channelId: message.channel.id,
-                    type: cooldownType,
-                    item: item,
-                    cooldownEndsAt: cooldownEndsAt,
-                    originalMessageId: message.id,
-                    guildId: message.guild.id,
-                    pinged: false
-                });
-                
-                const delay = cooldownEndsAt - Date.now();
-
-                if (delay > 0) {
-                    setTimeout(() => {
-                        sendCooldownPing(client, db, playerId, message.channel.id, cooldownType, item, cooldownDocId, APP_ID_FOR_FIRESTORE);
-                    }, delay);
-                } else {
-                    sendCooldownPing(client, db, playerId, message.channel.id, cooldownType, item, cooldownDocId, APP_ID_FOR_FIRESTORE);
-                }
-                statsTracker.incrementTotalHelps(db, APP_ID_FOR_FIRESTORE);
-            } catch (error) {
-                console.error(`Cooldown Notifier: Error storing/scheduling ${cooldownType} cooldown for ${playerId}/${item}:`, error);
-            }
+        // ----------------------------------------------------------------
+        // SCHEDULE if we have everything we need
+        // ----------------------------------------------------------------
+        if (userId && item && type && duration) {
+            await scheduleCooldown(message.client, userId, type, item, channelId, guildId, duration);
         }
-    },
-    sendCooldownPing
+    }
 };
