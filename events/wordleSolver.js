@@ -9,7 +9,7 @@ const { solve, loadWordlists } = require('../utils/wordleSolver');
 const TARGET_BOT_ID = '493316754689359874';
 const LOG_CHANNEL_ID = '1394316724819591318';
 const DIAG_CHANNEL_ID = '1307628841799254026';
-const ENABLE_DIAG_LOGS = false; // Set to true to debug suggestion timing issues
+const ENABLE_DIAG_LOGS = true; // Set to true to debug suggestion timing issues
 
 const GUESS_REGEX = /(?:Guess|Tries|Attempt)\s*#?\s*(\d+)/i;
 const LOSS_REGEX = /the\s+word\s+was|better\s+luck|out\s+of\s+guess|exhausted/i;
