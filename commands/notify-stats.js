@@ -1,3 +1,4 @@
+// commands/notify-stats.js
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const { collection, query, where, getDocs, getFirestore } = require('firebase/firestore');
 
