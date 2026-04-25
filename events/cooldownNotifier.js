@@ -34,7 +34,7 @@ const COOLDOWN_DURATIONS_MS = {
     'farming': 3600000, 'voting': 43200000,
     // Gambling
     'gambling': 300000, 'wheel': 600000, 'jackpot': 540000, 'roulette': 180000,
-    // Loot (Lootcord mini-games)
+    // Loot
     'trivia': 600000, 'scramble': 900000, 'wordle': 1800000,
     // Resources
     'wood': 120000, 'stone': 600000, 'metal': 1500000, 'high quality metal': 3600000,
@@ -42,59 +42,36 @@ const COOLDOWN_DURATIONS_MS = {
 
 // ---------------------------------------------------------------------------
 // REGEX PATTERNS
-// From old working code — more complete than current version
 // ---------------------------------------------------------------------------
 
 const REGEX = {
-    // Attack: "<emoji> **<@userId>** hit the **target** for **N** damage using their <emoji> `weapon`"
     attack: /\*\*<@(\d+)>\*\* hit the \*\*.*?\*\* for \*\*(?:\d+)\*\* damage using their\s+<.*?>\s+`([^`]+)`/,
-
-    // Farm: "You decide to scavenge/chop/mine ... and find/receive `item`!"
     farm: /You decide to\s+(?:scavenge for loot|go .+ chop some trees|go .+ mining).*and (?:find|receive|bring back).*`([^`]+)`!/s,
-
-    // Med: "You use your `item` to heal for **N** health"
     med: /You use your.*`([^`]+)` to heal for/i,
-
-    // Vote: "You received Nx ... for voting on"
     vote: /^You received \d+x\s.+ for voting on/i,
-
-    // Repair: "✅ You used **1x** <emoji> `item` to repair the clan!"
     repair: /✅ You used \*\*1x\*\* <.*?>\s+`([^`]+)` to repair the clan!/s,
-
-    // Gambling — coinflip
     coinflip: /You chose \*\*(heads|tails)\*\* (?:and|but) the coin landed on \*\*(heads|tails)\*\*/is,
-
-    // Gambling — roulette (russian roulette)
     roulette: /The gun(?: doesn't fire\.| blast)/i,
-
-    // Gambling — jackpot winner
     jackpot: /^<@(\d+)> won the .* jackpot with a .*% chance of winning!/i,
 };
 
-// Embed-based detection
 const EMBED_REGEX = {
-    blackjack: /blackjack$/i,       // embed.author.name
-    slots: /slot machine$/i,         // embed.title
-    wheel: /wheel roulette$/i,       // embed.title
-    trivia: /Trivia Streak/,         // embed field name
-    scramble: /^Word:/,              // embed.description
+    blackjack: /blackjack$/i,
+    slots: /slot machine$/i,
+    wheel: /wheel roulette$/i,
+    trivia: /Trivia Streak/,
+    scramble: /^Word:/,
 };
 
-// Wordle start — Lootcord sends this on first guess
 const WORDLE_START_REGEX = /Guess #1\s*[·/]\s*\*?\*?6\*?\*? guesses remaining/i;
 
 // ---------------------------------------------------------------------------
 // COOLDOWN PING
 // ---------------------------------------------------------------------------
 
-/**
- * Fires the cooldown notification after the delay expires.
- * Checks user preferences before sending.
- */
 async function sendCooldownPing(client, userId, type, item, channelId, docId) {
     const appId = process.env.CLIENT_ID || 'default-app';
 
-    // Map type to preference key
     const prefKeyMap = {
         attack: 'attackCooldown',
         farm: 'farmCooldown',
@@ -107,6 +84,7 @@ async function sendCooldownPing(client, userId, type, item, channelId, docId) {
 
     const prefKey = prefKeyMap[type];
     if (!prefKey) {
+        console.log(`[Cooldown] ⚠️ Unknown type ${type} for ${userId} — skipping`);
         await cleanupCooldown(docId);
         return;
     }
@@ -117,51 +95,53 @@ async function sendCooldownPing(client, userId, type, item, channelId, docId) {
             .collection('notifications').doc('settings');
 
         const snap = await prefRef.get();
-        if (!snap.exists || snap.data()[prefKey] !== true) {
+
+        if (!snap.exists) {
+            console.log(`[Cooldown] ⏭️ Skipped ${type}/${item} for ${userId} — no notification settings found`);
+            await cleanupCooldown(docId);
+            return;
+        }
+
+        if (snap.data()[prefKey] !== true) {
+            console.log(`[Cooldown] ⏭️ Skipped ${type}/${item} for ${userId} — ${prefKey} is OFF`);
             await cleanupCooldown(docId);
             return;
         }
 
         const channel = client.channels.cache.get(channelId);
         if (!channel || !channel.isTextBased()) {
+            console.log(`[Cooldown] ⚠️ Channel ${channelId} not found for ${userId}/${type}/${item}`);
             await cleanupCooldown(docId);
             return;
         }
 
-        // Build ping message based on type
         let pingMsg;
         switch (type) {
             case 'attack':
-                pingMsg = `<@${userId}> your **${item}** attack cooldown is over! ⚔️`;
-                break;
+                pingMsg = `<@${userId}> your **${item}** attack cooldown is over! ⚔️`; break;
             case 'farm':
-                pingMsg = `<@${userId}> your **farming** cooldown is over! 🌾`;
-                break;
+                pingMsg = `<@${userId}> your **farming** cooldown is over! 🌾`; break;
             case 'med':
-                pingMsg = `<@${userId}> your **${item}** cooldown is over! 💊`;
-                break;
+                pingMsg = `<@${userId}> your **${item}** cooldown is over! 💊`; break;
             case 'vote':
-                pingMsg = `<@${userId}> your **voting** cooldown is over! 🗳️`;
-                break;
+                pingMsg = `<@${userId}> your **voting** cooldown is over! 🗳️`; break;
             case 'repair':
-                pingMsg = `<@${userId}> your **clan repair** cooldown is over! 🔧`;
-                break;
+                pingMsg = `<@${userId}> your **clan repair** cooldown is over! 🔧`; break;
             case 'gambling':
-                pingMsg = `<@${userId}> your **${item}** cooldown is over! 🎲`;
-                break;
+                pingMsg = `<@${userId}> your **${item}** cooldown is over! 🎲`; break;
             case 'loot':
-                pingMsg = `<@${userId}> your **${item}** cooldown is over! 🎁`;
-                break;
+                pingMsg = `<@${userId}> your **${item}** cooldown is over! 🎁`; break;
             default:
                 pingMsg = `<@${userId}> your cooldown is over! 🔔`;
         }
 
         await channel.send(pingMsg);
+        console.log(`[Cooldown] 🔔 Pinged ${userId} for ${type}/${item} in #${channel.name}`);
         await recordHelp(userId);
         await cleanupCooldown(docId);
 
     } catch (err) {
-        console.error(`[Cooldown] Ping failed for ${userId}/${type}/${item}:`, err.message);
+        console.error(`[Cooldown] ❌ Ping failed for ${userId}/${type}/${item}:`, err.message);
         await cleanupCooldown(docId);
     }
 }
@@ -174,12 +154,9 @@ async function cleanupCooldown(docId) {
             .collection('public').doc('data')
             .collection('activeCooldowns').doc(docId)
             .delete();
-    } catch { /* already deleted or doesn't exist */ }
+    } catch { /* already deleted */ }
 }
 
-/**
- * Saves cooldown to Firestore and schedules the ping timer.
- */
 async function scheduleCooldown(client, userId, type, item, channelId, guildId, duration) {
     if (!userId || !duration) return;
 
@@ -199,19 +176,17 @@ async function scheduleCooldown(client, userId, type, item, channelId, guildId, 
             await sendCooldownPing(client, userId, type, item, channelId, docId);
         }, Math.max(delay, 0));
 
-        console.log(`[Cooldown] ⏰ Scheduled ${type}/${item} for ${userId} — ${Math.round(duration / 1000)}s`);
+        const mins = Math.round(duration / 60000);
+        console.log(`[Cooldown] ⏰ Scheduled ${type}/${item} for ${userId} — ${mins}m`);
     } catch (err) {
-        console.error(`[Cooldown] Failed to schedule ${type}/${item} for ${userId}:`, err.message);
+        console.error(`[Cooldown] ❌ Failed to schedule ${type}/${item} for ${userId}:`, err.message);
     }
 }
 
-/**
- * Fetches the previous non-bot message in the channel to identify the player.
- */
 async function getPreviousUserMessage(channel) {
     try {
-        const messages = await channel.messages.fetch({ limit: 2 });
-        return messages.last();
+        const messages = await channel.messages.fetch({ limit: 5 });
+        return messages.find(m => !m.author.bot) || null;
     } catch {
         return null;
     }
@@ -311,7 +286,7 @@ module.exports = {
         }
 
         // ----------------------------------------------------------------
-        // 6. GAMBLING — coinflip, blackjack, slots, wheel, jackpot, roulette
+        // 6. GAMBLING
         // ----------------------------------------------------------------
         if (!type) {
             const isCoinflip = REGEX.coinflip.test(content);
@@ -339,13 +314,12 @@ module.exports = {
                 } else if (jackpotMatch) {
                     item = 'jackpot';
                     duration = COOLDOWN_DURATIONS_MS['jackpot'];
-                    userId = jackpotMatch[1]; // Jackpot includes the winner's ID
+                    userId = jackpotMatch[1];
                 } else if (isRoulette) {
                     item = 'roulette';
                     duration = COOLDOWN_DURATIONS_MS['roulette'];
                 }
 
-                // Fetch player from previous message if not already identified
                 if (!userId) {
                     const prev = await getPreviousUserMessage(message.channel);
                     if (prev && !prev.author.bot) {
@@ -354,7 +328,6 @@ module.exports = {
                             't-cf', 't-coinflip', 't-bj', 't-blackjack',
                             't-slots', 't-wheel', 't-roulette'
                         ].some(cmd => prevContent.startsWith(cmd));
-
                         if (isGamblingCommand) userId = prev.author.id;
                     }
                 }
@@ -363,13 +336,8 @@ module.exports = {
 
         // ----------------------------------------------------------------
         // 7. LOOT — trivia, scramble, wordle
-        // Detected from Lootcord's game-start messages
-        // Note: your bot intercepts t-trivia/t-scramble/t-wordle but
-        // Lootcord still sends the game embed so we can detect it here
         // ----------------------------------------------------------------
         if (!type && embed) {
-
-            // Trivia — embed has a "Trivia Streak" field
             const hasTriviaField = embed.fields?.some(f => EMBED_REGEX.trivia.test(f.name || ''));
             if (hasTriviaField) {
                 const prev = await getPreviousUserMessage(message.channel);
@@ -381,7 +349,6 @@ module.exports = {
                 }
             }
 
-            // Scramble — embed.description starts with "Word:"
             if (!type && embed.description && EMBED_REGEX.scramble.test(embed.description)) {
                 const prev = await getPreviousUserMessage(message.channel);
                 if (prev && !prev.author.bot && /^t-\s*scramble$/i.test(prev.content.trim())) {
@@ -393,7 +360,6 @@ module.exports = {
             }
         }
 
-        // Wordle — Lootcord sends a content message at game start
         if (!type && WORDLE_START_REGEX.test(content)) {
             const prev = await getPreviousUserMessage(message.channel);
             if (prev && !prev.author.bot && /^t-\s*wordle/i.test(prev.content.trim())) {
@@ -405,7 +371,7 @@ module.exports = {
         }
 
         // ----------------------------------------------------------------
-        // SCHEDULE if we have everything we need
+        // SCHEDULE
         // ----------------------------------------------------------------
         if (userId && item && type && duration) {
             await scheduleCooldown(message.client, userId, type, item, channelId, guildId, duration);
