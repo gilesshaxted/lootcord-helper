@@ -49,6 +49,12 @@ const {
     deleteDoc
 } = require('firebase/firestore');
 
+// Uptime Kuma heartbeat
+setInterval(() => {
+  fetch('https://status.shaxted.co.uk/api/push/ssYiTGZGvE?status=up&msg=OK&ping=')
+    .catch(err => console.error('Heartbeat failed:', err.message));
+}, 60000);
+
 // Import Utilities
 const statsTracker = require('./utils/statsTracker');
 const botStatus = require('./utils/botStatus');
